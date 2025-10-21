@@ -2,7 +2,7 @@
   "name": "axon",
   "displayName": "Axon",
   "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.1.14",
+  "version": "0.2.0",
   "extensionKind": ["ui"],
   "repository": {
     "type": "git",
@@ -18,7 +18,8 @@
     "onCommand:axon.FWDN_MCU",
     "onCommand:axon.configureBootFirmware",
     "onCommand:axon.configureFwdnExe",
-    "onCommand:axon.FWDN_ALL"
+    "onCommand:axon.FWDN_ALL",
+    "onCommand:axon.autoDetectBootFirmware"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -41,6 +42,11 @@
       {
         "command": "axon.FWDN_ALL",
         "title": "FWDN ALL (Step 1-4)",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.autoDetectBootFirmware",
+        "title": "Auto-detect Boot Firmware Path",
         "category": "Axon"
       }
     ],

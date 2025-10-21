@@ -181,13 +181,146 @@ async function updateConfiguration(
 	vscode.window.showInformationMessage(`${label} 경로가 저장되었습니다: ${value}`);
 }
 
+// 워크스페이스에서 boot-firmware_tcn1000 폴더 검색 함수 (개선된 버전)
+async function findBootFirmwareFolder(): Promise<string | null> {
+	const workspaceFolders = vscode.workspace.workspaceFolders;
+
+	if (!workspaceFolders || workspaceFolders.length === 0) {
+		axonLog('❌ 워크스페이스 폴더를 찾을 수 없습니다.');
+		return null;
+	}
+
+	axonLog(`🔍 워크스페이스 폴더에서 boot-firmware_tcn1000 검색 시작: ${workspaceFolders[0].uri.fsPath}`);
+	axonLog(`📁 워크스페이스 URI: ${workspaceFolders[0].uri.toString()}`);
+
+	// 디버깅: VS Code API 정보 확인
+	axonLog(`🐛 디버깅 정보:`);
+	axonLog(`  - VS Code 버전: ${vscode.version}`);
+	axonLog(`  - 워크스페이스 개수: ${workspaceFolders.length}`);
+	axonLog(`  - 첫 번째 워크스페이스: ${workspaceFolders[0].uri.fsPath}`);
+	axonLog(`  - URI 스킴: ${workspaceFolders[0].uri.scheme}`);
+
+	try {
+		// 찾고자 하는 폴더 이름들
+		const targetFolders = ['boot-firmware_tcn1000'];
+
+		// 모든 워크스페이스 폴더에서 검색
+		for (const workspaceFolder of workspaceFolders) {
+			axonLog(`🔍 워크스페이스 "${workspaceFolder.uri.fsPath}"에서 검색 시작`);
+
+			for (const folderName of targetFolders) {
+				axonLog(`📋 "${folderName}" 폴더 검색 중...`);
+
+				// ✅ 폴더 내부를 가리키도록 패턴 변경 (폴더 자체는 매칭 불가)
+				const include = new vscode.RelativePattern(workspaceFolder, `**/${folderName}/**`);
+				const hits = await vscode.workspace.findFiles(include, '**/node_modules/**', 1);
+
+				axonLog(`📊 "${folderName}" 패턴 결과: ${hits.length}개 (base=${workspaceFolder.uri.toString()})`);
+
+				if (hits.length > 0) {
+					const hit = hits[0]; // 폴더 안의 임의의 파일/항목 URI
+					const dirUri = uriUpToFolderName(hit, folderName); // 폴더 경로만 추출
+
+					axonLog(`🎯 "${folderName}" 폴더 URI: ${dirUri.toString()}`);
+
+					try {
+						const stat = await vscode.workspace.fs.stat(dirUri);
+						if (stat.type === vscode.FileType.Directory) {
+							axonLog(`✅ ${folderName} 폴더를 찾았습니다: ${dirToDisplay(dirUri)}`);
+							// file 스킴이 아니면 fsPath 사용이 위험하니, 필요 용도에 맞게 반환값 선택
+							return dirUri.scheme === 'file' ? dirUri.fsPath : dirUri.path;
+						} else {
+							axonLog(`⚠️ ${folderName}이 폴더가 아닙니다: ${dirToDisplay(dirUri)}`);
+						}
+					} catch (statError) {
+						axonLog(`⚠️ stat 실패: ${statError instanceof Error ? statError.message : String(statError)}`);
+					}
+				} else {
+					axonLog(`❌ "${folderName}" 패턴으로 아무것도 찾을 수 없습니다.`);
+				}
+			}
+		}
+
+		// 추가: build-axon 폴더 내에서 검색
+		axonLog(`🔍 build-axon 폴더에서 boot-firmware_tcn1000 검색 중...`);
+		for (const workspaceFolder of workspaceFolders) {
+			const buildAxonPattern = new vscode.RelativePattern(workspaceFolder, '**/build-axon/**');
+			const buildAxonFiles = await vscode.workspace.findFiles(buildAxonPattern, '**/node_modules/**', 10);
+
+			if (buildAxonFiles.length > 0) {
+				axonLog(`✅ build-axon 폴더를 찾았습니다: ${buildAxonFiles.length}개`);
+
+				for (const buildAxonFile of buildAxonFiles) {
+					axonLog(`  - build-axon: ${buildAxonFile.fsPath}`);
+
+					// build-axon 폴더를 정확히 찾기 위해 URI path 분해
+					const buildAxonDir = uriUpToFolderName(buildAxonFile, 'build-axon');
+					axonLog(`  🔍 build-axon 기준 디렉토리: ${dirToDisplay(buildAxonDir)}`);
+
+					// build-axon 폴더 내에서 boot-firmware_tcn1000 검색
+					const bootFirmwarePattern = new vscode.RelativePattern(buildAxonDir, `**/boot-firmware_tcn1000/**`);
+					const bootFirmwareFiles = await vscode.workspace.findFiles(bootFirmwarePattern, null, 5);
+
+					if (bootFirmwareFiles.length > 0) {
+						const foundUri = bootFirmwareFiles[0];
+						const bootFirmwareDir = uriUpToFolderName(foundUri, 'boot-firmware_tcn1000');
+						axonLog(`🎯 build-axon 폴더 내에서 boot-firmware_tcn1000을 찾았습니다: ${dirToDisplay(bootFirmwareDir)}`);
+						return bootFirmwareDir.scheme === 'file' ? bootFirmwareDir.fsPath : bootFirmwareDir.path;
+					}
+				}
+			}
+		}
+
+		// 워크스페이스 폴더 자체가 관련 경로인지 확인
+		const workspacePath = workspaceFolders[0].uri.fsPath;
+		if (workspacePath.includes('linux_yp') || workspacePath.includes('cgw') || workspacePath.includes('build-axon')) {
+			axonLog(`✅ 워크스페이스 폴더가 관련 경로에 있습니다: ${workspacePath}`);
+			return workspacePath;
+		}
+
+		axonLog(`❌ boot-firmware_tcn1000 폴더를 찾을 수 없습니다.`);
+		return null;
+
+	} catch (error) {
+		axonError(`Boot firmware 폴더 검색 중 오류 발생: ${error}`);
+		return null;
+	}
+}
+
+// --- Helper Functions ---
+
+/**
+ * URI에서 특정 폴더명까지의 상위 폴더 URI를 반환 (스킴 보존)
+ */
+function uriUpToFolderName(uri: vscode.Uri, folderName: string): vscode.Uri {
+	// 스킴을 유지한 채로 경로만 잘라서 상위 폴더 URI를 만든다.
+	const segments = uri.path.split('/').filter(Boolean); // POSIX 경로로 취급 (remote 포함)
+	const index = segments.lastIndexOf(folderName);
+
+	if (index >= 0) {
+		const newPath = '/' + segments.slice(0, index + 1).join('/');
+		return uri.with({ path: newPath });
+	} else {
+		// 폴더명을 찾지 못하면 원래 경로 반환
+		return uri;
+	}
+}
+
+/**
+ * 로깅용 디스플레이 경로 반환 (원격 환경 대응)
+ */
+function dirToDisplay(uri: vscode.Uri): string {
+	// 로깅용: 로컬이면 fsPath, 아니면 POSIX path
+	return uri.scheme === 'file' ? uri.fsPath : `${uri.scheme}:${uri.path}`;
+}
+
 export function activate(context: vscode.ExtensionContext) {
 	// Axon 전용 Output 채널 생성
 	axonOutputChannel = vscode.window.createOutputChannel('Axon');
 	
 	// 버전 정보 표시
 	const extension = vscode.extensions.getExtension('axon');
-	const version = extension?.packageJSON.version || '0.1.14';
+	const version = extension?.packageJSON.version || '0.2.0';
 	
 	axonLog('===========================================');
 	axonLog('Axon extension is now active!');
@@ -253,11 +386,31 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
+
+	// Boot Firmware 경로 자동 검색 명령
+	const autoDetectBootFirmwareDisposable = vscode.commands.registerCommand(
+		'axon.autoDetectBootFirmware',
+		async () => {
+			axonLog('🔍 Boot Firmware 폴더 자동 검색 시작');
+
+			const foundPath = await findBootFirmwareFolder();
+
+			if (foundPath) {
+				await updateConfiguration('bootFirmware.path', foundPath, 'Boot Firmware (자동 감지)');
+				vscode.window.showInformationMessage(`Boot Firmware 경로가 자동 설정되었습니다: ${foundPath}`);
+			} else {
+				axonError('Boot Firmware 폴더를 찾을 수 없습니다. 수동으로 설정해주세요.');
+				vscode.window.showErrorMessage('Boot Firmware 폴더를 찾을 수 없습니다. 수동으로 설정해주세요.');
+			}
+		}
+	);
+
         context.subscriptions.push(
 		runFwdnMcuDisposable,
 		runFwdnAllDisposable,
 		configureBootFirmwareDisposable,
-		configureFwdnExeDisposable
+		configureFwdnExeDisposable,
+		autoDetectBootFirmwareDisposable
         );
 }
 

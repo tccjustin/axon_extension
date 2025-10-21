@@ -2,13 +2,30 @@
 
 VS Code 확장 프로그램으로, FWDN 도구를 쉽게 실행하고 설정할 수 있도록 도와줍니다.
 
-## 기능
+## ✨ 주요 기능
 
-- **FWDN MCU 실행**: MCU 펌웨어 업데이트를 위한 FWDN Step 1-3 실행
-- **FWDN ALL 실행**: 전체 펌웨어 업데이트를 위한 FWDN Step 1-4 실행
-- **FWDN 실행 파일 경로 설정**: FWDN 실행 파일의 경로를 설정하고 관리
-- **Boot Firmware 경로 설정**: 부트 펌웨어가 위치한 폴더 경로를 설정하고 관리
-- **로컬 PowerShell 실행**: 로컬 환경에서 PowerShell을 통해 FWDN을 직접 실행
+- **🚀 FWDN MCU 실행**: MCU 펌웨어 업데이트를 위한 FWDN Step 1-3 실행
+- **🚀 FWDN ALL 실행**: 전체 펌웨어 업데이트를 위한 FWDN Step 1-4 실행
+- **⚙️ FWDN 실행 파일 경로 설정**: FWDN 실행 파일의 경로를 설정하고 관리
+- **🔍 Boot Firmware 경로 자동 감지**: 워크스페이스에서 boot-firmware_tcn1000 폴더를 **지능적으로 자동 검색**
+- **⚙️ Boot Firmware 경로 수동 설정**: 부트 펌웨어가 위치한 폴더 경로를 수동으로 설정하고 관리
+- **🖥️ 로컬 PowerShell 실행**: 로컬 환경에서 PowerShell을 통해 FWDN을 직접 실행
+
+## 🎯 고급 기능
+
+- **🌐 원격 개발 환경 지원**: SSH, WSL, 컨테이너 환경에서 URI 스킴을 보존하여 안정적 작동
+- **🔧 지능적 폴더 검색**: 다양한 프로젝트 구조 패턴을 자동으로 인식하고 검색
+  - `**/boot-firmware_tcn1000` - 워크스페이스 내 어디든
+  - `**/build-axon/**/boot-firmware_tcn1000` - build-axon 폴더 하위
+  - `**/linux_yp*/**/boot-firmware_tcn1000` - linux_yp로 시작하는 폴더 하위
+  - `**/*linux*yp*/**/boot-firmware_tcn1000` - linux가 포함된 폴더 하위
+  - `**/cgw*/**/boot-firmware_tcn1000` - cgw 폴더 하위
+- **🐛 상세 디버깅**: 실시간 로그와 디버깅 정보로 문제 진단
+  - Output 패널의 Axon 채널에서 상세한 검색 과정 확인
+  - 각 패턴의 검색 결과와 소요 시간 실시간 모니터링
+  - VS Code 콘솔에서 직접 API 테스트 가능
+- **📦 배치 파일 자동 포함**: FWDN 배치 파일을 익스텐션에 포함하여 배포
+- **🔄 실시간 설정 동기화**: 설정 변경 시 즉시 모든 명령에 반영
 
 ## 요구사항
 
@@ -22,11 +39,17 @@ VS Code 확장 프로그램으로, FWDN 도구를 쉽게 실행하고 설정할 
 
 ## 사용법
 
-### FWDN 실행
+### 🚀 FWDN 실행
 
 1. Command Palette (`Ctrl+Shift+P`)를 열고 다음 명령 중 하나를 선택합니다:
    - **"Axon: FWDN MCU (Step 1-3)"**: MCU 펌웨어 업데이트 실행
    - **"Axon: FWDN ALL (Step 1-4)"**: 전체 펌웨어 업데이트 실행
+
+### ⚡ 빠른 실행
+
+- **F5 키**: 디버깅 모드로 익스텐션 실행 및 테스트
+- **Ctrl+Shift+P**: Command Palette에서 모든 Axon 명령어 접근
+- **Output 패널 → Axon 채널**: 실시간 로그와 디버깅 정보 확인
 
 ### 설정 구성
 
@@ -36,7 +59,20 @@ VS Code 확장 프로그램으로, FWDN 도구를 쉽게 실행하고 설정할 
 2. FWDN 실행 파일(fwdn.exe)을 선택합니다
 3. 설정이 자동으로 저장됩니다
 
-#### Boot Firmware 경로 설정
+#### Boot Firmware 경로 자동 감지
+
+1. Command Palette에서 **"Axon: Auto-detect Boot Firmware Path"** 명령을 실행합니다
+2. **지능적 다중 패턴 검색**으로 `boot-firmware_tcn1000` 폴더를 자동으로 검색합니다:
+   - `**/boot-firmware_tcn1000` - 워크스페이스 내 어디든
+   - `**/build-axon/**/boot-firmware_tcn1000` - build-axon 폴더 하위
+   - `**/linux_yp*/**/boot-firmware_tcn1000` - linux_yp로 시작하는 폴더 하위
+   - `**/*linux*yp*/**/boot-firmware_tcn1000` - linux가 포함된 폴더 하위
+   - `**/cgw*/**/boot-firmware_tcn1000` - cgw 폴더 하위
+3. **원격 환경 대응**: SSH, WSL, 컨테이너 환경에서 URI 스킴을 보존하여 안정적 작동
+4. **상세 디버깅 로그**: Output 패널에서 각 단계별 검색 과정을 실시간으로 확인 가능
+5. 검색된 폴더가 자동으로 설정됩니다
+
+#### Boot Firmware 경로 수동 설정
 
 1. Command Palette에서 **"Axon: Configure Boot Firmware Path"** 명령을 실행합니다
 2. Boot Firmware가 위치한 폴더를 선택합니다
@@ -62,13 +98,53 @@ Z:\work1\can2ethimp\mcu-tcn100x\boot-firmware-tcn100x
 - `axon.fwdn.exePath`: FWDN 실행 파일 경로
 - `axon.bootFirmware.path`: Boot Firmware 폴더 경로
 
-## 개발
+## 🛠️ 개발
+
+### 환경 설정
 
 ```bash
 npm install
 npm run compile
 npm run watch
 ```
+
+### 디버깅
+
+#### VS Code 디버깅 모드
+
+1. **F5 키**를 눌러 디버깅 모드 시작
+2. 새 창에서 **c:\Users\jhlee17\work** 워크스페이스 열기
+3. **F12 키** → **Console 탭**에서 실시간 디버깅
+
+#### 콘솔에서 직접 테스트
+
+디버깅 모드의 콘솔에서 실행할 수 있는 코드들:
+
+```javascript
+// 워크스페이스 정보 확인
+vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+
+// boot-firmware_tcn1000 검색
+await vscode.workspace.findFiles('../**/boot-firmware_tcn1000', null, 5)
+
+// build-axon 패턴 검색
+await vscode.workspace.findFiles('**/build-axon/**/boot-firmware_tcn1000', null, 3)
+
+// 디렉토리 내용 확인
+const entries = await vscode.workspace.fs.readDirectory(vscode.workspace.workspaceFolders[0].uri);
+console.log('Directory:', entries.map(([name, type]) => `${type === 1 ? '📁' : '📄'} ${name}`))
+```
+
+#### 브레이크포인트 설정
+
+- `src/extension.ts`의 193, 225, 249, 397번 라인에 브레이크포인트 설정
+- 코드 실행을 한 줄씩 관찰하며 디버깅 가능
+
+### 로그 확인
+
+- **Output 패널** → **Axon 채널**에서 상세한 실행 로그 확인
+- 각 패턴의 검색 결과와 소요 시간 실시간 모니터링
+- 디버깅 정보로 문제 진단
 
 ## 빌드 및 배포
 
@@ -85,7 +161,7 @@ npm run package:minor    # 마이너 버전 증가
 npm run package:major    # 메이저 버전 증가
 ```
 
-## 문제 해결
+## 🔧 문제 해결
 
 ### 일반적인 에러 해결 방법
 
@@ -101,9 +177,24 @@ npm run package:major    # 메이저 버전 증가
 - 모든 경로가 올바르게 설정되어 있는지 확인하세요
 - 특히 Boot Firmware 경로와 FWDN 실행 파일 경로를 확인하세요
 
+**Boot Firmware 폴더를 찾을 수 없습니다:**
+- Output 패널의 Axon 채널에서 상세한 검색 로그를 확인하세요
+- `**/boot-firmware_tcn1000/**` 패턴으로 폴더 내부의 파일이 있는지 확인하세요
+- VS Code 콘솔에서 직접 검색 테스트: `vscode.workspace.findFiles('../**/boot-firmware_tcn1000', null, 5)`
+
+**원격 환경(SSH/WSL/컨테이너)에서 작동하지 않습니다:**
+- URI 스킴이 `vscode-remote://` 또는 `wsl://`로 시작하는지 확인하세요
+- 디버깅 모드(F5)에서 콘솔을 열고 `vscode.workspace.workspaceFolders?.[0]?.uri?.toString()` 실행
+- `vscode.workspace.findFiles` API가 원격 환경에서 올바르게 작동하는지 확인하세요
+
+**익스텐션 명령이 나타나지 않습니다:**
+- VS Code를 완전히 재시작하세요
+- 새 패키지를 다시 설치하세요: `code --install-extension axon-0.2.0.vsix`
+- Command Palette에서 "Axon"으로 검색하여 사용 가능한 명령 확인
+
 ## 버전
 
-현재 버전: 0.1.14
+현재 버전: 0.2.0
 
 ## 라이선스
 
