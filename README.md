@@ -18,9 +18,18 @@ Axon은 MCU 펌웨어 개발을 위한 VS Code 확장 프로그램으로, 복잡
 ## 🎯 고급 기능
 
 - **🌐 원격 개발 환경 지원**: SSH, WSL, 컨테이너 환경에서 URI 스킴을 보존하여 안정적 작동
+  - **Samba 경로 자동 변환**: 원격 경로를 Windows Samba 드라이브(Z:)로 자동 변환
+    - `/home/{사용자}/{프로젝트}/...` → `Z:\{프로젝트}\...` (사용자 이름 제외)
+    - `/mnt/c/Users/...` → `C:\Users\...` (WSL 환경)
+    - `/Users/...` → `Z:\Users\...` (macOS/Linux 환경)
+    - `/{프로젝트}/...` → `Z:\{프로젝트}\...` (SSH 직접 매핑)
+  - **유연한 프로젝트 디렉토리 인식**: work1, work, project, workspace, dev, autotest_cs, build-axon 등의 다양한 프로젝트 디렉토리 패턴 자동 인식
+- **사용자 환경 특화**: `/home/id/{프로젝트}/...` → `Z:\{프로젝트}\...` 패턴 지원
+  - **다양한 원격 패턴 지원**: 사용자 환경과 프로젝트 구조에 맞는 매핑 자동 인식
 - **🔧 지능적 폴더 검색**: 다양한 프로젝트 구조 패턴을 자동으로 인식하고 검색
   - `**/boot-firmware_tcn1000` - 워크스페이스 내 어디든
   - `**/build-axon/**/boot-firmware_tcn1000` - build-axon 폴더 하위
+  - **워크스페이스 내 build-axon 검색**: 워크스페이스 경로에 build-axon이 포함된 경우, workspace 안의 build-axon 폴더에서 boot-firmware_tcn1000 검색
   - `**/linux_yp*/**/boot-firmware_tcn1000` - linux_yp로 시작하는 폴더 하위
   - `**/*linux*yp*/**/boot-firmware_tcn1000` - linux가 포함된 폴더 하위
   - `**/cgw*/**/boot-firmware_tcn1000` - cgw 폴더 하위
@@ -69,12 +78,13 @@ Axon은 MCU 펌웨어 개발을 위한 VS Code 확장 프로그램으로, 복잡
 2. **지능적 다중 패턴 검색**으로 `boot-firmware_tcn1000` 폴더를 자동으로 검색합니다:
    - `**/boot-firmware_tcn1000` - 워크스페이스 내 어디든
    - `**/build-axon/**/boot-firmware_tcn1000` - build-axon 폴더 하위
+   - **워크스페이스 내 build-axon 검색** - 워크스페이스 경로에 build-axon이 포함된 경우, workspace 안의 build-axon 폴더에서 boot-firmware_tcn1000 검색
    - `**/linux_yp*/**/boot-firmware_tcn1000` - linux_yp로 시작하는 폴더 하위
    - `**/*linux*yp*/**/boot-firmware_tcn1000` - linux가 포함된 폴더 하위
    - `**/cgw*/**/boot-firmware_tcn1000` - cgw 폴더 하위
 3. **원격 환경 대응**: SSH, WSL, 컨테이너 환경에서 URI 스킴을 보존하여 안정적 작동
 4. **상세 디버깅 로그**: Output 패널에서 각 단계별 검색 과정을 실시간으로 확인 가능
-5. 검색된 폴더가 자동으로 설정됩니다
+5. 검색된 폴더가 Samba 경로로 자동 변환되어 설정됩니다
 
 #### Boot Firmware 경로 수동 설정
 
@@ -125,14 +135,33 @@ npm run watch
 디버깅 모드의 콘솔에서 실행할 수 있는 코드들:
 
 ```javascript
-// 워크스페이스 정보 확인
-vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+// 워크스페이스 정보 확인 (URI 스킴 포함)
+vscode.workspace.workspaceFolders?.[0]?.uri?.toString()
 
 // boot-firmware_tcn1000 검색
 await vscode.workspace.findFiles('../**/boot-firmware_tcn1000', null, 5)
 
 // build-axon 패턴 검색
 await vscode.workspace.findFiles('**/build-axon/**/boot-firmware_tcn1000', null, 3)
+
+// Samba 경로 변환 테스트 (원격 환경에서)
+convertRemotePathToSamba('/home/id/autotest_cs/build-axon/linux_yp4.0_cgw_1.x.x_dev/boot-firmware_tcn1000')
+// 결과: Z:\autotest_cs\build-axon\linux_yp4.0_cgw_1.x.x_dev\boot-firmware_tcn1000
+
+// 다른 사용자/프로젝트 패턴들 테스트
+convertRemotePathToSamba('/home/B030240/work1/autotest_cs/build-axon/boot-firmware_tcn1000')
+// 결과: Z:\work1\autotest_cs\build-axon\boot-firmware_tcn1000
+
+convertRemotePathToSamba('/home/developer/project_x/mytest/boot-firmware_tcn1000')
+// 결과: Z:\project_x\mytest\boot-firmware_tcn1000
+
+// SSH 직접 패턴
+convertRemotePathToSamba('/id/autotest_cs/boot-firmware_tcn1000')
+// 결과: Z:\autotest_cs\boot-firmware_tcn1000
+
+// WSL 패턴 테스트
+convertRemotePathToSamba('/mnt/c/Users/test/work1/project/boot-firmware_tcn1000')
+// 결과: C:\Users\test\work1\project\boot-firmware_tcn1000
 
 // 디렉토리 내용 확인
 const entries = await vscode.workspace.fs.readDirectory(vscode.workspace.workspaceFolders[0].uri);
@@ -184,12 +213,21 @@ npm run package:major    # 메이저 버전 증가
 **Boot Firmware 폴더를 찾을 수 없습니다:**
 - Output 패널의 Axon 채널에서 상세한 검색 로그를 확인하세요
 - `**/boot-firmware_tcn1000/**` 패턴으로 폴더 내부의 파일이 있는지 확인하세요
+- 워크스페이스 경로에 `build-axon`이 포함되어 있는지 확인하고, 그 안에서 boot-firmware_tcn1000를 찾아보세요
 - VS Code 콘솔에서 직접 검색 테스트: `vscode.workspace.findFiles('../**/boot-firmware_tcn1000', null, 5)`
 
 **원격 환경(SSH/WSL/컨테이너)에서 작동하지 않습니다:**
 - URI 스킴이 `vscode-remote://` 또는 `wsl://`로 시작하는지 확인하세요
 - 디버깅 모드(F5)에서 콘솔을 열고 `vscode.workspace.workspaceFolders?.[0]?.uri?.toString()` 실행
 - `vscode.workspace.findFiles` API가 원격 환경에서 올바르게 작동하는지 확인하세요
+
+**Samba 경로 변환 오류:**
+- 원격 경로가 Samba 드라이브(Z:)로 올바르게 변환되는지 확인하세요
+- Output 패널에서 `📝 최종 설정 경로:` 로그를 확인하여 변환 결과 확인
+- `📝 사용자: {사용자명}, 프로젝트: {프로젝트디렉토리}` 로그로 변환 과정 확인
+- `/home/id/` 환경의 경우 `autotest_cs`, `build-axon` 등의 프로젝트 디렉토리가 올바르게 인식되는지 확인
+- 사용자의 환경에 맞는 매핑 패턴이 필요하다면 코드의 `convertRemotePathToSamba` 함수 수정
+- VS Code 콘솔에서 `convertRemotePathToSamba('/home/id/{프로젝트}/...')`로 직접 테스트
 
 **익스텐션 명령이 나타나지 않습니다:**
 - VS Code를 완전히 재시작하세요
@@ -203,6 +241,11 @@ npm run package:major    # 메이저 버전 증가
 ### 🚀 최근 업데이트 (v0.2.0)
 - ✅ **지능적 폴더 검색**: `**/${name}/**` 패턴으로 폴더 자동 감지
 - ✅ **원격 환경 대응**: SSH/WSL/컨테이너에서 URI 스킴 보존
+- ✅ **사용자 환경 특화 Samba 변환**: `/home/id/{프로젝트}/...` → `Z:\{프로젝트}\...`
+  - 다양한 사용자명(예: id, B030240, developer)과 프로젝트 디렉토리(autotest_cs, build-axon 등) 지원
+  - `/home/{사용자}/{프로젝트}/...` → `Z:\{프로젝트}\...` (사용자 이름 제외)
+  - `/{프로젝트}/...` → `Z:\{프로젝트}\...` (SSH 직접 매핑)
+- ✅ **워크스페이스 내 build-axon 검색**: 워크스페이스 경로에 build-axon이 포함된 경우, workspace 안의 build-axon 폴더에서 boot-firmware_tcn1000 자동 검색
 - ✅ **상세 디버깅**: 실시간 로그와 콘솔 테스트 기능
 - ✅ **배치 파일 포함**: FWDN 배치 파일을 익스텐션에 자동 포함
 - ✅ **코드 정리**: 불필요한 명령어 제거 및 최적화
