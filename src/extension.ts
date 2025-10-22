@@ -108,13 +108,9 @@ function getWorkspaceFolder(): vscode.WorkspaceFolder | null {
 }
 
 
-// FWDN 실행 공통 함수 (진정한 로컬 실행)
-async function executeFwdnCommand(
-	mode: 'mcu' | 'all',
-	extensionPath: string
-): Promise<void> {
-	const modeLabel = mode === 'mcu' ? 'MCU (Step 1-3)' : 'ALL (Step 1-4)';
-	axonLog(`🚀 FWDN ${modeLabel} 실행 명령 시작`);
+// FWDN 실행 함수 (ALL 모드만)
+async function executeFwdnCommand(extensionPath: string): Promise<void> {
+	axonLog(`🚀 FWDN ALL (Step 1-4) 실행 명령 시작`);
 
 	// 환경 정보 로깅 (디버깅용)
 	axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
@@ -138,7 +134,7 @@ async function executeFwdnCommand(
 		vscode.window.showErrorMessage(validationError);
 			return;
 		}
-		
+
 	try {
 		axonLog(`🔧 로컬 PowerShell에서 직접 실행`);
 
@@ -150,8 +146,8 @@ async function executeFwdnCommand(
 		const isUncPath = config.fwdnExePath.startsWith('\\\\tsclient\\');
 		const processedFwdnExePath = isUncPath ? config.fwdnExePath : `"${config.fwdnExePath}"`;
 
-		// CMD를 통해 배치 파일 실행 (간단한 인용부호 처리)
-		const psCommand = `cmd /c "${batchFilePath}" ${mode} "${config.bootFirmwarePath}" "${config.fwdnExePath}"`;
+		// CMD를 통해 배치 파일 실행 (ALL 모드로 고정)
+		const psCommand = `cmd /c "${batchFilePath}" all "${config.bootFirmwarePath}" "${config.fwdnExePath}"`;
 
 		axonLog(`📋 실행 명령: ${psCommand}`);
 
@@ -189,7 +185,7 @@ async function executeFwdnCommand(
 			} catch {
 				// 폴백: 직접 터미널 생성
 				terminal = vscode.window.createTerminal({
-					name: `FWDN ${modeLabel}`,
+					name: `FWDN ALL (Step 1-4)`,
 					isTransient: true
 				});
 			}
@@ -197,14 +193,14 @@ async function executeFwdnCommand(
 
 		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
 
-		const successMsg = `FWDN ${modeLabel}이 로컬 PowerShell에서 실행되었습니다!`;
+		const successMsg = `FWDN ALL (Step 1-4)이 로컬 PowerShell에서 실행되었습니다!`;
 			axonSuccess(successMsg);
 			vscode.window.showInformationMessage(successMsg);
 
-		axonLog(`✅ FWDN ${modeLabel} 실행 완료`);
+		axonLog(`✅ FWDN ALL (Step 1-4) 실행 완료`);
 
 		} catch (error) {
-		const errorMsg = `FWDN ${modeLabel} 실행 중 오류가 발생했습니다: ${error}`;
+		const errorMsg = `FWDN ALL (Step 1-4) 실행 중 오류가 발생했습니다: ${error}`;
 			axonError(errorMsg);
 			vscode.window.showErrorMessage(errorMsg);
 		}
@@ -733,40 +729,13 @@ export function activate(context: vscode.ExtensionContext) {
 	axonLog('===========================================');
 	axonOutputChannel.show();
 
-	// FWDN MCU 실행 명령
-	const runFwdnMcuDisposable = vscode.commands.registerCommand(
-		'axon.FWDN_MCU',
-		async () => executeFwdnCommand('mcu', context.extensionPath)
-	);
 
 	// FWDN ALL 실행 명령
 	const runFwdnAllDisposable = vscode.commands.registerCommand(
 		'axon.FWDN_ALL',
-		async () => executeFwdnCommand('all', context.extensionPath)
+		async () => executeFwdnCommand(context.extensionPath)
 	);
 
-	// Boot Firmware 경로 설정 명령
-	const configureBootFirmwareDisposable = vscode.commands.registerCommand(
-		'axon.configureBootFirmware',
-		async () => {
-		const config = vscode.workspace.getConfiguration('axon');
-		
-			const selectedFolders = await vscode.window.showOpenDialog({
-				canSelectFiles: false,
-				canSelectFolders: true,
-				canSelectMany: false,
-				openLabel: 'Boot Firmware 폴더 선택',
-				title: 'Boot Firmware 경로를 선택하세요',
-				defaultUri: vscode.Uri.file(config.get<string>('bootFirmware.path', 'Z:\\work1\\can2ethimp\\mcu-tcn100x\\boot-firmware-tcn100x'))
-			});
-
-			if (selectedFolders && selectedFolders.length > 0) {
-				// Boot Firmware 경로는 setting.json에 저장하지 않음 (사용자 요청)
-				axonLog(`✅ Boot Firmware 경로가 선택되었습니다: ${selectedFolders[0].fsPath}`);
-				vscode.window.showInformationMessage(`Boot Firmware 경로가 선택되었습니다: ${selectedFolders[0].fsPath}`);
-			}
-		}
-	);
 
 	// FWDN 실행 파일 경로 설정 명령
 	const configureFwdnExeDisposable = vscode.commands.registerCommand(
@@ -794,31 +763,10 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 
-	// Boot Firmware 경로 자동 검색 명령
-	const autoDetectBootFirmwareDisposable = vscode.commands.registerCommand(
-		'axon.autoDetectBootFirmware',
-		async () => {
-			axonLog('🔍 Boot Firmware 폴더 자동 검색 시작');
-
-			const foundPath = await findBootFirmwareFolder();
-
-			if (foundPath) {
-				// Boot Firmware 경로는 setting.json에 저장하지 않음 (사용자 요청)
-				axonLog(`✅ Boot Firmware 경로가 자동으로 감지되었습니다: ${foundPath}`);
-				vscode.window.showInformationMessage(`Boot Firmware 경로가 자동 감지되었습니다: ${foundPath}`);
-			} else {
-				axonError('Boot Firmware 폴더를 찾을 수 없습니다. 수동으로 설정해주세요.');
-				vscode.window.showErrorMessage('Boot Firmware 폴더를 찾을 수 없습니다. 수동으로 설정해주세요.');
-			}
-		}
-	);
 
         context.subscriptions.push(
-		runFwdnMcuDisposable,
 		runFwdnAllDisposable,
-		configureBootFirmwareDisposable,
-		configureFwdnExeDisposable,
-		autoDetectBootFirmwareDisposable
+		configureFwdnExeDisposable
         );
 }
 
