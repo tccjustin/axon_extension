@@ -17,7 +17,8 @@
   ],
     "activationEvents": [
     "onCommand:axon.configureFwdnExe",
-    "onCommand:axon.FWDN_ALL"
+    "onCommand:axon.FWDN_ALL",
+    "onCommand:axon.mcuBuildMake"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -30,6 +31,11 @@
       {
         "command": "axon.FWDN_ALL",
         "title": "FWDN",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.mcuBuildMake",
+        "title": "MCU Build Make",
         "category": "Axon"
       }
     ],
@@ -56,6 +62,16 @@
       },
       {
         "type": "axon-simple-fwdn",
+        "required": [],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Task label"
+          }
+        }
+      },
+      {
+        "type": "axon-mcu-build",
         "required": [],
         "properties": {
           "label": {

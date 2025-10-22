@@ -762,12 +762,185 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
+	// MCU Build Make 실행 명령
+	const mcuBuildMakeDisposable = vscode.commands.registerCommand(
+		'axon.mcuBuildMake',
+		async () => executeMcuBuildMake(context.extensionPath)
+	);
+
 
 
         context.subscriptions.push(
 		runFwdnAllDisposable,
-		configureFwdnExeDisposable
+		configureFwdnExeDisposable,
+		mcuBuildMakeDisposable
         );
+}
+
+// build-axon 폴더를 찾는 함수 (findBootFirmwareFolder와 유사한 구조)
+async function findBuildAxonFolder(): Promise<string | null> {
+	const workspaceFolders = vscode.workspace.workspaceFolders;
+
+	if (!workspaceFolders || workspaceFolders.length === 0) {
+		axonLog('❌ 워크스페이스 폴더를 찾을 수 없습니다.');
+		return null;
+	}
+
+	const workspaceUri = workspaceFolders[0].uri;
+	const workspacePath = workspaceUri.scheme === 'file' ? workspaceUri.fsPath : workspaceUri.path;
+
+	axonLog(`🔍 build-axon 폴더 검색 시작: ${workspacePath}`);
+
+	try {
+		// 워크스페이스 경로에 build-axon이 포함되어 있다면 build-axon 폴더를 기준으로 처리
+		if (workspacePath.includes('build-axon')) {
+			axonLog(`✅ 워크스페이스 폴더에 build-axon이 포함되어 있습니다: ${workspacePath}`);
+
+			// 워크스페이스 URI에서 build-axon 폴더까지의 경로 추출
+			const buildAxonIndex = workspaceUri.path.indexOf('build-axon');
+			if (buildAxonIndex !== -1) {
+				const buildAxonPath = workspaceUri.path.substring(0, buildAxonIndex + 'build-axon'.length);
+				const buildAxonUri = workspaceUri.with({ path: buildAxonPath });
+
+				axonLog(`✅ build-axon 폴더를 찾았습니다: ${dirToDisplay(buildAxonUri)}`);
+				// findBootFirmwareFolder와 유사하게 직접 반환 (convertRemotePathToSamba 사용 안 함)
+				const finalPath = buildAxonUri.scheme === 'file' ? buildAxonUri.fsPath : buildAxonUri.path;
+				return finalPath;
+			}
+		}
+
+		axonLog(`❌ 워크스페이스 경로에 build-axon 폴더를 찾을 수 없습니다.`);
+		return null;
+
+	} catch (error) {
+		axonError(`build-axon 폴더 검색 중 오류 발생: ${error}`);
+		return null;
+	}
+}
+
+// MCU 빌드 make 실행 함수
+async function executeMcuBuildMake(extensionPath: string): Promise<void> {
+	axonLog(`🚀 MCU Build Make 실행 명령 시작`);
+
+	// 환경 정보 로깅 (디버깅용)
+	axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
+
+	try {
+		// build-axon 폴더 찾기
+		axonLog(`🔍 build-axon 폴더 자동 검색 시작...`);
+		const buildAxonPath = await findBuildAxonFolder();
+
+		if (!buildAxonPath) {
+			axonLog(`❌ build-axon 폴더를 찾을 수 없습니다.`);
+			vscode.window.showErrorMessage('build-axon 폴더를 찾을 수 없습니다. "Axon: MCU Build Make" 명령을 다시 실행하거나 수동으로 이동해주세요.');
+			return;
+		}
+
+		axonLog(`✅ build-axon 폴더를 찾았습니다: ${buildAxonPath}`);
+
+		// MCU 빌드 경로 구성 (findBootFirmwareFolder 구조와 유사하게 build-axon 경로에 붙임)
+		// path.join 사용하지 말고 직접 경로 구성 (convertRemotePathToSamba 사용 안 함)
+		const mcuRelativePath = '/linux_yp4.0_cgw_1.x.x_dev/build/tcn1000-mcu/tmp/work/cortexm7-telechips-linux-musleabi/m7-1/1.0.0-r0/git';
+		const mcuBuildPath = buildAxonPath.endsWith('/') ? buildAxonPath + mcuRelativePath.substring(1) : buildAxonPath + mcuRelativePath;
+		axonLog(`📁 MCU 빌드 경로: ${mcuBuildPath}`);
+
+		// 환경 감지 및 터미널 생성
+		const isRemote = vscode.env.remoteName !== undefined;
+		let terminal: vscode.Terminal;
+
+		if (isRemote) {
+			// 원격 환경: bash를 사용하는 원격 터미널 생성 (기존 bash 터미널 재사용)
+			axonLog(`🔧 원격 환경 감지 - bash 터미널 생성 또는 재사용`);
+
+			// 열려있는 bash 터미널 찾기
+			let bashTerminal = vscode.window.terminals.find(term => {
+				const terminalName = term.name || '';
+				return terminalName.toLowerCase().includes('bash') ||
+					   terminalName.toLowerCase().includes('terminal') ||
+					   terminalName === '';
+			});
+
+			if (bashTerminal) {
+				// 기존 bash 터미널이 있으면 재사용
+				terminal = bashTerminal;
+				axonLog(`✅ 기존 bash 터미널을 재사용합니다: ${bashTerminal.name}`);
+			} else {
+				// bash 터미널이 없으면 새로 생성
+				try {
+					await vscode.commands.executeCommand('workbench.action.terminal.new');
+					const remoteTerminal = vscode.window.activeTerminal;
+					if (remoteTerminal) {
+						terminal = remoteTerminal;
+						axonLog(`✅ 새 bash 터미널을 생성했습니다`);
+					} else {
+						throw new Error('원격 bash 터미널 생성에 실패했습니다.');
+					}
+				} catch {
+					// 폴백: 직접 bash 터미널 생성
+					terminal = vscode.window.createTerminal({
+						name: `MCU Build Make (Bash)`,
+						shellPath: 'bash',
+						shellArgs: ['--login'],
+						isTransient: true
+					});
+					axonLog(`✅ 폴백으로 bash 터미널을 직접 생성했습니다`);
+				}
+			}
+		} else {
+			// 로컬 환경: bash 터미널 생성 또는 재사용
+			axonLog(`🔧 로컬 환경 - bash 터미널 생성 또는 재사용`);
+
+			// 열려있는 bash 터미널 찾기
+			let bashTerminal = vscode.window.terminals.find(term => {
+				const terminalName = term.name || '';
+				return terminalName.toLowerCase().includes('bash') ||
+					   terminalName.toLowerCase().includes('terminal') ||
+					   terminalName === '';
+			});
+
+			if (bashTerminal) {
+				// 기존 bash 터미널이 있으면 재사용
+				terminal = bashTerminal;
+				axonLog(`✅ 기존 bash 터미널을 재사용합니다: ${bashTerminal.name}`);
+			} else {
+				// bash 터미널이 없으면 새로 생성 시도
+				try {
+					await vscode.commands.executeCommand('workbench.action.terminal.new');
+					const basicTerminal = vscode.window.activeTerminal;
+					if (basicTerminal) {
+						// 새로 생성된 터미널을 사용 (VS Code에서 기본적으로 적절한 shell을 선택)
+						terminal = basicTerminal;
+						axonLog(`✅ 새 터미널을 생성했습니다: ${basicTerminal.name}`);
+					} else {
+						throw new Error('기본 터미널 생성에 실패했습니다.');
+					}
+				} catch {
+					// 폴백: 직접 bash 터미널 생성
+					terminal = vscode.window.createTerminal({
+						name: `MCU Build Make (Bash)`,
+						shellPath: 'bash',
+						shellArgs: ['--login'],
+						isTransient: true
+					});
+					axonLog(`✅ 폴백으로 bash 터미널을 직접 생성했습니다`);
+				}
+			}
+		}
+
+		// MCU 빌드 디렉토리로 이동 후 make 실행
+		terminal.sendText(`cd "${mcuBuildPath}" && make`, true);
+
+		const successMsg = `MCU Build Make이 실행되었습니다! 경로: ${mcuBuildPath}`;
+		axonSuccess(successMsg);
+		vscode.window.showInformationMessage(successMsg);
+
+		axonLog(`✅ MCU Build Make 실행 완료`);
+
+	} catch (error) {
+		const errorMsg = `MCU Build Make 실행 중 오류가 발생했습니다: ${error}`;
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
+	}
 }
 
 export function deactivate() {}
