@@ -5,8 +5,28 @@ import * as path from 'path';
 // Axon 전용 Output 채널
 let axonOutputChannel: vscode.OutputChannel;
 
-// 현재 감지된 Boot Firmware 경로 (캐싱)
+// 현재 감지된 Boot Firmware 경로 (캐싱) - 사용하지 않음
 let currentBootFirmwarePath: string | null = null;
+
+// 제외할 폴더 패턴 (검색에서 제외할 폴더들)
+const EXCLUDE_PATTERNS = '**/{node_modules,.git,.cache,build,dist,out,tmp,buildtools,fwdn-v8,mktcimg,poky,source-mirror,tools}/**';
+
+// 제외할 폴더명들 (EXCLUDE_PATTERNS에서 추출)
+const EXCLUDE_FOLDERS = [
+	'node_modules',
+	'.git',
+	'.cache',
+	'build',
+	'dist',
+	'out',
+	'tmp',
+	'buildtools',
+	'fwdn-v8',
+	'mktcimg',
+	'poky',
+	'source-mirror',
+	'tools'
+];
 
 // 로그 함수들
 function logWithTimestamp(message: string, prefix: string = ''): string {
@@ -47,22 +67,16 @@ interface FwdnConfig {
 async function getFwdnConfig(): Promise<FwdnConfig> {
 	const config = vscode.workspace.getConfiguration('axon');
 
-	// Boot Firmware 경로는 캐싱된 값 사용 (setting.json에서 읽지 않음)
-	let bootFirmwarePath = currentBootFirmwarePath;
+	// Boot Firmware 경로는 매번 새로 검색 (캐시 사용하지 않음) - 빠른 방식 사용
+	axonLog(`🔍 Boot Firmware 경로 자동 검색 시작 (빠른 방식)...`);
+	const bootFirmwarePath = await findBootFirmwareFolder();
 
-	// 캐싱된 값이 없으면 자동으로 검색
 	if (!bootFirmwarePath) {
-		axonLog(`🔍 Boot Firmware 경로 캐시 없음, 자동 검색 시작...`);
-		bootFirmwarePath = await findBootFirmwareFolder();
-		if (bootFirmwarePath) {
-			currentBootFirmwarePath = bootFirmwarePath;
-			axonLog(`✅ Boot Firmware 경로를 캐시에 저장: ${bootFirmwarePath}`);
-		} else {
-			// 검색 실패 시 기본값 사용
-			bootFirmwarePath = 'Z:\\work1\\can2ethimp\\mcu-tcn100x\\boot-firmware-tcn100x';
-			axonLog(`⚠️ Boot Firmware 경로 검색 실패, 기본값 사용: ${bootFirmwarePath}`);
-		}
+		axonLog(`❌ Boot Firmware 경로를 찾을 수 없습니다.`);
+		throw new Error('Boot Firmware 경로를 찾을 수 없습니다. "Axon: Auto-detect Boot Firmware Path" 명령을 먼저 실행하거나 수동으로 설정해주세요.');
 	}
+
+	axonLog(`✅ Boot Firmware 경로를 찾았습니다: ${bootFirmwarePath}`);
 
 	return {
 		fwdnExePath: config.get<string>('fwdn.exePath', 'C:\\Users\\jhlee17\\work\\FWDN\\fwdn.exe'),
@@ -105,27 +119,16 @@ async function executeFwdnCommand(
 	// 환경 정보 로깅 (디버깅용)
 	axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
 
-	// Boot Firmware 경로 자동 감지 시도
-	axonLog(`🔍 Boot Firmware 경로 자동 감지 시도...`);
-	const detectedPath = await findBootFirmwareFolder();
-
+	// 설정 가져오기
 	let config: FwdnConfig;
-	if (detectedPath) {
-		// 자동 감지된 경로로 설정 업데이트 (setting.json에 저장하지 않음)
-		axonLog(`✅ Boot Firmware 경로를 자동으로 설정: ${detectedPath}`);
-		await updateConfiguration('bootFirmware.path', detectedPath, 'Boot Firmware (자동 감지)');
-		// 설정 파일에 저장하지 않고 감지된 경로로 직접 설정 구성
-		const baseConfig = await getFwdnConfig();
-		config = {
-			fwdnExePath: baseConfig.fwdnExePath,
-			bootFirmwarePath: detectedPath
-		};
-		axonLog(`📋 자동 감지된 설정 - FWDN 경로: ${config.fwdnExePath}, Boot Firmware 경로: ${config.bootFirmwarePath}`);
-	} else {
-		// 자동 감지 실패 시 기존 설정 사용
-		axonLog(`⚠️ Boot Firmware 경로 자동 감지 실패, 기존 설정 사용`);
+	try {
 		config = await getFwdnConfig();
-		axonLog(`📋 기존 설정 - FWDN 경로: ${config.fwdnExePath}, Boot Firmware 경로: ${config.bootFirmwarePath}`);
+		axonLog(`📋 설정 - FWDN 경로: ${config.fwdnExePath}, Boot Firmware 경로: ${config.bootFirmwarePath}`);
+	} catch (error) {
+		// Boot Firmware 경로가 설정되지 않은 경우
+		axonError(`설정 오류: ${error}`);
+		vscode.window.showErrorMessage(`Boot Firmware 경로가 설정되지 않았습니다. "Axon: Auto-detect Boot Firmware Path" 명령을 먼저 실행해주세요.`);
+		return;
 	}
 
 	// 설정 검증
@@ -221,8 +224,8 @@ async function updateConfiguration(
 	// 주석 처리: await config.update(key, value, vscode.ConfigurationTarget.Workspace);
 }
 
-// 워크스페이스에서 boot-firmware_tcn1000 폴더 검색 함수 (개선된 버전)
-async function findBootFirmwareFolder(): Promise<string | null> {
+// 워크스페이스에서 boot-firmware_tcn1000 폴더 검색 함수 (원래 버전 - findFiles 사용)
+async function findBootFirmwareFolderOriginal(): Promise<string | null> {
 	const workspaceFolders = vscode.workspace.workspaceFolders;
 
 	if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -260,19 +263,38 @@ async function findBootFirmwareFolder(): Promise<string | null> {
 
 				axonLog(`🔍 build-axon 폴더 기준으로 boot-firmware_tcn1000 검색: ${dirToDisplay(buildAxonUri)}`);
 
-				// build-axon 폴더 내에서 boot-firmware_tcn1000 검색
-				const bootFirmwarePattern = new vscode.RelativePattern(buildAxonUri, `**/boot-firmware_tcn1000/**`);
-				const bootFirmwareFiles = await vscode.workspace.findFiles(bootFirmwarePattern, null, 5);
+				// build-axon 폴더 내에서 boot-firmware_tcn1000 검색 (5초 타임아웃 + 시간 측정)
+				const searchStartTime = Date.now();
 
-				if (bootFirmwareFiles.length > 0) {
-					const foundUri = bootFirmwareFiles[0];
-					const bootFirmwareDir = uriUpToFolderName(foundUri, 'boot-firmware_tcn1000');
-					axonLog(`🎯 build-axon 폴더 내에서 boot-firmware_tcn1000을 찾았습니다: ${dirToDisplay(bootFirmwareDir)}`);
-					const finalPath = bootFirmwareDir.scheme === 'file' ? bootFirmwareDir.fsPath : convertRemotePathToSamba(bootFirmwareDir.path);
-					axonLog(`📝 최종 설정 경로: ${finalPath}`);
-					return finalPath;
-				} else {
-					axonLog(`❌ build-axon 폴더 내에서 boot-firmware_tcn1000를 찾을 수 없습니다.`);
+				// 제외할 폴더 패턴 설정
+				const bootFirmwarePattern = new vscode.RelativePattern(buildAxonUri, `**/boot-firmware_tcn1000/**`);
+				const exclude = new vscode.RelativePattern(buildAxonUri, EXCLUDE_PATTERNS);
+
+				// 취소 토큰과 타이머 설정
+				const cts = new vscode.CancellationTokenSource();
+				const timer = setTimeout(() => cts.cancel(), 5000); // 5초 타임아웃
+
+				try {
+					const bootFirmwareFiles = await vscode.workspace.findFiles(bootFirmwarePattern, exclude, 1, cts.token);
+					const searchEndTime = Date.now();
+					const searchDuration = searchEndTime - searchStartTime;
+					axonLog(`⏱️ build-axon 폴더 boot-firmware 검색 시간: ${searchDuration}ms`);
+
+					if (bootFirmwareFiles.length > 0) {
+						const foundUri = bootFirmwareFiles[0];
+						const bootFirmwareDir = uriUpToFolderName(foundUri, 'boot-firmware_tcn1000');
+						axonLog(`🎯 build-axon 폴더 내에서 boot-firmware_tcn1000을 찾았습니다: ${dirToDisplay(bootFirmwareDir)}`);
+						const finalPath = bootFirmwareDir.scheme === 'file' ? bootFirmwareDir.fsPath : convertRemotePathToSamba(bootFirmwareDir.path);
+						axonLog(`📝 최종 설정 경로: ${finalPath}`);
+						return finalPath;
+					} else {
+						axonLog(`❌ build-axon 폴더 내에서 boot-firmware_tcn1000를 찾을 수 없습니다.`);
+					}
+				} catch (e) {
+					axonLog(`⏱️ build-axon findFiles 취소/실패: ${String(e)}`);
+				} finally {
+					clearTimeout(timer);
+					cts.dispose();
 				}
 			}
 		} else if (workspacePath.includes('linux_yp') || workspacePath.includes('cgw')) {
@@ -289,35 +311,54 @@ async function findBootFirmwareFolder(): Promise<string | null> {
 			for (const folderName of targetFolders) {
 				axonLog(`📋 "${folderName}" 폴더 검색 중...`);
 
-				// ✅ 폴더 내부를 가리키도록 패턴 변경 (폴더 자체는 매칭 불가)
+				// ✅ 폴더 내부를 가리키도록 패턴 변경 (폴더 자체는 매칭 불가, 5초 타임아웃 + 시간 측정)
+				const searchStartTime = Date.now();
+
+				// 제외할 폴더 패턴 설정
 				const include = new vscode.RelativePattern(workspaceFolder, `**/${folderName}/**`);
-				const hits = await vscode.workspace.findFiles(include, null, 1);
+				const exclude = new vscode.RelativePattern(workspaceFolder, EXCLUDE_PATTERNS);
 
-				axonLog(`📊 "${folderName}" 패턴 결과: ${hits.length}개 (base=${workspaceFolder.uri.toString()})`);
+				// 취소 토큰과 타이머 설정
+				const cts = new vscode.CancellationTokenSource();
+				const timer = setTimeout(() => cts.cancel(), 5000); // 5초 타임아웃
 
-				if (hits.length > 0) {
-					const hit = hits[0]; // 폴더 안의 임의의 파일/항목 URI
-					const dirUri = uriUpToFolderName(hit, folderName); // 폴더 경로만 추출
+				try {
+					const hits = await vscode.workspace.findFiles(include, exclude, 1, cts.token);
+					const searchEndTime = Date.now();
+					const searchDuration = searchEndTime - searchStartTime;
+					axonLog(`⏱️ ${folderName} 검색 시간: ${searchDuration}ms`);
 
-					axonLog(`🎯 "${folderName}" 폴더 URI: ${dirUri.toString()}`);
+					axonLog(`📊 "${folderName}" 패턴 결과: ${hits.length}개 (base=${workspaceFolder.uri.toString()})`);
 
-					try {
-						const stat = await vscode.workspace.fs.stat(dirUri);
-						if (stat.type === vscode.FileType.Directory) {
-							axonLog(`✅ ${folderName} 폴더를 찾았습니다: ${dirToDisplay(dirUri)}`);
-							// file 스킴이 아니면 fsPath 사용이 위험하니, 필요 용도에 맞게 반환값 선택
-							const finalPath = dirUri.scheme === 'file' ? dirUri.fsPath : convertRemotePathToSamba(dirUri.path);
-							axonLog(`📝 최종 설정 경로: ${finalPath}`);
-							return finalPath;
-						} else {
-							axonLog(`⚠️ ${folderName}이 폴더가 아닙니다: ${dirToDisplay(dirUri)}`);
+					if (hits.length > 0) {
+						const hit = hits[0]; // 폴더 안의 임의의 파일/항목 URI
+						const dirUri = uriUpToFolderName(hit, folderName); // 폴더 경로만 추출
+
+						axonLog(`🎯 "${folderName}" 폴더 URI: ${dirUri.toString()}`);
+
+						try {
+							const stat = await vscode.workspace.fs.stat(dirUri);
+							if (stat.type === vscode.FileType.Directory) {
+								axonLog(`✅ ${folderName} 폴더를 찾았습니다: ${dirToDisplay(dirUri)}`);
+								// file 스킴이 아니면 fsPath 사용이 위험하니, 필요 용도에 맞게 반환값 선택
+								const finalPath = dirUri.scheme === 'file' ? dirUri.fsPath : convertRemotePathToSamba(dirUri.path);
+								axonLog(`📝 최종 설정 경로: ${finalPath}`);
+								return finalPath;
+							} else {
+								axonLog(`⚠️ ${folderName}이 폴더가 아닙니다: ${dirToDisplay(dirUri)}`);
+							}
+						} catch (statError) {
+							axonLog(`⚠️ stat 실패: ${statError instanceof Error ? statError.message : String(statError)}`);
 						}
-					} catch (statError) {
-						axonLog(`⚠️ stat 실패: ${statError instanceof Error ? statError.message : String(statError)}`);
+					} else {
+						axonLog(`❌ "${folderName}" 패턴으로 아무것도 찾을 수 없습니다.`);
 					}
-				} else {
-					axonLog(`❌ "${folderName}" 패턴으로 아무것도 찾을 수 없습니다.`);
-				} 
+				} catch (e) {
+					axonLog(`⏱️ findFiles 취소/실패: ${String(e)}`);
+				} finally {
+					clearTimeout(timer);
+					cts.dispose();
+				}
 			}
 		}
 
@@ -327,6 +368,135 @@ async function findBootFirmwareFolder(): Promise<string | null> {
 
 	} catch (error) {
 		axonError(`Boot firmware 폴더 검색 중 오류 발생: ${error}`);
+		return null;
+	}
+}
+
+/**
+ * 지정된 디렉토리에서 boot-firmware_tcn1000 폴더를 재귀적으로 검색 (최대 depth 4)
+ */
+async function searchBootFirmwareInDirectory(baseUri: vscode.Uri, currentDepth: number = 0, maxDepth: number = 4): Promise<string | null> {
+	try {
+		// 현재 디렉토리에서 boot-firmware_tcn1000 확인
+		const targetPath = baseUri.with({ path: `${baseUri.path.replace(/\/$/, '')}/boot-firmware_tcn1000` });
+
+		try {
+			const stat = await vscode.workspace.fs.stat(targetPath);
+			if (stat.type === vscode.FileType.Directory) {
+				const finalPath = targetPath.scheme === 'file' ? targetPath.fsPath : convertRemotePathToSamba(targetPath.path);
+				axonLog(`✅ depth ${currentDepth}에서 boot-firmware_tcn1000 폴더를 찾았습니다: ${finalPath}`);
+				return finalPath;
+			}
+		} catch {
+			// 폴더가 없으면 계속 진행
+		}
+
+		// 최대 depth에 도달하지 않았으면 하위 폴더 탐색
+		if (currentDepth < maxDepth) {
+			try {
+				const entries = await vscode.workspace.fs.readDirectory(baseUri);
+
+				// 디렉토리만 필터링 (제외할 폴더 제외)
+				const allDirectories = entries.filter(([name, type]) => type === vscode.FileType.Directory);
+				const directories = allDirectories.filter(([dirName, dirType]) => !EXCLUDE_FOLDERS.includes(dirName));
+				const excludedCount = allDirectories.length - directories.length;
+
+				axonLog(`🔍 depth ${currentDepth}에서 ${directories.length}개 폴더를 탐색합니다... (${excludedCount}개 폴더 제외)`);
+
+				// 각 디렉토리에서 재귀적으로 검색
+				for (const [dirName, dirType] of directories) {
+					const subDirUri = baseUri.with({ path: `${baseUri.path.replace(/\/$/, '')}/${dirName}` });
+
+					const result = await searchBootFirmwareInDirectory(subDirUri, currentDepth + 1, maxDepth);
+					if (result) {
+						return result; // 찾았으면 즉시 반환
+					}
+				}
+			} catch (error) {
+				axonLog(`⚠️ depth ${currentDepth} 폴더 읽기 실패: ${error}`);
+			}
+		}
+
+		return null;
+	} catch (error) {
+		axonLog(`⚠️ depth ${currentDepth} 검색 중 오류: ${error}`);
+		return null;
+	}
+}
+
+/**
+ * 워크스페이스에서 boot-firmware_tcn1000 폴더 검색 함수 (빠른 버전 - depth 4까지 재귀 탐색)
+ * build-axon 폴더나 워크스페이스부터 depth 4까지 boot-firmware_tcn1000 폴더를 재귀적으로 검색
+ */
+async function findBootFirmwareFolder(): Promise<string | null> {
+	const workspaceFolders = vscode.workspace.workspaceFolders;
+
+	if (!workspaceFolders || workspaceFolders.length === 0) {
+		axonLog('❌ 워크스페이스 폴더를 찾을 수 없습니다.');
+		axonLog(`⏱️ 워크스페이스 없음 - 소요시간: 0ms`);
+		return null;
+	}
+
+	const workspaceUri = workspaceFolders[0].uri;
+	const workspacePath = workspaceUri.scheme === 'file' ? workspaceUri.fsPath : workspaceUri.path;
+
+	// 수행 시간 측정 시작
+	const searchStartTime = Date.now();
+	axonLog(`🔍 빠른 방식으로 boot-firmware_tcn1000 검색 시작 (depth 4까지): ${workspacePath}`);
+
+	try {
+		let result: string | null = null;
+
+		// 워크스페이스 경로에 build-axon이 포함되어 있다면 build-axon 폴더를 기준으로 검색
+		if (workspacePath.includes('build-axon')) {
+			axonLog(`✅ 워크스페이스 폴더에 build-axon이 포함되어 있습니다: ${workspacePath}`);
+
+			// 워크스페이스 URI에서 build-axon 폴더까지의 경로 추출
+			const buildAxonIndex = workspaceUri.path.indexOf('build-axon');
+			if (buildAxonIndex !== -1) {
+				const buildAxonPath = workspaceUri.path.substring(0, buildAxonIndex + 'build-axon'.length);
+				const buildAxonUri = workspaceUri.with({ path: buildAxonPath });
+
+				axonLog(`🔍 build-axon 폴더부터 depth 4까지 boot-firmware_tcn1000 검색: ${dirToDisplay(buildAxonUri)}`);
+
+				// build-axon 폴더부터 depth 4까지 재귀 검색
+				result = await searchBootFirmwareInDirectory(buildAxonUri, 0, 4);
+
+				if (result) {
+					const searchEndTime = Date.now();
+					const searchDuration = searchEndTime - searchStartTime;
+					axonLog(`✅ build-axon 폴더에서 boot-firmware_tcn1000 폴더를 찾았습니다: ${result}`);
+					axonLog(`⏱️ build-axon 검색 완료 - 소요시간: ${searchDuration}ms`);
+					return result;
+				}
+			}
+		}
+
+		// 일반적인 경우: 워크스페이스 폴더부터 depth 4까지 검색
+		axonLog(`🔍 워크스페이스 폴더부터 depth 4까지 boot-firmware_tcn1000 검색: ${dirToDisplay(workspaceUri)}`);
+
+		result = await searchBootFirmwareInDirectory(workspaceUri, 0, 4);
+
+		if (result) {
+			const searchEndTime = Date.now();
+			const searchDuration = searchEndTime - searchStartTime;
+			axonLog(`✅ 워크스페이스에서 boot-firmware_tcn1000 폴더를 찾았습니다: ${result}`);
+			axonLog(`⏱️ 워크스페이스 검색 완료 - 소요시간: ${searchDuration}ms`);
+			return result;
+		}
+
+		axonLog(`❌ depth 4까지 검색했지만 boot-firmware_tcn1000 폴더를 찾을 수 없습니다.`);
+
+		const searchEndTime = Date.now();
+		const searchDuration = searchEndTime - searchStartTime;
+		axonLog(`⏱️ 전체 검색 완료 (실패) - 소요시간: ${searchDuration}ms`);
+		return null;
+
+	} catch (error) {
+		const searchEndTime = Date.now();
+		const searchDuration = searchEndTime - searchStartTime;
+		axonError(`빠른 방식으로 Boot firmware 폴더 검색 중 오류 발생: ${error}`);
+		axonLog(`⏱️ 검색 중단 (오류) - 소요시간: ${searchDuration}ms`);
 		return null;
 	}
 }
