@@ -218,10 +218,12 @@ async function updateConfiguration(
 	value: string,
 	label: string
 ): Promise<void> {
-	// 설정 파일에 저장하지 않고 로그만 출력 (사용자 요청)
+	// 설정 파일에 저장
+	const config = vscode.workspace.getConfiguration('axon');
+	await config.update(key, value, vscode.ConfigurationTarget.Workspace);
+
 	axonLog(`✅ ${label} 경로가 설정되었습니다: ${value}`);
 	vscode.window.showInformationMessage(`${label} 경로가 설정되었습니다: ${value}`);
-	// 주석 처리: await config.update(key, value, vscode.ConfigurationTarget.Workspace);
 }
 
 // 워크스페이스에서 boot-firmware_tcn1000 폴더 검색 함수 (원래 버전 - findFiles 사용)
