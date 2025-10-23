@@ -11,6 +11,7 @@ Axon은 MCU 펌웨어 개발을 위한 VS Code 확장 프로그램으로, 복잡
 - **🚀 FWDN MCU 실행**: MCU 펌웨어 업데이트를 위한 FWDN Step 1-3 실행 (로컬 전용)
 - **🚀 FWDN ALL 실행**: 전체 펌웨어 업데이트를 위한 FWDN Step 1-4 실행 (로컬 전용)
 - **🔨 Build and Copy**: MCU 빌드 및 ROM 자동 복사 (원격 전용)
+- **📋 Build and Copy Scripts**: MCU 개발용 스크립트 자동 복사 및 설치 (findBuildAxonFolder로 지능적 검색, scripts_{버전} 폴더 생성, 로컬 scripts/ 폴더를 원격/로컬에 복사)
 - **⚙️ FWDN 실행 파일 경로 설정**: FWDN 실행 파일의 경로를 설정하고 관리
 - **🔍 Boot Firmware 경로 자동 감지**: 워크스페이스에서 boot-firmware_tcn1000 폴더를 **지능적으로 자동 검색**
 - **⚙️ Boot Firmware 경로 수동 설정**: 부트 펌웨어가 위치한 폴더 경로를 수동으로 설정하고 관리
@@ -40,6 +41,7 @@ Axon은 MCU 펌웨어 개발을 위한 VS Code 확장 프로그램으로, 복잡
   - VS Code 콘솔에서 직접 API 테스트 가능
 - **📦 배치 파일 자동 포함**: FWDN 배치 파일을 익스텐션에 포함하여 배포
 - **🔄 실시간 설정 동기화**: 설정 변경 시 즉시 모든 명령에 반영
+- **🐍 MCU Build and Copy**: MCU 빌드 및 ROM 자동 복사 스크립트 (mcu_build_and_copy.py) 포함
 
 ## 요구사항
 
@@ -60,27 +62,27 @@ Axon은 **Universal Extension**으로 설정되어 있지만, **VSIX 파일로 �
    ```bash
    # VS Code Extension Marketplace에서 "Axon" 검색 후 설치
    # 또는
-   code --install-extension axon-0.3.5.vsix
+   code --install-extension axon-0.3.6.vsix
    ```
 
 2. **원격 서버에 수동 설치** (VSIX 파일로 설치한 경우 포함):
    ```bash
    # 1. 로컬에서 .vsix 파일 생성
-   npm run compile && vsce package  # axon-0.3.5.vsix 생성
+   npm run compile && vsce package  # axon-0.3.6.vsix 생성
 
    # 2. .vsix 파일을 원격 서버로 복사
-   scp axon-0.3.5.vsix user@remote-server:/tmp/
+   scp axon-0.3.6.vsix user@remote-server:/tmp/
 
    # 3. 원격 서버에서 설치
    ssh user@remote-server
-   code --install-extension /tmp/axon-0.3.5.vsix
+   code --install-extension /tmp/axon-0.3.6.vsix
    ```
 
    **또는**
 
    ```bash
    # 원격 서버에서 직접 .vsix 다운로드 후 설치
-   code --install-extension axon-0.3.5.vsix
+   code --install-extension axon-0.3.6.vsix
    ```
 
    **⚠️ 중요**: Extension Marketplace나 VSIX 파일로 설치한 경우, **원격 서버에 별도로 설치해야 합니다**
@@ -133,6 +135,44 @@ Axon은 **Universal Extension**으로 설정되어 있지만, **VSIX 파일로 �
 - **ROM 파일 검증**: 60초 timeout으로 최신 파일만 복사
 - **자동 정리**: 임시 파일 자동 삭제
 
+### 📋 Build and Copy Scripts
+
+**MCU 개발용 스크립트 자동 복사 및 설치 기능입니다!**
+
+1. **Command Palette (`Ctrl+Shift+P`)를 열고 "Axon: Build and Copy Scripts" 명령을 실행합니다**
+2. **자동으로 다음 작업이 수행됩니다**:
+   - **환경 감지**: 로컬/원격 환경을 자동으로 감지합니다
+   - **지능적 폴더 검색**: `findBuildAxonFolder` 함수를 사용해서 워크스페이스 내 depth 4까지 재귀적으로 build-axon 폴더를 찾아냅니다
+   - **스크립트 복사**: 로컬의 `scripts/` 폴더의 모든 파일과 폴더가 찾은 build-axon 폴더에 복사됩니다
+   - **버전별 폴더 생성**: `build-axon/scripts_{확장 버전}` (예: `build-axon/scripts_0.3.6`) 폴더가 생성됩니다
+   - **스크립트 실행 확인**: 복사 완료 후 MCU Build and Copy 스크립트 실행 여부를 묻습니다
+
+**⚠️ 원격 환경에서 사용 시**:
+- 로컬 VS Code에 Axon extension이 설치되어 있어야 합니다
+- 원격 서버에는 extension이 설치되지 않아도 됩니다
+- 로컬의 scripts 폴더가 원격 서버의 buildAxonFolderName 폴더로 복사됩니다
+- 원격 SSH에서 Linux 경로(`/home/user/...`)가 올바르게 인식됩니다
+3. **스크립트 실행 시**:
+   - **mcu_build_and_copy.py 실행**: `findBuildAxonFolder`로 찾은 build-axon 폴더에서 스크립트를 실행합니다
+   - **MCU 빌드 경로 계산**: 스크립트가 적절한 빌드 디렉토리를 자동으로 계산합니다
+   - **make 실행**: MCU 빌드를 수행합니다
+   - **ROM 복사**: 최신 tcn100x_snor.rom 파일을 boot-firmware로 복사합니다
+
+#### 🔍 Build and Copy Scripts의 고급 기능
+
+- **지능적 build-axon 검색**: `findBuildAxonFolder` 함수를 사용해서 워크스페이스 내 depth 4까지 재귀적으로 build-axon 폴더를 찾아냅니다
+- **로컬-원격 자동 복사**: 로컬 scripts 폴더를 원격/로컬 워크스페이스에 자동 복사 (Linux 경로 자동 변환)
+- **buildAxonFolderName 설정 연동**: 설정된 buildAxonFolderName 폴더에 자동 복사
+- **자동 버전 관리**: 확장 프로그램 버전에 따라 폴더명 자동 생성
+- **자동 폴더 생성**: buildAxonFolderName 폴더가 없으면 자동으로 생성
+- **안전한 폴더 확인**: fs.statSync를 사용한 정확한 폴더 존재 확인
+- **실시간 모니터링**: VSCode 터미널과 Axon Output 채널에서 모든 과정 확인 가능
+- **상세한 디버깅 로그**: 각 단계별 경로와 상태를 자세히 로그로 출력 (변수 타입, 길이, 변환 과정 포함)
+- **에러 복구**: 복사 실패 시 상세한 에러 메시지와 복구 방법 제공
+- **Linux 경로 검증**: 원격 환경에서 Python 스크립트 실행 시 올바른 Linux 경로 확인
+- **디렉토리 강제 생성**: 파일 복사 시 대상 디렉토리가 반드시 생성되도록 보장
+- **성능 최적화**: 검색 시간 측정과 EXCLUDE_FOLDERS 제외로 빠른 검색
+
 ### ⚡ 빠른 실행
 
 - **F5 키**: 디버깅 모드로 익스텐션 실행 및 테스트
@@ -146,6 +186,7 @@ Axon은 **Universal Extension**으로 설정되어 있지만, **VSIX 파일로 �
 | **Axon: FWDN MCU (Step 1-3)** | MCU 펌웨어 업데이트 실행 | 로컬 |
 | **Axon: FWDN ALL (Step 1-4)** | 전체 펌웨어 업데이트 실행 | 로컬 |
 | **Axon: Build and Copy** | MCU 빌드 + ROM 자동 복사 | 원격 |
+| **Axon: Build and Copy Scripts** | 로컬 scripts 폴더를 findBuildAxonFolder로 찾은 build-axon 폴더에 복사 | 로컬/원격 |
 | **Axon: Configure FWDN Executable Path** | FWDN 실행 파일 경로 설정 | 로컬/원격 |
 
 ### 설정 구성
@@ -298,7 +339,7 @@ npm run package:major    # 메이저 버전 증가
 - Output 패널의 Axon 채널에서 상세한 검색 로그를 확인하세요
 - `**/boot-firmware_tcn1000/**` 패턴으로 폴더 내부의 파일이 있는지 확인하세요
 - 워크스페이스 경로에 `build-axon`이 포함되어 있는지 확인하고, 그 안에서 boot-firmware_tcn1000를 찾아보세요
-- VS Code 콘솔에서 직접 검색 테스트: `vscode.workspace.findFiles('../**/boot-firmware_tcn1000', null, 5)`
+- VS Code 콘솔에서 직접 검색 테스트: `await vscode.workspace.findFiles('../**/boot-firmware_tcn1000', null, 5)`
 
 **원격 환경(SSH/WSL/컨테이너)에서 작동하지 않습니다:**
 - URI 스킴이 `vscode-remote://` 또는 `wsl://`로 시작하는지 확인하세요
@@ -331,8 +372,8 @@ npm run package:major    # 메이저 버전 증가
 npm run compile && vsce package
 
 # 원격 서버로 복사 후 설치
-scp axon-0.3.5.vsix user@remote-server:/tmp/
-ssh user@remote-server "code --install-extension /tmp/axon-0.3.5.vsix"
+scp axon-0.3.6.vsix user@remote-server:/tmp/
+ssh user@remote-server "code --install-extension /tmp/axon-0.3.6.vsix"
 ```
 
 ## 📋 버전 정보
