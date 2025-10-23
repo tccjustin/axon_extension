@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as os from 'os';
 
 // Axon 전용 Output 채널
 let axonOutputChannel: vscode.OutputChannel;
@@ -124,6 +125,95 @@ function getWorkspaceFolder(): vscode.WorkspaceFolder | null {
 	return workspaceFolder;
 }
 
+// FWDN 실행 완료 후 자동 창 닫기 함수 (신호 파일 기반)
+async function executeFwdnWithAutoClose(terminal: vscode.Terminal): Promise<void> {
+	return new Promise((resolve) => {
+		let isCompleted = false;
+
+		try {
+			axonLog('🔍 FWDN 완료 신호 파일 대기 중...');
+
+			// 완료 신호 파일 경로 (배치 파일과 동일한 위치)
+			const signalFile = path.join(os.tmpdir(), 'axon_fwdn_completed.txt');
+
+			// 주기적으로 신호 파일 확인
+			const checkSignalFile = () => {
+				try {
+					if (fs.existsSync(signalFile)) {
+						// 신호 파일 내용 확인
+						const content = fs.readFileSync(signalFile, 'utf8').trim();
+						if (content === 'FWDN_COMPLETED' && !isCompleted) {
+							isCompleted = true;
+							clearInterval(checkInterval!);
+
+							// 신호 파일 삭제
+							try {
+								fs.unlinkSync(signalFile);
+							} catch (deleteError) {
+								axonLog(`⚠️ 신호 파일 삭제 실패: ${deleteError}`);
+							}
+
+							const successMsg = '✅ FWDN 실행 완료! 창을 자동으로 닫습니다.';
+							axonSuccess(successMsg);
+							vscode.window.showInformationMessage(successMsg);
+
+							setTimeout(() => {
+								try {
+									terminal.dispose();
+								} catch (disposeError) {
+									axonLog(`⚠️ 터미널 종료 중 오류: ${disposeError}`);
+								}
+								resolve();
+							}, 1000);
+						}
+					}
+				} catch (error) {
+					axonLog(`⚠️ 신호 파일 확인 중 오류: ${error}`);
+				}
+			};
+
+			// 0.5초마다 신호 파일 확인
+			const checkInterval = setInterval(checkSignalFile, 500);
+
+			// 초기 확인 (즉시 실행)
+			setTimeout(checkSignalFile, 200);
+
+			// 안전장치: 10분 후 강제 종료
+			setTimeout(() => {
+				if (!isCompleted) {
+					axonLog('⏰ FWDN 실행 시간 초과로 정리합니다.');
+					if (checkInterval) clearInterval(checkInterval);
+
+					// 남은 신호 파일 정리
+					try {
+						if (fs.existsSync(signalFile)) {
+							fs.unlinkSync(signalFile);
+						}
+					} catch (deleteError) {
+						axonLog(`⚠️ 신호 파일 정리 실패: ${deleteError}`);
+					}
+
+					try {
+						terminal.dispose();
+					} catch (disposeError) {
+						axonLog(`⚠️ 타임아웃 후 터미널 종료 중 오류: ${disposeError}`);
+					}
+					resolve();
+				}
+			}, 600000); // 10분 타임아웃
+
+		} catch (error) {
+			axonError(`FWDN 완료 처리 중 오류: ${error}`);
+			try {
+				terminal.dispose();
+			} catch (disposeError) {
+				axonLog(`⚠️ 에러 후 터미널 종료 중 오류: ${disposeError}`);
+			}
+			resolve();
+		}
+	});
+}
+
 
 // FWDN 실행 함수 (ALL 모드만)
 async function executeFwdnCommand(extensionPath: string): Promise<void> {
@@ -210,17 +300,16 @@ async function executeFwdnCommand(extensionPath: string): Promise<void> {
 
 		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
 
-		const successMsg = `FWDN ALL (Step 1-4)이 로컬 PowerShell에서 실행되었습니다!`;
-			axonSuccess(successMsg);
-			vscode.window.showInformationMessage(successMsg);
+		// 배치 파일 완료 신호 대기 및 자동 창 닫기
+		await executeFwdnWithAutoClose(terminal);
 
 		axonLog(`✅ FWDN ALL (Step 1-4) 실행 완료`);
 
-		} catch (error) {
+	} catch (error) {
 		const errorMsg = `FWDN ALL (Step 1-4) 실행 중 오류가 발생했습니다: ${error}`;
-			axonError(errorMsg);
-			vscode.window.showErrorMessage(errorMsg);
-		}
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
+	}
 }
 
 

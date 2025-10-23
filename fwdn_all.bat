@@ -107,5 +107,9 @@ if /i "%MODE%"=="mcu" (
     echo FWDN ALL completed successfully!
 )
 echo ==========================================
+
+REM 완료 신호 파일 생성 (VS Code 익스텐션에서 감지용)
+echo FWDN_COMPLETED > "%TEMP%\axon_fwdn_completed.txt"
+
 pause
 endlocal
