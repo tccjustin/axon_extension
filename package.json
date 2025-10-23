@@ -3,8 +3,8 @@
   "displayName": "Axon",
   "publisher": "justin-lee",
   "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.3.1",
-  "extensionKind": ["ui"],
+  "version": "0.3.5",
+  "extensionKind": ["ui", "workspace"],
   "repository": {
     "type": "git",
     "url": "https://github.com/tccjustin/axon_extension.git"
@@ -18,7 +18,9 @@
     "activationEvents": [
     "onCommand:axon.configureFwdnExe",
     "onCommand:axon.FWDN_ALL",
-    "onCommand:axon.mcuBuildMake"
+    "onCommand:axon.mcuBuildMake",
+    "onCommand:axon.configureProjectFolder",
+    "onCommand:axon.configureBootFirmwareFolder"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -37,6 +39,16 @@
         "command": "axon.mcuBuildMake",
         "title": "MCU Build Make",
         "category": "Axon"
+      },
+      {
+        "command": "axon.configureProjectFolder",
+        "title": "Configure Project Folder Name",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.configureBootFirmwareFolder",
+        "title": "Configure Boot Firmware Folder Name",
+        "category": "Axon"
       }
     ],
     "configuration": {
@@ -46,6 +58,16 @@
           "type": "string",
           "default": "C:\\Users\\jhlee17\\work\\FWDN\\fwdn.exe",
           "description": "FWDN executable path"
+        },
+        "axon.buildAxonFolderName": {
+          "type": "string",
+          "default": "build-axon",
+          "description": "Project folder name to search for"
+        },
+        "axon.bootFirmwareFolderName": {
+          "type": "string",
+          "default": "boot-firmware_tcn1000",
+          "description": "Boot firmware folder name to search for"
         }
       }
     },

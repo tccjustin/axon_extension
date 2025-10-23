@@ -8,8 +8,9 @@ Axon은 MCU 펌웨어 개발을 위한 VS Code 확장 프로그램으로, 복잡
 
 ## ✨ 주요 기능
 
-- **🚀 FWDN MCU 실행**: MCU 펌웨어 업데이트를 위한 FWDN Step 1-3 실행
-- **🚀 FWDN ALL 실행**: 전체 펌웨어 업데이트를 위한 FWDN Step 1-4 실행
+- **🚀 FWDN MCU 실행**: MCU 펌웨어 업데이트를 위한 FWDN Step 1-3 실행 (로컬 전용)
+- **🚀 FWDN ALL 실행**: 전체 펌웨어 업데이트를 위한 FWDN Step 1-4 실행 (로컬 전용)
+- **🔨 Build and Copy**: MCU 빌드 및 ROM 자동 복사 (원격 전용)
 - **⚙️ FWDN 실행 파일 경로 설정**: FWDN 실행 파일의 경로를 설정하고 관리
 - **🔍 Boot Firmware 경로 자동 감지**: 워크스페이스에서 boot-firmware_tcn1000 폴더를 **지능적으로 자동 검색**
 - **⚙️ Boot Firmware 경로 수동 설정**: 부트 펌웨어가 위치한 폴더 경로를 수동으로 설정하고 관리
@@ -44,11 +45,58 @@ Axon은 MCU 펌웨어 개발을 위한 VS Code 확장 프로그램으로, 복잡
 
 - VS Code 1.74.0 이상
 
-## 설치
+## 📦 설치 방식
+
+### Universal Extension (로컬 + 원격 자동 설치)
+
+Axon은 **Universal Extension**으로 설정되어 있지만, **VSIX 파일로 설치한 경우**에도 다음과 같이 작동합니다:
+
+- **🖥️ 로컬 환경**: Windows PowerShell 기반 FWDN 실행
+- **🌐 원격 환경**: Remote-SSH 연결 시 **자동으로 설치되지 않습니다** (VSCode Remote-SSH 정책)
+
+### 설치 방법
+
+1. **로컬 VS Code에 설치**:
+   ```bash
+   # VS Code Extension Marketplace에서 "Axon" 검색 후 설치
+   # 또는
+   code --install-extension axon-0.3.5.vsix
+   ```
+
+2. **원격 서버에 수동 설치** (VSIX 파일로 설치한 경우 포함):
+   ```bash
+   # 1. 로컬에서 .vsix 파일 생성
+   npm run compile && vsce package  # axon-0.3.5.vsix 생성
+
+   # 2. .vsix 파일을 원격 서버로 복사
+   scp axon-0.3.5.vsix user@remote-server:/tmp/
+
+   # 3. 원격 서버에서 설치
+   ssh user@remote-server
+   code --install-extension /tmp/axon-0.3.5.vsix
+   ```
+
+   **또는**
+
+   ```bash
+   # 원격 서버에서 직접 .vsix 다운로드 후 설치
+   code --install-extension axon-0.3.5.vsix
+   ```
+
+   **⚠️ 중요**: Extension Marketplace나 VSIX 파일로 설치한 경우, **원격 서버에 별도로 설치해야 합니다**
+
+### 🔧 Extension Development 모드 (테스트용)
+
+**Extension 개발 시 원격 자동 설치가 필요하다면:**
 
 1. 이 저장소를 클론합니다
 2. `npm install` 명령을 실행합니다
-3. `F5` 키를 눌러 확장 프로그램이 로드된 새 창을 엽니다
+3. `F5` 키를 눌러 **Extension Development Host** 실행
+4. **Extension Development Host**에서 Remote-SSH로 원격 서버 연결
+5. **Axon extension이 자동으로 원격 서버에 설치됨**
+6. Command Palette에서 "Axon" 명령어 테스트 가능
+
+**⚠️ 주의**: Extension Development 모드에서만 원격에 자동 설치됩니다
 
 ## 사용법
 
@@ -58,11 +106,47 @@ Axon은 MCU 펌웨어 개발을 위한 VS Code 확장 프로그램으로, 복잡
    - **"Axon: FWDN MCU (Step 1-3)"**: MCU 펌웨어 업데이트 실행
    - **"Axon: FWDN ALL (Step 1-4)"**: 전체 펌웨어 업데이트 실행
 
+### 🔨 Build and Copy (원격 전용)
+
+**⚠️ Remote-SSH 환경에서만 실행됩니다**
+
+**scripts/mcu_build_and_copy.py를 원격에서 실행하여 MCU 빌드와 ROM 복사를 자동화합니다!**
+
+1. **Remote-SSH로 원격 서버에 연결된 상태**에서 Command Palette (`Ctrl+Shift+P`)를 엽니다
+2. **"Axon: Build and Copy"** 명령을 실행합니다
+3. **자동으로 다음 작업이 수행됩니다**:
+   - **build-axon 폴더 지능적 검색**: 상위 경로 + depth 2까지 재귀 탐색
+   - **MCU 빌드 디렉토리 자동 계산**: `linux_yp4.0_cgw_1.x.x_dev/build/tcn1000-mcu/tmp/work/...` 경로 생성
+   - **make 실행**: 원격 bash 터미널에서 make 명령 실행
+   - **ROM 파일 자동 복사**: tcn100x_snor.rom을 boot-firmware에서 찾아서 복사
+     - 60초 timeout 기반 최신 파일 검증
+     - 자동 대상 디렉토리 생성
+     - 복사 완료 후 검증
+4. **실시간 모니터링**:
+   - VSCode 터미널에서 make 및 ROM 복사 과정 실시간 확인
+   - Axon Output 채널에서 각 단계별 상세 로그 확인
+
+#### 🔍 Build and Copy의 고급 기능
+
+- **지능적 build-axon 검색**: 상위 경로부터 현재 디렉토리까지 depth 2까지 탐색
+- **자동 타겟 경로 계산**: build-axon 위치로부터 MCU 빌드 경로 자동 생성
+- **ROM 파일 검증**: 60초 timeout으로 최신 파일만 복사
+- **자동 정리**: 임시 파일 자동 삭제
+
 ### ⚡ 빠른 실행
 
 - **F5 키**: 디버깅 모드로 익스텐션 실행 및 테스트
 - **Ctrl+Shift+P**: Command Palette에서 모든 Axon 명령어 접근
 - **Output 패널 → Axon 채널**: 실시간 로그와 디버깅 정보 확인
+
+### 🚀 모든 사용 가능한 명령어
+
+| 명령어 | 설명 | 환경 |
+|--------|------|------|
+| **Axon: FWDN MCU (Step 1-3)** | MCU 펌웨어 업데이트 실행 | 로컬 |
+| **Axon: FWDN ALL (Step 1-4)** | 전체 펌웨어 업데이트 실행 | 로컬 |
+| **Axon: Build and Copy** | MCU 빌드 + ROM 자동 복사 | 원격 |
+| **Axon: Configure FWDN Executable Path** | FWDN 실행 파일 경로 설정 | 로컬/원격 |
 
 ### 설정 구성
 
@@ -231,14 +315,37 @@ npm run package:major    # 메이저 버전 증가
 
 **익스텐션 명령이 나타나지 않습니다:**
 - VS Code를 완전히 재시작하세요
-- 새 패키지를 다시 설치하세요: `code --install-extension axon-0.3.0.vsix`
+- 새 패키지를 다시 설치하세요: `code --install-extension axon-0.3.5.vsix`
 - Command Palette에서 "Axon"으로 검색하여 사용 가능한 명령 확인
+
+**원격 서버에서 extension이 설치되지 않습니다:**
+- Extension Marketplace나 VSIX 파일로 설치한 경우, 원격에 **자동으로 설치되지 않습니다**
+- **Extension Development 모드(F5)에서만** 원격 연결 시 자동 설치됩니다
+- 상단의 **"원격 서버에 수동 설치"** 방법을 따라해주세요
+- 원격 서버에서 `code --list-extensions` 명령으로 설치 확인
+- 원격 서버의 `~/.vscode-server/extensions/` 디렉토리 확인
+
+**VSIX 파일로 설치한 경우:**
+```bash
+# 로컬에서 VSIX 생성
+npm run compile && vsce package
+
+# 원격 서버로 복사 후 설치
+scp axon-0.3.5.vsix user@remote-server:/tmp/
+ssh user@remote-server "code --install-extension /tmp/axon-0.3.5.vsix"
+```
 
 ## 📋 버전 정보
 
-현재 버전: **0.3.0**
+현재 버전: **0.3.5**
 
-### 🚀 최근 업데이트 (v0.3.0)
+### 🚀 최근 업데이트 (v0.3.5)
+- 🌐 **Universal Extension**: 로컬과 원격 환경 모두에 자동 설치
+  - **extensionKind**: `["ui", "workspace"]`로 변경
+  - **자동 설치**: Remote-SSH 연결 시 원격 서버에 자동 설치
+  - **환경별 기능**: 로컬/원격 전용 명령어 자동 활성화
+
+### 🔄 이전 버전 (v0.3.1)
 - ⚡ **초고속 검색**: 기존 findFiles 방식에서 직접 경로 탐색 방식으로 변경
   - depth 4까지 재귀적 폴더 탐색으로 더 깊고 빠른 검색
   - boot-firmware_tcn1000을 찾는 즉시 중단하여 불필요한 탐색 방지
