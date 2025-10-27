@@ -183,39 +183,21 @@ Axon은 **Universal Extension**으로 설정되어 있지만, **VSIX 파일로 �
 
 | 명령어 | 설명 | 환경 |
 |--------|------|------|
-| **Axon: FWDN MCU (Step 1-3)** | MCU 펌웨어 업데이트 실행 | 로컬 |
 | **Axon: FWDN ALL (Step 1-4)** | 전체 펌웨어 업데이트 실행 | 로컬 |
-| **Axon: Build and Copy** | MCU 빌드 + ROM 자동 복사 | 원격 |
+| **Axon: MCU Build Make** | MCU 빌드를 위한 `make` 명령 실행 | 원격/로컬 |
 | **Axon: Build and Copy Scripts** | 로컬 scripts 폴더를 findBuildAxonFolder로 찾은 build-axon 폴더에 복사 | 로컬/원격 |
-| **Axon: Configure FWDN Executable Path** | FWDN 실행 파일 경로 설정 | 로컬/원격 |
+| **Axon: Configure Settings** | FWDN 경로, Build 폴더명 등 확장 프로그램 관련 설정을 변경합니다. | 로컬/원격 |
 
 ### 설정 구성
 
-#### FWDN 실행 파일 경로 설정
+#### 확장 프로그램 설정 변경
 
 1. Command Palette에서 **"Axon: Configure FWDN Executable Path"** 명령을 실행합니다
-2. FWDN 실행 파일(fwdn.exe)을 선택합니다
-3. 설정이 자동으로 저장됩니다
-
-#### Boot Firmware 경로 자동 감지
-
-1. Command Palette에서 **"Axon: Auto-detect Boot Firmware Path"** 명령을 실행합니다
-2. **지능적 다중 패턴 검색**으로 `boot-firmware_tcn1000` 폴더를 자동으로 검색합니다:
-   - `**/boot-firmware_tcn1000` - 워크스페이스 내 어디든
-   - `**/build-axon/**/boot-firmware_tcn1000` - build-axon 폴더 하위
-   - **워크스페이스 내 build-axon 검색** - 워크스페이스 경로에 build-axon이 포함된 경우, workspace 안의 build-axon 폴더에서 boot-firmware_tcn1000 검색
-   - `**/linux_yp*/**/boot-firmware_tcn1000` - linux_yp로 시작하는 폴더 하위
-   - `**/*linux*yp*/**/boot-firmware_tcn1000` - linux가 포함된 폴더 하위
-   - `**/cgw*/**/boot-firmware_tcn1000` - cgw 폴더 하위
-3. **원격 환경 대응**: SSH, WSL, 컨테이너 환경에서 URI 스킴을 보존하여 안정적 작동
-4. **상세 디버깅 로그**: Output 패널에서 각 단계별 검색 과정을 실시간으로 확인 가능
-5. 검색된 폴더가 Samba 경로로 자동 변환되어 설정됩니다
-
-#### Boot Firmware 경로 수동 설정
-
-1. Command Palette에서 **"Axon: Configure Boot Firmware Path"** 명령을 실행합니다
-2. Boot Firmware가 위치한 폴더를 선택합니다
-3. 설정이 자동으로 저장됩니다
+2. 나타나는 메뉴에서 변경하고자 하는 항목을 선택합니다.
+   - **🔧 FWDN 실행 파일 경로 설정**: `fwdn.exe` 파일의 위치를 설정합니다.
+   - **📁 Build 폴더명 설정**: 프로젝트의 빌드 폴더 이름(예: `build-axon`)을 설정합니다.
+   - **📂 Boot Firmware 폴더명 설정**: Boot Firmware 폴더 이름(예: `boot-firmware_tcn1000`)을 설정합니다.
+3. 안내에 따라 값을 입력하거나 파일을 선택하면 설정이 자동으로 저장됩니다.
 
 ### 기본 설정값
 

@@ -4,7 +4,7 @@
   "publisher": "justin-lee",
   "description": "A powerful VS Code extension for enhanced development experience",
   "version": "0.3.7",
-  "extensionKind": ["ui"],
+  "extensionKind": ["ui","workspace"],
   "repository": {
     "type": "git",
     "url": "https://github.com/tccjustin/axon_extension.git"
@@ -17,18 +17,22 @@
   ],
     "activationEvents": [
     "onCommand:axon.configureFwdnExe",
+    "onCommand:axon.configureSettings",
     "onCommand:axon.FWDN_ALL",
     "onCommand:axon.mcuBuildMake",
     "onCommand:axon.configureProjectFolder",
     "onCommand:axon.configureBootFirmwareFolder",
-    "onCommand:axon.buildAndCopyScripts"
+    "onCommand:axon.buildAndCopyScripts",
+    "onCommand:axon.createMcuStandaloneProject",
+    "onCommand:axon.createYoctoProject",
+    "onView:axonProjectView"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "axon.configureFwdnExe",
-        "title": "Configure FWDN Executable Path",
+        "command": "axon.configureSettings",
+        "title": "Configure Settings",
         "category": "Axon"
       },
       {
@@ -55,8 +59,51 @@
         "command": "axon.buildAndCopyScripts",
         "title": "Build and Copy Scripts",
         "category": "Axon"
+      },
+      {
+        "command": "axon.createMcuStandaloneProject",
+        "title": "Create MCU Standalone Project",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.createYoctoProject",
+        "title": "Create Yocto Project",
+        "category": "Axon"
       }
     ],
+    "views": {
+      "axon": [
+        {
+          "id": "axonProjectView",
+          "name": "Projects",
+          "icon": "$(circuit-board)",
+          "contextualTitle": "Axon Project Tools"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "axon",
+          "title": "Axon",
+          "icon": "$(circuit-board)"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "axon.createMcuStandaloneProject",
+          "when": "view == axonProjectView",
+          "group": "navigation"
+        },
+        {
+          "command": "axon.createYoctoProject",
+          "when": "view == axonProjectView",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "Axon",
       "properties": {
@@ -74,6 +121,11 @@
           "type": "string",
           "default": "boot-firmware_tcn1000",
           "description": "Boot firmware folder name to search for"
+        },
+        "axon.git.executablePath": {
+          "type": "string",
+          "default": "git",
+          "description": "Path to the Git executable. (No longer used, relies on built-in Git extension)"
         }
       }
     },
