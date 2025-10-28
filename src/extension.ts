@@ -632,23 +632,23 @@ class McuProjectDialog {
 			// 'FileNotFound' 오류는 정상적인 경우이므로 무시하고 계속 진행
 		}
 
-		// 항상 Git Clone을 사용하여 프로젝트 생성
+		// 프로젝트 폴더를 먼저 생성합니다.
+		axonLog(`📂 새 프로젝트 폴더 생성: ${projectFullUri.toString()}`);
+		await vscode.workspace.fs.createDirectory(projectFullUri);
+
+		// Git Clone을 사용하여 프로젝트 생성
 		axonLog(`🔄 Git 저장소에서 프로젝트 생성: ${gitUrl}`);
-		// git clone은 부모 디렉토리에서 실행해야 하므로 projectUri의 경로를 사용합니다.
-		// clone 명령어는 자동으로 `projectName` 폴더를 생성합니다.
-		// 원격 환경에서는 fsPath 대신 path를 사용해야 올바른 경로가 전달됩니다.
-		const parentPath = projectUri.scheme === 'file'
-			? projectUri.fsPath
-			: projectUri.path;
-		await this.cloneGitRepository(gitUrl, projectName, parentPath);
+		const projectPath = projectFullUri.scheme === 'file'
+			? projectFullUri.fsPath
+			: projectFullUri.path;
+		
+		// 새로 생성된 폴더 안으로 클론합니다.
+		await this.cloneGitRepository(gitUrl, projectPath);
 		axonSuccess(`✅ Git 저장소 '${gitUrl}'을(를) '${projectFullUri.toString()}'에 클론했습니다.`);
 
 		// 새 브랜치 이름이 제공된 경우, 브랜치 생성 및 푸시 작업 실행
 		if (branchName) {
 			axonLog(`🌿 새 브랜치 '${branchName}' 생성 및 푸시 작업을 시작합니다.`);
-			const projectPath = projectFullUri.scheme === 'file'
-				? projectFullUri.fsPath
-				: projectFullUri.path;
 			await this.createAndPushBranch(branchName, projectPath);
 			axonSuccess(`✅ 새 브랜치 '${branchName}'를 원격 저장소에 성공적으로 푸시했습니다.`);
 		}
@@ -657,16 +657,16 @@ class McuProjectDialog {
 		await vscode.commands.executeCommand('vscode.openFolder', projectFullUri, { forceNewWindow: true });
 	}
 
-	private async cloneGitRepository(gitUrl: string, projectName: string, parentDir: string): Promise<void> {
-		axonLog(`🔄 Cloning repository using VS Code Tasks API...`);
-		const command = `git clone --progress "${gitUrl}" "${projectName}"`;
+	private async cloneGitRepository(gitUrl: string, targetDir: string): Promise<void> {
+		axonLog(`🔄 Cloning repository using VS Code Tasks API into ${targetDir}...`);
+		const command = `git clone --progress "${gitUrl}"`;
 
 		const task = new vscode.Task(
 			{ type: 'shell', task: 'gitClone' },
 			vscode.TaskScope.Workspace,
 			'Git Clone',
 			'Axon',
-			new vscode.ShellExecution(command, { cwd: parentDir })
+			new vscode.ShellExecution(command, { cwd: targetDir })
 		);
 
 		// 터미널이 포커스를 뺏지 않도록 설정
