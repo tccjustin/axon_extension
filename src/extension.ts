@@ -160,7 +160,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	
 	// 버전 정보 표시
 	const extension = vscode.extensions.getExtension('justin-lee.axon');
-	const version = extension?.packageJSON.version || '0.3.7';
+	const version = extension?.packageJSON.version || 'not defined';
 	
 	axonLog('===========================================');
 	axonLog('Axon extension is now active!');
