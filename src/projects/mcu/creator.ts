@@ -66,6 +66,11 @@ export class McuProjectCreator {
 		await this.runMcuBootfw(projectPath);
 		axonSuccess(`✅ MCU bootfw 빌드가 완료되었습니다.`);
 
+		// .vscode/settings.json 생성
+		axonLog(`⚙️ 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
+		await this.createVscodeSettings(projectFullUri);
+		axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
+
 		// 생성된 프로젝트 폴더를 VS Code에서 열기
 		await vscode.commands.executeCommand('vscode.openFolder', projectFullUri, { forceNewWindow: true });
 	}
@@ -234,6 +239,49 @@ export class McuProjectCreator {
 				reject(new Error(`Failed to start MCU bootfw build task: ${error}`));
 			});
 		});
+	}
+
+	/**
+	 * .vscode/settings.json 파일 생성
+	 */
+	private static async createVscodeSettings(projectFullUri: vscode.Uri): Promise<void> {
+		axonLog(`⚙️ .vscode/settings.json 생성 시작`);
+
+		// .vscode 폴더 경로
+		const vscodeFolder = vscode.Uri.joinPath(projectFullUri, '.vscode');
+		
+		// .vscode 폴더 생성
+		try {
+			await vscode.workspace.fs.createDirectory(vscodeFolder);
+			axonLog(`✅ .vscode 폴더 생성 완료: ${vscodeFolder.fsPath}`);
+		} catch (error) {
+			axonLog(`⚠️ .vscode 폴더가 이미 존재하거나 생성 중 오류: ${error}`);
+		}
+
+		// settings.json 파일 경로
+		const settingsFile = vscode.Uri.joinPath(vscodeFolder, 'settings.json');
+
+		// 기존 settings.json 읽기 (있으면)
+		let existingSettings: any = {};
+		try {
+			const existingContent = await vscode.workspace.fs.readFile(settingsFile);
+			const existingText = Buffer.from(existingContent).toString('utf8');
+			existingSettings = JSON.parse(existingText);
+			axonLog(`📖 기존 settings.json 파일을 읽었습니다`);
+		} catch (error) {
+			axonLog(`📝 새로운 settings.json 파일을 생성합니다`);
+		}
+
+		// 설정 추가 또는 업데이트
+		existingSettings['axon.buildAxonFolderName'] = 'mcu-tcn100x';
+		existingSettings['axon.bootFirmwareFolderName'] = 'boot-firmware-tcn100x';
+
+		// JSON 문자열로 변환 (들여쓰기 포함)
+		const settingsContent = JSON.stringify(existingSettings, null, 4);
+
+		// 파일 쓰기
+		await vscode.workspace.fs.writeFile(settingsFile, Buffer.from(settingsContent, 'utf8'));
+		axonLog(`✅ settings.json 파일 저장 완료: ${settingsFile.fsPath}`);
 	}
 }
 
