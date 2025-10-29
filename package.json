@@ -169,7 +169,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "precompile": "npm install",
+    "precompile": "node -e \"try{const fs=require('fs'),crypto=require('crypto');const lock='package-lock.json';const nm='node_modules';const mark=nm+'/.depshash';if(!fs.existsSync(nm)||!fs.existsSync(lock)||!fs.existsSync(mark)){process.exit(1);}const h=crypto.createHash('sha256').update(fs.readFileSync(lock,'utf8')).digest('hex');process.exit(fs.readFileSync(mark,'utf8')===h?0:1);}catch(e){process.exit(1)}\" || (npm ci --prefer-offline --no-audit --progress=false && node -e \"const fs=require('fs'),crypto=require('crypto');const h=crypto.createHash('sha256').update(fs.readFileSync('package-lock.json','utf8')).digest('hex');fs.mkdirSync('node_modules',{recursive:true});fs.writeFileSync('node_modules/.depshash',h)\")",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
