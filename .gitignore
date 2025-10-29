@@ -10,7 +10,7 @@ dist/
 *.vsix
 
 # IDE files
-.vscode/
+
 .idea/
 *.swp
 *.swo
