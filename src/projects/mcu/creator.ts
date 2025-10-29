@@ -12,6 +12,17 @@ export interface McuProjectData {
 }
 
 /**
+ * Shell Task 실행 옵션
+ */
+interface ShellTaskOptions {
+	command: string;
+	cwd: string;
+	taskName: string;
+	taskId: string;
+	showTerminal?: boolean;  // true: 터미널 표시 및 포커스, false: 숨김 (기본값: false)
+}
+
+/**
  * MCU 프로젝트 생성 및 빌드 작업을 처리하는 클래스
  */
 export class McuProjectCreator {
@@ -76,24 +87,23 @@ export class McuProjectCreator {
 	}
 
 	/**
-	 * Git 저장소 클론
+	 * Shell Task 실행 공통 함수
 	 */
-	private static async cloneGitRepository(gitUrl: string, targetDir: string): Promise<void> {
-		axonLog(`🔄 Cloning repository using VS Code Tasks API into ${targetDir}...`);
-		const command = `git clone --progress "${gitUrl}"`;
+	private static async executeShellTask(options: ShellTaskOptions): Promise<void> {
+		const { command, cwd, taskName, taskId, showTerminal = false } = options;
 
 		const task = new vscode.Task(
-			{ type: 'shell', task: 'gitClone' },
+			{ type: 'shell', task: taskId },
 			vscode.TaskScope.Workspace,
-			'Git Clone',
+			taskName,
 			'Axon',
-			new vscode.ShellExecution(command, { cwd: targetDir })
+			new vscode.ShellExecution(command, { cwd })
 		);
 
-		// 터미널이 포커스를 뺏지 않도록 설정
+		// 터미널 표시 옵션 설정
 		task.presentationOptions = {
-			reveal: vscode.TaskRevealKind.Silent,
-			focus: false,
+			reveal: showTerminal ? vscode.TaskRevealKind.Always : vscode.TaskRevealKind.Silent,
+			focus: showTerminal,
 			panel: vscode.TaskPanelKind.Shared,
 			showReuseMessage: false,
 			clear: true
@@ -101,19 +111,34 @@ export class McuProjectCreator {
 
 		return new Promise<void>((resolve, reject) => {
 			const disposable = vscode.tasks.onDidEndTaskProcess(e => {
-				if (e.execution.task.name === 'Git Clone') {
+				if (e.execution.task.name === taskName) {
 					disposable.dispose();
 					if (e.exitCode === 0) {
 						resolve();
 					} else {
-						reject(new Error(`Git clone failed with exit code ${e.exitCode}. Check the terminal for details.`));
+						reject(new Error(`${taskName} failed with exit code ${e.exitCode}. Check the terminal for details.`));
 					}
 				}
 			});
 
 			vscode.tasks.executeTask(task).then(undefined, (error) => {
-				reject(new Error(`Failed to start Git clone task: ${error}`));
+				reject(new Error(`Failed to start ${taskName} task: ${error}`));
 			});
+		});
+	}
+
+	/**
+	 * Git 저장소 클론
+	 */
+	private static async cloneGitRepository(gitUrl: string, targetDir: string): Promise<void> {
+		axonLog(`🔄 Cloning repository using VS Code Tasks API into ${targetDir}...`);
+		
+		await this.executeShellTask({
+			command: `git clone --progress "${gitUrl}"`,
+			cwd: targetDir,
+			taskName: 'Git Clone',
+			taskId: 'gitClone',
+			showTerminal: true
 		});
 	}
 
@@ -122,40 +147,13 @@ export class McuProjectCreator {
 	 */
 	private static async createAndPushBranch(branchName: string, projectDir: string): Promise<void> {
 		axonLog(`🔄 Running branch creation task in: ${projectDir}`);
-		// 1. 새 브랜치 생성 및 전환 -> 2. 원격에 푸시하고 업스트림 설정
-		const command = `git switch -c "${branchName}" && git push -u origin "${branchName}"`;
-
-		const task = new vscode.Task(
-			{ type: 'shell', task: 'createAndPushBranch' },
-			vscode.TaskScope.Workspace,
-			'Create and Push Branch',
-			'Axon',
-			new vscode.ShellExecution(command, { cwd: projectDir })
-		);
-
-		task.presentationOptions = {
-			reveal: vscode.TaskRevealKind.Silent,
-			focus: false,
-			panel: vscode.TaskPanelKind.Shared,
-			showReuseMessage: false,
-			clear: true
-		};
-
-		return new Promise<void>((resolve, reject) => {
-			const disposable = vscode.tasks.onDidEndTaskProcess(e => {
-				if (e.execution.task.name === 'Create and Push Branch') {
-					disposable.dispose();
-					if (e.exitCode === 0) {
-						resolve();
-					} else {
-						reject(new Error(`Branch creation/push failed with exit code ${e.exitCode}. Check the terminal for details.`));
-					}
-				}
-			});
-
-			vscode.tasks.executeTask(task).then(undefined, (error) => {
-				reject(new Error(`Failed to start branch creation task: ${error}`));
-			});
+		
+		await this.executeShellTask({
+			command: `git switch -c "${branchName}" && git push -u origin "${branchName}"`,
+			cwd: projectDir,
+			taskName: 'Create and Push Branch',
+			taskId: 'createAndPushBranch',
+			showTerminal: true
 		});
 	}
 
@@ -164,39 +162,13 @@ export class McuProjectCreator {
 	 */
 	private static async runMcuDefconfig(projectDir: string): Promise<void> {
 		axonLog(`🔄 Running MCU defconfig in: ${projectDir}/mcu-tcn100x`);
-		const command = `cd mcu-tcn100x && make tcn100x_m7-1_defconfig`;
-
-		const task = new vscode.Task(
-			{ type: 'shell', task: 'mcuDefconfig' },
-			vscode.TaskScope.Workspace,
-			'MCU Defconfig',
-			'Axon',
-			new vscode.ShellExecution(command, { cwd: projectDir })
-		);
-
-		task.presentationOptions = {
-			reveal: vscode.TaskRevealKind.Always,
-			focus: true,
-			panel: vscode.TaskPanelKind.Shared,
-			showReuseMessage: false,
-			clear: true
-		};
-
-		return new Promise<void>((resolve, reject) => {
-			const disposable = vscode.tasks.onDidEndTaskProcess(e => {
-				if (e.execution.task.name === 'MCU Defconfig') {
-					disposable.dispose();
-					if (e.exitCode === 0) {
-						resolve();
-					} else {
-						reject(new Error(`MCU defconfig failed with exit code ${e.exitCode}. Check the terminal for details.`));
-					}
-				}
-			});
-
-			vscode.tasks.executeTask(task).then(undefined, (error) => {
-				reject(new Error(`Failed to start MCU defconfig task: ${error}`));
-			});
+		
+		await this.executeShellTask({
+			command: `cd mcu-tcn100x && make tcn100x_m7-1_defconfig`,
+			cwd: projectDir,
+			taskName: 'MCU Defconfig',
+			taskId: 'mcuDefconfig',
+			showTerminal: true  // 터미널 표시
 		});
 	}
 
@@ -205,39 +177,13 @@ export class McuProjectCreator {
 	 */
 	private static async runMcuBootfw(projectDir: string): Promise<void> {
 		axonLog(`🔄 Running MCU bootfw build in: ${projectDir}/mcu-tcn100x`);
-		const command = `cd mcu-tcn100x && make bootfw`;
-
-		const task = new vscode.Task(
-			{ type: 'shell', task: 'mcuBootfw' },
-			vscode.TaskScope.Workspace,
-			'MCU Bootfw Build',
-			'Axon',
-			new vscode.ShellExecution(command, { cwd: projectDir })
-		);
-
-		task.presentationOptions = {
-			reveal: vscode.TaskRevealKind.Always,
-			focus: true,
-			panel: vscode.TaskPanelKind.Shared,
-			showReuseMessage: false,
-			clear: true
-		};
-
-		return new Promise<void>((resolve, reject) => {
-			const disposable = vscode.tasks.onDidEndTaskProcess(e => {
-				if (e.execution.task.name === 'MCU Bootfw Build') {
-					disposable.dispose();
-					if (e.exitCode === 0) {
-						resolve();
-					} else {
-						reject(new Error(`MCU bootfw build failed with exit code ${e.exitCode}. Check the terminal for details.`));
-					}
-				}
-			});
-
-			vscode.tasks.executeTask(task).then(undefined, (error) => {
-				reject(new Error(`Failed to start MCU bootfw build task: ${error}`));
-			});
+		
+		await this.executeShellTask({
+			command: `cd mcu-tcn100x && make bootfw`,
+			cwd: projectDir,
+			taskName: 'MCU Bootfw Build',
+			taskId: 'mcuBootfw',
+			showTerminal: true  // 터미널 표시
 		});
 	}
 
