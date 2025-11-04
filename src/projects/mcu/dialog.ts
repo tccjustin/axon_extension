@@ -1,457 +1,163 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
 import { McuProjectCreator } from './creator';
+import { axonLog } from '../../logger';
+
+const fsp = fs.promises; // 비동기 파일 I/O
 
 /**
  * MCU 프로젝트 생성 다이얼로그 (WebView UI)
  */
 export class McuProjectDialog {
 	private webview?: vscode.WebviewPanel;
+	private commandStartTime?: number; // 커맨드 시작 시간
+	
+	// 캐싱: 원본 파일 (템플릿) 및 최종 HTML
+	private rawHtml?: string;
+	private rawCss?: string;
+	private rawJs?: string;
 
-	constructor(private context: vscode.ExtensionContext) {}
-
-	/**
-	 * WebView HTML 컨텐츠 생성
-	 */
-	private getWebviewContent(): string {
-		return `<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MCU Standalone Project 생성</title>
-    <style>
-        :root {
-            /* VS Code Light Theme */
-            --vscode-bg-primary: #ffffff;
-            --vscode-bg-secondary: #f3f3f3;
-            --vscode-bg-tertiary: #f8f8f8;
-            --vscode-fg-primary: #000000;
-            --vscode-fg-secondary: #6c6c6c;
-            --vscode-fg-tertiary: #989898;
-            --vscode-border-primary: #d4d4d4;
-            --vscode-border-secondary: #e5e5e5;
-            --vscode-accent-primary: #007acc;
-            --vscode-accent-secondary: #005a9e;
-            --vscode-focus-border: #007acc;
-            --vscode-input-bg: #ffffff;
-            --vscode-input-border: #cecece;
-            --vscode-input-focus-border: #007acc;
-            --vscode-button-bg: #007acc;
-            --vscode-button-hover: #005a9e;
-            --vscode-button-secondary: #6c757d;
-            --vscode-shadow: rgba(0, 0, 0, 0.1);
-            --vscode-success: #28a745;
-            --vscode-error: #dc3545;
-            --vscode-warning: #ffc107;
-        }
-
-        /* VS Code Dark Theme */
-        .vscode-dark {
-            --vscode-bg-primary: #1e1e1e;
-            --vscode-bg-secondary: #2d2d30;
-            --vscode-bg-tertiary: #252526;
-            --vscode-fg-primary: #cccccc;
-            --vscode-fg-secondary: #969696;
-            --vscode-fg-tertiary: #6a9955;
-            --vscode-border-primary: #3e3e42;
-            --vscode-border-secondary: #454545;
-            --vscode-accent-primary: #007acc;
-            --vscode-accent-secondary: #005a9e;
-            --vscode-focus-border: #007acc;
-            --vscode-input-bg: #3c3c3c;
-            --vscode-input-border: #3e3e42;
-            --vscode-input-focus-border: #007acc;
-            --vscode-button-bg: #0e639c;
-            --vscode-button-hover: #1177bb;
-            --vscode-button-secondary: #6c757d;
-            --vscode-shadow: rgba(0, 0, 0, 0.3);
-            --vscode-success: #4ade80;
-            --vscode-error: #f87171;
-            --vscode-warning: #fbbf24;
-        }
-
-        /* High Contrast Theme */
-        .vscode-high-contrast {
-            --vscode-bg-primary: #000000;
-            --vscode-bg-secondary: #000000;
-            --vscode-fg-primary: #ffffff;
-            --vscode-border-primary: #ffffff;
-            --vscode-accent-primary: #ffffff;
-        }
-
-        body {
-            font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif);
-            font-size: var(--vscode-font-size, 13px);
-            margin: 0;
-            padding: 20px;
-            background: var(--vscode-bg-secondary);
-            color: var(--vscode-fg-primary);
-            line-height: 1.5;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            background: var(--vscode-bg-primary);
-            border-radius: 8px;
-            box-shadow: 0 2px 10px var(--vscode-shadow);
-            overflow: hidden;
-            border: 1px solid var(--vscode-border-primary);
-        }
-        .header {
-            background: var(--vscode-accent-primary);
-            color: var(--vscode-fg-primary);
-            padding: 20px;
-            text-align: center;
-        }
-        .header h1 {
-            margin: 0;
-            font-size: 20px;
-            font-weight: 600;
-        }
-        .form-section {
-            padding: 20px;
-            background: var(--vscode-bg-primary);
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: var(--vscode-fg-primary);
-        }
-        .form-group input {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid var(--vscode-input-border);
-            background: var(--vscode-input-bg);
-            color: var(--vscode-fg-primary);
-            border-radius: 4px;
-            font-size: 14px;
-            box-sizing: border-box;
-        }
-        .form-group input:focus {
-            outline: none;
-            border-color: var(--vscode-input-focus-border);
-            box-shadow: 0 0 0 2px var(--vscode-focus-border);
-        }
-        .form-group input[readonly] {
-            background: var(--vscode-bg-tertiary);
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-        .button-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 10px;
-        }
-        .button-group input {
-            flex: 1;
-        }
-        .button-group button {
-            padding: 12px 20px;
-            background: var(--vscode-button-bg);
-            color: var(--vscode-fg-primary);
-            border: 1px solid var(--vscode-border-primary);
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background-color 0.2s;
-        }
-        .button-group button:hover {
-            background: var(--vscode-button-hover);
-        }
-        .button-group button:disabled {
-            background: var(--vscode-bg-tertiary);
-            color: var(--vscode-fg-secondary);
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            margin-top: 15px;
-        }
-        .checkbox-group input {
-            margin-right: 10px;
-            transform: scale(1.2);
-        }
-        .actions {
-            padding: 20px;
-            background: var(--vscode-bg-tertiary);
-            border-top: 1px solid var(--vscode-border-primary);
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-        }
-        .btn {
-            padding: 12px 24px;
-            border: 1px solid var(--vscode-border-primary);
-            border-radius: 4px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            background: var(--vscode-button-secondary);
-            color: var(--vscode-fg-primary);
-        }
-        .btn-primary {
-            background: var(--vscode-button-bg);
-            color: var(--vscode-fg-primary);
-            border-color: var(--vscode-accent-primary);
-        }
-        .btn-primary:hover {
-            background: var(--vscode-button-hover);
-        }
-        .btn-primary:disabled {
-            background: var(--vscode-bg-tertiary);
-            color: var(--vscode-fg-secondary);
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-        .btn-secondary {
-            background: var(--vscode-button-secondary);
-            color: var(--vscode-fg-primary);
-        }
-        .btn-secondary:hover {
-            background: var(--vscode-accent-secondary);
-        }
-        .message {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            border-radius: 4px;
-            color: var(--vscode-fg-primary);
-            font-weight: 500;
-            z-index: 1000;
-            animation: slideIn 0.3s ease-out;
-            border: 1px solid var(--vscode-border-primary);
-        }
-        .message.success {
-            background: var(--vscode-success);
-            border-color: var(--vscode-success);
-        }
-        .message.error {
-            background: var(--vscode-error);
-            border-color: var(--vscode-error);
-        }
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>MCU Standalone Project 생성</h1>
-        </div>
-
-        <div class="form-section">
-            <form id="projectForm">
-                <div class="form-group">
-                    <label for="projectName">프로젝트 이름 *</label>
-                    <input type="text" id="projectName" placeholder="예: my-mcu-project" required />
-                </div>
-
-                <div class="form-group">
-                    <label for="projectPath">프로젝트 생성 위치 *</label>
-                    <div class="button-group">
-                        <input type="text" id="projectPath" readonly required />
-                        <button type="button" id="browseBtn">Browse</button>
-                    </div>
-                </div>
-
-                <div class="form-group" id="gitUrlGroup">
-                    <label for="gitUrl">Git 저장소 URL *</label>
-                    <input type="text" id="gitUrl" value="ssh://git@bitbucket.telechips.com:7999/linux_yp4_0_cgw/mcu-tcn100x.git" required />
-                </div>
-
-                <div class="form-group">
-                    <label for="branchName">새 브랜치 이름 (선택사항)</label>
-                    <input type="text" id="branchName" placeholder="예: feature/new-function" />
-                </div>
-            </form>
-        </div>
-
-        <div class="actions">
-            <button class="btn btn-secondary" id="cancelBtn">취소</button>
-            <button class="btn btn-primary" id="createBtn" disabled>생성</button>
-        </div>
-    </div>
-
-    <script>
-        (function() {
-            const vscode = acquireVsCodeApi();
-            let selectedPath = '';
-
-            // VS Code 테마 감지 및 적용
-            function updateTheme() {
-                const theme = vscode.getState()?.theme || 'light';
-                document.body.className = theme === 'dark' ? 'vscode-dark' :
-                                         theme === 'high-contrast' ? 'vscode-high-contrast' : '';
-            }
-
-            // 초기 테마 설정
-            updateTheme();
-
-            // VS Code에서 메시지 받기
-            window.addEventListener('message', function(event) {
-                const message = event.data;
-
-                switch (message.command) {
-                    case 'setTheme':
-                        vscode.setState({ theme: message.theme });
-                        updateTheme();
-                        break;
-                }
-            });
-
-            // DOM 요소들
-            const projectNameInput = document.getElementById('projectName');
-            const projectPathInput = document.getElementById('projectPath');
-            const gitUrlInput = document.getElementById('gitUrl');
-            const branchNameInput = document.getElementById('branchName');
-            const createBtn = document.getElementById('createBtn');
-            const cancelBtn = document.getElementById('cancelBtn');
-
-            // 폼 유효성 검사
-            function validateForm() {
-                const projectName = projectNameInput.value.trim();
-                const gitUrl = gitUrlInput.value.trim();
-                const hasPath = selectedPath.trim().length > 0;
-                createBtn.disabled = !projectName || !hasPath || !gitUrl;
-            }
-
-            // 이벤트 리스너 등록
-            projectNameInput.addEventListener('input', validateForm);
-            gitUrlInput.addEventListener('input', validateForm);
-
-            // Browse 버튼 클릭
-            document.getElementById('browseBtn').addEventListener('click', function() {
-                vscode.postMessage({ command: 'browseFolder' });
-            });
-
-            // 취소 버튼 클릭
-            cancelBtn.addEventListener('click', function() {
-                vscode.postMessage({ command: 'cancel' });
-            });
-
-            // 생성 버튼 클릭
-            createBtn.addEventListener('click', function() {
-                const projectName = projectNameInput.value.trim();
-                const projectPath = selectedPath;
-                const gitUrl = gitUrlInput.value.trim();
-                const branchName = branchNameInput.value.trim();
-
-                if (!projectName || !projectPath || !gitUrl) {
-                    showMessage('프로젝트 이름, 생성 위치, Git URL을 모두 입력해주세요.', 'error');
-                    return;
-                }
-
-                // 로딩 상태 표시
-                createBtn.disabled = true;
-                createBtn.textContent = '생성 중...';
-
-                vscode.postMessage({
-                    command: 'createProject',
-                    data: {
-                        projectName: projectName,
-                        projectPath: projectPath,
-                        gitUrl: gitUrl,
-                        branchName: branchName
-                    }
-                });
-            });
-
-            // 메시지 표시 함수
-            function showMessage(text, type = 'info') {
-                const messageDiv = document.createElement('div');
-                messageDiv.textContent = text;
-                messageDiv.className = 'message ' + type;
-                document.body.appendChild(messageDiv);
-
-                setTimeout(() => {
-                    messageDiv.remove();
-                }, 5000);
-            }
-
-            // VS Code에서 메시지 받기
-            window.addEventListener('message', function(event) {
-                const message = event.data;
-
-                switch (message.command) {
-                    case 'setFolderPath':
-                        selectedPath = message.path;
-                        projectPathInput.value = message.path;
-                        validateForm();
-                        break;
-                    case 'projectCreated':
-                        createBtn.disabled = false;
-                        createBtn.textContent = '생성';
-
-                        if (message.success) {
-                            showMessage('프로젝트가 성공적으로 생성되었습니다!', 'success');
-                        } else {
-                            showMessage('프로젝트 생성에 실패했습니다: ' + (message.error || '알 수 없는 오류'), 'error');
-                        }
-                        break;
-                }
-            });
-        })();
-    </script>
-</body>
-</html>`;
+	constructor(private context: vscode.ExtensionContext) {
+		// 비동기 선로딩: Extension 활성화 시 파일을 미리 메모리에 로드
+		this.preloadAssets();
 	}
 
 	/**
-	 * 프로젝트 생성 WebView 표시
+	 * nonce 생성 (CSP용)
 	 */
-	async showProjectCreationWebView(): Promise<void> {
-		// Webview 패널 생성 (에디터 영역에 표시)
+	private createNonce(): string {
+		const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+		let text = '';
+		for (let i = 0; i < 32; i++) {
+			text += possible.charAt(Math.floor(Math.random() * possible.length));
+		}
+		return text;
+	}
+
+	/**
+	 * 비동기 선로딩: Extension 활성화 시 백그라운드에서 파일 로드
+	 */
+	private async preloadAssets(): Promise<void> {
+		try {
+			const preloadStart = Date.now();
+			await this.loadRawAssets();
+			const preloadTime = Date.now() - preloadStart;
+			axonLog(`⚡ [Pre-loading] Webview 에셋 선로딩 완료: ${preloadTime}ms`);
+		} catch (error) {
+			axonLog(`⚠️ [Pre-loading] 에셋 로딩 실패: ${error}`);
+		}
+	}
+
+	/**
+	 * 비동기 파일 로딩 + 캐싱 (블로킹 없음)
+	 */
+	private async loadRawAssets(): Promise<void> {
+		// 이미 로드되었으면 스킵
+		if (this.rawHtml && this.rawCss && this.rawJs) {
+			return;
+		}
+
+		const webviewPath = path.join(this.context.extensionPath, 'out', 'webview');
+		
+		// 병렬 로딩 (빠름!)
+		const [html, css, js] = await Promise.all([
+			fsp.readFile(path.join(webviewPath, 'mcu-dialog.html'), 'utf8'),
+			fsp.readFile(path.join(webviewPath, 'mcu-dialog.css'), 'utf8'),
+			fsp.readFile(path.join(webviewPath, 'mcu-dialog.js'), 'utf8'),
+		]);
+
+		this.rawHtml = html;
+		this.rawCss = css;
+		this.rawJs = js;
+	}
+
+
+	/**
+	 * CSP + nonce + 템플릿 플레이스홀더로 최종 HTML 생성 (비동기)
+	 */
+	private async buildWebviewHtml(webview: vscode.Webview): Promise<string> {
+		// 에셋 로딩 대기 (선로딩이 안 끝났을 경우)
+		await this.loadRawAssets();
+
+		const nonce = this.createNonce();
+		
+		// 보안 CSP 정책
+		const csp = [
+			`default-src 'none';`,
+			`img-src ${webview.cspSource} https: data:;`,
+			`style-src ${webview.cspSource} 'nonce-${nonce}';`,
+			`script-src ${webview.cspSource} 'nonce-${nonce}';`,
+			`font-src ${webview.cspSource} https: data:;`,
+		].join(' ');
+
+		// 템플릿 플레이스홀더 치환 (안전한 방식)
+		let html = this.rawHtml!;
+		html = html.replace('<!--CSP-->',
+			`<meta http-equiv="Content-Security-Policy" content="${csp}">`
+		);
+		html = html.replace('<!--CSS_INLINE-->',
+			`<style nonce="${nonce}">${this.rawCss}</style>`
+		);
+		html = html.replace('<!--JS_INLINE-->',
+			`<script nonce="${nonce}">${this.rawJs}</script>`
+		);
+
+		return html;
+	}
+
+	/**
+	 * 프로젝트 생성 WebView 표시 (최적화: 비동기 로딩 + CSP + 패널 재사용)
+	 */
+	async showProjectCreationWebView(commandStartTime?: number): Promise<void> {
+		this.commandStartTime = commandStartTime;
+		
+		if (this.commandStartTime) {
+			const webviewStartElapsed = Date.now() - this.commandStartTime;
+			axonLog(`⏱️ [성능 측정] Webview 생성 시작: ${webviewStartElapsed}ms (커맨드부터)`);
+		}
+		
+		// 이미 열린 패널이 있으면 재사용
+		if (this.webview) {
+			this.webview.reveal(vscode.ViewColumn.One);
+			if (this.commandStartTime) {
+				const webviewReuseElapsed = Date.now() - this.commandStartTime;
+				axonLog(`⚡ [성능 측정] Webview 패널 재사용: ${webviewReuseElapsed}ms (커맨드부터)`);
+			}
+			return;
+		}
+
+		// Webview 패널 생성
+		const panelCreateStart = Date.now();
 		const panel = vscode.window.createWebviewPanel(
 			'mcuProjectCreation',
 			'Create MCU Standalone Project',
-			vscode.ViewColumn.One, // 에디터 영역에 표시
+			vscode.ViewColumn.One,
 			{
 				enableScripts: true,
-				localResourceRoots: [this.context.extensionUri]
+				retainContextWhenHidden: true,
+				// 로컬 리소스 루트 (필요 시 외부 파일 참조 가능)
+				localResourceRoots: [
+					vscode.Uri.file(path.join(this.context.extensionPath, 'out', 'webview'))
+				]
 			}
 		);
+		
+		const panelCreateTime = Date.now() - panelCreateStart;
+		axonLog(`⏱️ [성능 측정] Webview 패널 생성 완료: ${panelCreateTime}ms`);
 
-		// 현재 VS Code 테마 감지 및 웹뷰에 전달
-		const currentTheme = vscode.window.activeColorTheme;
-		const themeKind = currentTheme.kind === vscode.ColorThemeKind.Dark ? 'dark' :
-		                 currentTheme.kind === vscode.ColorThemeKind.HighContrast ? 'high-contrast' : 'light';
+		this.webview = panel;
 
-		// HTML 내용 설정
-		panel.webview.html = this.getWebviewContent();
-
-		// 웹뷰에 현재 테마 정보 전달
-		setTimeout(() => {
-			panel.webview.postMessage({
-				command: 'setTheme',
-				theme: themeKind
-			});
-		}, 100);
-
-		// VS Code 테마 변경 감지
-		const themeChangeDisposable = vscode.window.onDidChangeActiveColorTheme((theme) => {
-			const newThemeKind = theme.kind === vscode.ColorThemeKind.Dark ? 'dark' :
-			                    theme.kind === vscode.ColorThemeKind.HighContrast ? 'high-contrast' : 'light';
-			panel.webview.postMessage({
-				command: 'setTheme',
-				theme: newThemeKind
-			});
-		});
+		// HTML 내용 설정 (비동기, 블로킹 없음)
+		const htmlLoadStart = Date.now();
+		panel.webview.html = await this.buildWebviewHtml(panel.webview);
+		const htmlLoadTime = Date.now() - htmlLoadStart;
+		axonLog(`⏱️ [성능 측정] Webview HTML 빌드 완료: ${htmlLoadTime}ms`);
+		
+		if (this.commandStartTime) {
+			const totalWebviewElapsed = Date.now() - this.commandStartTime;
+			axonLog(`⏱️ [성능 측정] Webview 표시 완료: ${totalWebviewElapsed}ms (커맨드부터)`);
+		}
 
 		// 메시지 리스너 설정
 		const disposable = panel.webview.onDidReceiveMessage(
@@ -466,7 +172,8 @@ export class McuProjectDialog {
 		panel.onDidDispose(
 			() => {
 				disposable.dispose();
-				themeChangeDisposable.dispose();
+				this.webview = undefined;
+				axonLog('✅ [Webview] 패널 닫힘');
 			},
 			undefined,
 			this.context.subscriptions
@@ -478,6 +185,9 @@ export class McuProjectDialog {
 	 */
 	private async handleWebViewMessage(message: any, panel: vscode.WebviewPanel): Promise<void> {
 		switch (message.command) {
+			case 'performanceMetric':
+				this.handlePerformanceMetric(message.metric, message.time);
+				break;
 			case 'browseFolder':
 				await this.browseFolderForWebView(panel);
 				break;
@@ -487,6 +197,18 @@ export class McuProjectDialog {
 			case 'cancel':
 				panel.dispose();
 				break;
+		}
+	}
+
+	/**
+	 * Webview 성능 측정 메트릭 처리
+	 */
+	private handlePerformanceMetric(metric: string, time: number): void {
+		if (this.commandStartTime) {
+			const fromCommand = Date.now() - this.commandStartTime;
+			axonLog(`⏱️ [성능 측정] Webview ${metric}: ${time.toFixed(2)}ms (Webview 내부) / ${fromCommand}ms (커맨드부터)`);
+		} else {
+			axonLog(`⏱️ [성능 측정] Webview ${metric}: ${time.toFixed(2)}ms (Webview 내부)`);
 		}
 	}
 
@@ -516,6 +238,11 @@ export class McuProjectDialog {
 	 */
 	private async createProjectFromWebView(data: any, panel: vscode.WebviewPanel): Promise<void> {
 		try {
+			if (this.commandStartTime) {
+				const userInputElapsed = Date.now() - this.commandStartTime;
+				axonLog(`⏱️ [성능 측정] 사용자 입력 완료 및 프로젝트 생성 시작: ${userInputElapsed}ms (커맨드부터)`);
+			}
+			
 			// projectPath가 string이면 URI로 변환 (웹뷰에서 전달된 경로)
 			// 웹뷰에서 전달된 URI 문자열을 vscode.Uri 객체로 파싱
 			if (typeof data.projectPath === 'string' && data.projectPath.includes('://')) {
@@ -524,7 +251,10 @@ export class McuProjectDialog {
 			}
 
 			// 프로젝트 생성 (creator.ts에 위임)
-			await McuProjectCreator.createMcuProject(data);
+			const creationStartTime = Date.now();
+			await McuProjectCreator.createMcuProject(data, this.commandStartTime);
+			const creationTotalTime = Date.now() - creationStartTime;
+			axonLog(`⏱️ [성능 측정] 프로젝트 생성 전체 완료: ${creationTotalTime}ms`);
 			
 			// 성공 메시지
 			panel.webview.postMessage({

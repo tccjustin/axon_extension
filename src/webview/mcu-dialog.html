@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <!--CSP-->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCU Standalone Project</title>
+    <!--CSS_INLINE-->
+</head>
+<body>
+    <div class="container" id="app">
+        <h1>MCU Standalone Project 생성</h1>
+        
+        <div class="form-group">
+            <label for="projectName">프로젝트 이름 *</label>
+            <input type="text" id="projectName" placeholder="my-mcu-project" />
+        </div>
+
+        <div class="form-group">
+            <label for="projectPath">프로젝트 생성 위치 *</label>
+            <div class="button-group">
+                <input type="text" id="projectPath" readonly />
+                <button type="button" id="browseBtn">Browse</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="gitUrl">Git 저장소 URL *</label>
+            <input type="text" id="gitUrl" value="ssh://git@bitbucket.telechips.com:7999/linux_yp4_0_cgw/mcu-tcn100x.git" />
+        </div>
+
+        <div class="form-group">
+            <label for="branchName">새 브랜치 이름 (선택)</label>
+            <input type="text" id="branchName" placeholder="feature/new-function" />
+        </div>
+
+        <div class="actions">
+            <button class="btn-secondary" id="cancelBtn">취소</button>
+            <button id="createBtn" disabled>생성</button>
+        </div>
+    </div>
+    <!--JS_INLINE-->
+</body>
+</html>
+
+
+

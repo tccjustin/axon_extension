@@ -304,7 +304,10 @@ export async function activate(context: vscode.ExtensionContext) {
 	const createMcuStandaloneProjectDisposable = vscode.commands.registerCommand(
 		'axon.createMcuStandaloneProject',
 		async () => {
-			await mcuProjectDialog.showProjectCreationWebView();
+			const commandStartTime = Date.now();
+			axonLog('⏱️ [성능 측정] MCU 프로젝트 생성 커맨드 시작');
+			
+			await mcuProjectDialog.showProjectCreationWebView(commandStartTime);
 		}
 	);
 

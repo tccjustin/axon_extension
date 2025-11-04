@@ -1,0 +1,116 @@
+body {
+    padding: 20px;
+    color: var(--vscode-foreground);
+    background-color: var(--vscode-editor-background);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+}
+
+/* 스켈레톤 로딩 UI */
+.skeleton-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    color: var(--vscode-descriptionForeground);
+}
+
+.skeleton-loading::after {
+    content: '';
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    margin-left: 10px;
+    border: 3px solid var(--vscode-progressBar-background);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: skeleton-spin 1s linear infinite;
+}
+
+@keyframes skeleton-spin {
+    to { transform: rotate(360deg); }
+}
+
+.container {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+h1 {
+    font-size: 20px;
+    margin: 0 0 20px 0;
+    color: var(--vscode-foreground);
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+input {
+    width: 100%;
+    padding: 8px;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    box-sizing: border-box;
+}
+
+input:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+}
+
+input[readonly] {
+    opacity: 0.6;
+}
+
+.button-group {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.button-group input {
+    flex: 1;
+}
+
+button {
+    padding: 8px 14px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    cursor: pointer;
+}
+
+button:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+
+button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.actions {
+    margin-top: 20px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.btn-secondary {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+}
+
+.btn-secondary:hover {
+    background: var(--vscode-button-secondaryHoverBackground);
+}
+
+
+

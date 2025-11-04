@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { axonLog, axonSuccess, axonError } from '../../logger';
+import { PerformanceTracker } from '../../performance-tracker';
 
 /**
  * MCU 프로젝트 생성 데이터
@@ -29,9 +30,14 @@ export class McuProjectCreator {
 	/**
 	 * MCU 프로젝트 생성 메인 함수
 	 */
-	static async createMcuProject(data: McuProjectData): Promise<void> {
+	static async createMcuProject(data: McuProjectData, commandStartTime?: number): Promise<void> {
 		const { projectName, projectUri, gitUrl, branchName } = data;
-		axonLog(`🚀 프로젝트 생성 시작: ${projectName}`);
+		const tracker = new PerformanceTracker(`MCU 프로젝트 생성: ${projectName}`);
+		
+		if (commandStartTime) {
+			const fromCommandElapsed = Date.now() - commandStartTime;
+			axonLog(`⏱️ [성능 측정] 커맨드 시작부터 프로젝트 생성 함수까지: ${fromCommandElapsed}ms`);
+		}
 
 		const projectFullUri = vscode.Uri.joinPath(projectUri, projectName);
 
@@ -49,6 +55,7 @@ export class McuProjectCreator {
 		// 프로젝트 폴더를 먼저 생성합니다.
 		axonLog(`📂 새 프로젝트 폴더 생성: ${projectFullUri.toString()}`);
 		await vscode.workspace.fs.createDirectory(projectFullUri);
+		tracker.checkpointFromLast('프로젝트 폴더 생성');
 
 		// Git Clone을 사용하여 프로젝트 생성
 		axonLog(`🔄 Git 저장소에서 프로젝트 생성: ${gitUrl}`);
@@ -58,32 +65,43 @@ export class McuProjectCreator {
 		
 		// 새로 생성된 폴더 안으로 클론합니다.
 		await this.cloneGitRepository(gitUrl, projectPath);
+		tracker.checkpointFromLast('Git Clone 완료');
 		axonSuccess(`✅ Git 저장소 '${gitUrl}'을(를) '${projectFullUri.toString()}'에 클론했습니다.`);
 
 		// 새 브랜치 이름이 제공된 경우, 브랜치 생성 및 푸시 작업 실행
 		if (branchName) {
 			axonLog(`🌿 새 브랜치 '${branchName}' 생성 및 푸시 작업을 시작합니다.`);
 			await this.createAndPushBranch(branchName, projectPath);
+			tracker.checkpointFromLast('브랜치 생성 및 푸시 완료');
 			axonSuccess(`✅ 새 브랜치 '${branchName}'를 원격 저장소에 성공적으로 푸시했습니다.`);
 		}
 
 		// MCU 프로젝트 빌드 설정 실행
 		axonLog(`🔧 MCU 빌드 설정을 시작합니다: make tcn100x_m7-1_defconfig`);
 		await this.runMcuDefconfig(projectPath);
+		tracker.checkpointFromLast('MCU Defconfig 완료');
 		axonSuccess(`✅ MCU defconfig 설정이 완료되었습니다.`);
 
 		// MCU bootfw 빌드 실행
 		axonLog(`🔨 MCU bootfw 빌드를 시작합니다: make bootfw`);
 		await this.runMcuBootfw(projectPath);
+		tracker.checkpointFromLast('MCU Bootfw 빌드 완료');
 		axonSuccess(`✅ MCU bootfw 빌드가 완료되었습니다.`);
 
 		// .vscode/settings.json 생성
 		axonLog(`⚙️ 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
 		await this.createVscodeSettings(projectFullUri);
+		tracker.checkpointFromLast('VS Code 설정 파일 생성 완료');
 		axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 
 		// 생성된 프로젝트 폴더를 VS Code에서 열기
 		await vscode.commands.executeCommand('vscode.openFolder', projectFullUri, { forceNewWindow: true });
+		tracker.end('프로젝트 생성 완료');
+		
+		if (commandStartTime) {
+			const totalFromCommand = Date.now() - commandStartTime;
+			axonLog(`⏱️ [성능 측정] 커맨드 시작부터 프로젝트 생성 완료까지 총: ${totalFromCommand}ms`);
+		}
 	}
 
 	/**
@@ -91,6 +109,9 @@ export class McuProjectCreator {
 	 */
 	private static async executeShellTask(options: ShellTaskOptions): Promise<void> {
 		const { command, cwd, taskName, taskId, showTerminal = false } = options;
+		
+		const taskStartTime = Date.now();
+		axonLog(`⏱️ [성능 측정] ${taskName} 시작`);
 
 		const task = new vscode.Task(
 			{ type: 'shell', task: taskId },
@@ -113,15 +134,20 @@ export class McuProjectCreator {
 			const disposable = vscode.tasks.onDidEndTaskProcess(e => {
 				if (e.execution.task.name === taskName) {
 					disposable.dispose();
+					const taskElapsedTime = Date.now() - taskStartTime;
 					if (e.exitCode === 0) {
+						axonLog(`⏱️ [성능 측정] ${taskName} 완료: ${taskElapsedTime}ms`);
 						resolve();
 					} else {
+						axonLog(`⏱️ [성능 측정] ${taskName} 실패: ${taskElapsedTime}ms (exit code: ${e.exitCode})`);
 						reject(new Error(`${taskName} failed with exit code ${e.exitCode}. Check the terminal for details.`));
 					}
 				}
 			});
 
 			vscode.tasks.executeTask(task).then(undefined, (error) => {
+				const taskElapsedTime = Date.now() - taskStartTime;
+				axonLog(`⏱️ [성능 측정] ${taskName} 시작 실패: ${taskElapsedTime}ms`);
 				reject(new Error(`Failed to start ${taskName} task: ${error}`));
 			});
 		});
@@ -134,7 +160,7 @@ export class McuProjectCreator {
 		axonLog(`🔄 Cloning repository using VS Code Tasks API into ${targetDir}...`);
 		
 		await this.executeShellTask({
-			command: `git clone --progress "${gitUrl}"`,
+			command: `git clone --progress ${gitUrl}`,
 			cwd: targetDir,
 			taskName: 'Git Clone',
 			taskId: 'gitClone',
@@ -149,7 +175,7 @@ export class McuProjectCreator {
 		axonLog(`🔄 Running branch creation task in: ${projectDir}`);
 		
 		await this.executeShellTask({
-			command: `git switch -c "${branchName}" && git push -u origin "${branchName}"`,
+			command: `git switch -c ${branchName} && git push -u origin ${branchName}`,
 			cwd: projectDir,
 			taskName: 'Create and Push Branch',
 			taskId: 'createAndPushBranch',
