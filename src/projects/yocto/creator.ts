@@ -404,10 +404,6 @@ export class YoctoProjectCreator {
 			// 파일이 존재하지 않으면 catch로 들어옴
 			axonLog(`⚙️ Buildtools가 설치되지 않았습니다. 설치를 시작합니다...`);
 		}
-		// 압축 해제 후 10초 대기 (파일 시스템 동기화 대기)
-		axonLog(`⏳ 파일 시스템 동기화를 위해 10초 대기 중...`);
-		await new Promise(resolve => setTimeout(resolve, 10000));
-		axonLog(`✅ 대기 완료`);
 		
 		// 2. download.sh의 내용을 shell 명령으로 구현 (원격 환경 지원)
 		// poky 디렉토리는 상대 경로로 접근
@@ -442,10 +438,6 @@ End-Of-Session`;
 		
 		axonSuccess(`✅ Tools 다운로드 완료`);
 
-				// 압축 해제 후 10초 대기 (파일 시스템 동기화 대기)
-		axonLog(`⏳ 파일 시스템 동기화를 위해 10초 대기 중...`);
-		await new Promise(resolve => setTimeout(resolve, 10000));
-		axonLog(`✅ 대기 완료`);
 
 		// 2-2. tar 압축 해제 및 파일 삭제 (한 번에 처리)
 		axonLog(`📦 Extracting ${TOOLS_FILE}...`);
@@ -462,10 +454,6 @@ End-Of-Session`;
 		
 		axonSuccess(`✅ Tools 압축 해제 및 정리 완료`);
 		
-		// 압축 해제 후 10초 대기 (파일 시스템 동기화 대기)
-		axonLog(`⏳ 파일 시스템 동기화를 위해 10초 대기 중...`);
-		await new Promise(resolve => setTimeout(resolve, 10000));
-		axonLog(`✅ 대기 완료`);
 		
 		// 2-3. source-mirror 디렉토리 생성 및 다운로드
 		axonLog(`📂 Creating ${DL_SOURCE_MIRROR_DIR} directory and downloading source mirror...`);
