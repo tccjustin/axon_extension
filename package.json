@@ -3,7 +3,7 @@
   "displayName": "Axon",
   "publisher": "justin-lee",
   "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "extensionKind": ["ui","workspace"],
   "repository": {
     "type": "git",

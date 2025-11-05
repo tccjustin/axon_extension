@@ -1,15 +1,15 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { McuProjectCreator } from './creator';
+import { YoctoProjectCreator } from './creator';
 import { axonLog } from '../../logger';
 
 const fsp = fs.promises; // 비동기 파일 I/O
 
 /**
- * MCU 프로젝트 생성 다이얼로그 (WebView UI)
+ * Yocto 프로젝트 생성 다이얼로그 (WebView UI)
  */
-export class McuProjectDialog {
+export class YoctoProjectDialog {
 	private webview?: vscode.WebviewPanel;
 	
 	// 캐싱: 원본 파일 (템플릿) 및 최종 HTML
@@ -42,9 +42,9 @@ export class McuProjectDialog {
 			const preloadStart = Date.now();
 			await this.loadRawAssets();
 			const preloadTime = Date.now() - preloadStart;
-			axonLog(`⚡ [Pre-loading] Webview 에셋 선로딩 완료: ${preloadTime}ms`);
+			axonLog(`⚡ [Pre-loading] Yocto Webview 에셋 선로딩 완료: ${preloadTime}ms`);
 		} catch (error) {
-			axonLog(`⚠️ [Pre-loading] 에셋 로딩 실패: ${error}`);
+			axonLog(`⚠️ [Pre-loading] Yocto 에셋 로딩 실패: ${error}`);
 		}
 	}
 
@@ -61,9 +61,9 @@ export class McuProjectDialog {
 		
 		// 병렬 로딩 (빠름!)
 		const [html, css, js] = await Promise.all([
-			fsp.readFile(path.join(webviewPath, 'mcu-dialog.html'), 'utf8'),
-			fsp.readFile(path.join(webviewPath, 'mcu-dialog.css'), 'utf8'),
-			fsp.readFile(path.join(webviewPath, 'mcu-dialog.js'), 'utf8'),
+			fsp.readFile(path.join(webviewPath, 'yocto-dialog.html'), 'utf8'),
+			fsp.readFile(path.join(webviewPath, 'yocto-dialog.css'), 'utf8'),
+			fsp.readFile(path.join(webviewPath, 'yocto-dialog.js'), 'utf8'),
 		]);
 
 		this.rawHtml = html;
@@ -117,8 +117,8 @@ export class McuProjectDialog {
 
 		// Webview 패널 생성
 		const panel = vscode.window.createWebviewPanel(
-			'mcuProjectCreation',
-			'Create MCU Standalone Project',
+			'yoctoProjectCreation',
+			'Create Yocto Project',
 			vscode.ViewColumn.One,
 			{
 				enableScripts: true,
@@ -149,7 +149,7 @@ export class McuProjectDialog {
 			() => {
 				disposable.dispose();
 				this.webview = undefined;
-				axonLog('✅ [Webview] 패널 닫힘');
+				axonLog('✅ [Webview] Yocto 패널 닫힘');
 			},
 			undefined,
 			this.context.subscriptions
@@ -163,6 +163,9 @@ export class McuProjectDialog {
 		switch (message.command) {
 			case 'browseFolder':
 				await this.browseFolderForWebView(panel);
+				break;
+			case 'loadManifests':
+				await this.loadManifestsForWebView(message, panel);
 				break;
 			case 'createProject':
 				await this.createProjectFromWebView(message.data, panel);
@@ -182,7 +185,7 @@ export class McuProjectDialog {
 			canSelectFolders: true,
 			canSelectMany: false,
 			openLabel: '프로젝트 생성 위치 선택',
-			title: '프로젝트를 생성할 폴더를 선택하세요'
+			title: 'Yocto 프로젝트를 생성할 폴더를 선택하세요'
 		});
 
 		if (folders && folders.length > 0) {
@@ -190,6 +193,53 @@ export class McuProjectDialog {
 			panel.webview.postMessage({
 				command: 'setFolderPath',
 				path: folderUriString // URI 문자열을 웹뷰로 전달
+			});
+		}
+	}
+
+	/**
+	 * Manifest 목록 로드
+	 */
+	private async loadManifestsForWebView(message: any, panel: vscode.WebviewPanel): Promise<void> {
+		try {
+			const manifestGitUrl = message.manifestGitUrl;
+			const projectPath = message.projectPath;
+			const projectName = message.projectName;
+			
+			// 필수 값 확인
+			if (!projectPath) {
+				throw new Error('프로젝트 생성 위치를 먼저 선택해주세요.');
+			}
+			
+			if (!projectName) {
+				throw new Error('프로젝트 이름을 먼저 입력해주세요.');
+			}
+			
+			// URI로 변환
+			const targetUri = typeof projectPath === 'string' && projectPath.includes('://')
+				? vscode.Uri.parse(projectPath)
+				: vscode.Uri.file(projectPath);
+			
+			// 프로젝트 폴더 URI 생성
+			const projectUri = vscode.Uri.joinPath(targetUri, projectName);
+			
+			axonLog(`📋 Manifest 목록 로드 시작: ${manifestGitUrl}`);
+			axonLog(`📂 프로젝트 경로: ${projectUri.fsPath}`);
+			const manifests = await YoctoProjectCreator.fetchManifestList(manifestGitUrl, projectUri);
+			
+			panel.webview.postMessage({
+				command: 'manifestListLoaded',
+				manifests: manifests
+			});
+			
+			axonLog(`✅ Manifest 목록 로드 완료: ${manifests.length}개`);
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			axonLog(`❌ Manifest 목록 로드 실패: ${errorMessage}`);
+			
+			panel.webview.postMessage({
+				command: 'manifestLoadError',
+				error: errorMessage
 			});
 		}
 	}
@@ -213,7 +263,7 @@ export class McuProjectDialog {
 			}
 
 			// 프로젝트 생성 (creator.ts에 위임)
-			await McuProjectCreator.createMcuProject(data);
+			await YoctoProjectCreator.createYoctoProject(data);
 			
 			// 성공 메시지
 			panel.webview.postMessage({
@@ -232,4 +282,7 @@ export class McuProjectDialog {
 		}
 	}
 }
+
+
+
 

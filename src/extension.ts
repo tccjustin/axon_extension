@@ -17,6 +17,7 @@ import {
 	searchBootFirmwareInDirectory
 } from './utils';
 import { McuProjectDialog } from './projects/mcu/dialog';
+import { YoctoProjectDialog } from './projects/yocto/dialog';
 
 // Axon Project Tree Item
 class AxonProjectItem extends vscode.TreeItem {
@@ -147,11 +148,6 @@ async function showConfigurationMenu() {
 }
 
 
-// Yocto Project 생성 함수
-async function createYoctoProject(): Promise<void> {
-	axonLog('🚀 Yocto Project 생성 시작');
-	vscode.window.showInformationMessage('Yocto Project 생성 명령이 실행되었습니다.');
-}
 
 export async function activate(context: vscode.ExtensionContext) {
 	// Axon 전용 Output 채널 생성 및 로거 초기화
@@ -174,6 +170,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// MCU Project Dialog Provider 등록
 	const mcuProjectDialog = new McuProjectDialog(context);
+	
+	// Yocto Project Dialog Provider 등록
+	const yoctoProjectDialog = new YoctoProjectDialog(context);
 
 	// 설정 메뉴를 보여주는 새로운 상위 명령어
 	const configureSettingsDisposable = vscode.commands.registerCommand(
@@ -304,17 +303,16 @@ export async function activate(context: vscode.ExtensionContext) {
 	const createMcuStandaloneProjectDisposable = vscode.commands.registerCommand(
 		'axon.createMcuStandaloneProject',
 		async () => {
-			const commandStartTime = Date.now();
-			axonLog('⏱️ [성능 측정] MCU 프로젝트 생성 커맨드 시작');
-			
-			await mcuProjectDialog.showProjectCreationWebView(commandStartTime);
+			await mcuProjectDialog.showProjectCreationWebView();
 		}
 	);
 
 	// Create Yocto Project 명령
 	const createYoctoProjectDisposable = vscode.commands.registerCommand(
 		'axon.createYoctoProject',
-		async () => createYoctoProject()
+		async () => {
+			await yoctoProjectDialog.showProjectCreationWebView();
+		}
 	);
 
         context.subscriptions.push(
