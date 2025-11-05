@@ -165,7 +165,7 @@ export class YoctoProjectCreator {
 			focus: showTerminal,
 			panel: vscode.TaskPanelKind.Shared,
 			showReuseMessage: false,
-			clear: true
+			clear: false  // 터미널 내용을 지우지 않고 누적
 		};
 
 		return new Promise<void>((resolve, reject) => {
@@ -376,39 +376,162 @@ export class YoctoProjectCreator {
 
 	/**
 	 * Auto-setup 실행
+	 * build-axon.py의 --auto-setup 옵션 로직과 download.sh의 내용을 구현
 	 */
 	private static async runAutoSetup(sdkPath: string, sdkName: string, isRemote: boolean = false): Promise<void> {
 		axonLog(`⚙️ Running auto-setup in: ${sdkPath}`);
+		axonLog(`🌐 실행 환경: ${isRemote ? '원격 (Remote SSH/WSL)' : '로컬'}`);
 		
-		const buildScriptName = `build-${sdkName}`;
+		// 1. buildtools/environment-setup 파일 존재 여부 확인 (shell 명령 사용 - 원격 지원)
+		const envSetupRelativePath = 'buildtools/environment-setup-x86_64-pokysdk-linux';
+		axonLog(`🔍 Buildtools 설치 확인: ${envSetupRelativePath}`);
 		
-		// 원격 환경: 상대 경로 사용 (cwd가 sdkPath이므로)
-		// 로컬 환경: 절대 경로 사용
-		let setupCommand: string;
-		
-		if (isRemote) {
-			// 원격 리눅스: 상대 경로로 실행
-			setupCommand = `./${buildScriptName} --auto-setup`;
-			axonLog(`🔧 Setup 명령 (원격): ${setupCommand}`);
-		} else if (process.platform === 'win32') {
-			// 로컬 Windows: python으로 실행
-			const path = require('path');
-			const buildScript = path.join(sdkPath, buildScriptName);
-			setupCommand = `python "${buildScript}" --auto-setup`;
-			axonLog(`🔧 Setup 명령 (Windows): ${setupCommand}`);
-		} else {
-			// 로컬 리눅스/Mac: 직접 실행
-			setupCommand = `./${buildScriptName} --auto-setup`;
-			axonLog(`🔧 Setup 명령 (로컬 Unix): ${setupCommand}`);
+		try {
+			// shell 명령으로 파일 존재 확인 (원격 환경 지원)
+			// 항상 성공하는 명령으로 변경 (exit code 0)
+			await this.executeShellTask({
+				command: `if [ -f ${envSetupRelativePath} ]; then echo "EXISTS"; exit 0; else echo "NOT_EXISTS"; exit 1; fi`,
+				cwd: sdkPath,
+				taskName: 'Check Buildtools (Yocto)',
+				taskId: 'yoctoCheckBuildtools',
+				showTerminal: false
+			});
+			
+			// 파일이 존재하면 여기까지 도달
+			axonLog(`✅ Buildtools가 이미 설치되어 있습니다: ${envSetupRelativePath}`);
+			return;
+		} catch (error) {
+			// 파일이 존재하지 않으면 catch로 들어옴
+			axonLog(`⚙️ Buildtools가 설치되지 않았습니다. 설치를 시작합니다...`);
 		}
+		// 압축 해제 후 10초 대기 (파일 시스템 동기화 대기)
+		axonLog(`⏳ 파일 시스템 동기화를 위해 10초 대기 중...`);
+		await new Promise(resolve => setTimeout(resolve, 10000));
+		axonLog(`✅ 대기 완료`);
+		
+		// 2. download.sh의 내용을 shell 명령으로 구현 (원격 환경 지원)
+		// poky 디렉토리는 상대 경로로 접근
+		const pokyRelativePath = 'poky';
+		
+		// FTP 설정 (download.sh에서 가져옴)
+		const FTP_ADDR = "rf.telechips.com";
+		const FTP_USER = "customer";
+		const FTP_PASS = "telecustomer12!";
+		const DL_SOURCE_MIRROR_DIR = "source-mirror";
+		const TOOLS_FILE = "tools-kirkstone.tar.gz";
+		
+		axonLog(`📥 Tools 다운로드 시작...`);
+		axonLog(`ℹ️ This may take a long time depending on your network environment.`);
+		
+		// 2-1. tools-kirkstone.tar.gz 다운로드
+		axonLog(`🔽 Downloading ${TOOLS_FILE} from FTP server...`);
+		
+		const downloadToolsCommand = `ncftp -u ${FTP_USER} -p ${FTP_PASS} ${FTP_ADDR} &> /dev/null << 'End-Of-Session'
+bin
+get /share/${TOOLS_FILE}
+bye
+End-Of-Session`;
 		
 		await this.executeShellTask({
-			command: setupCommand,
-			cwd: sdkPath,
-			taskName: 'Auto-setup (Yocto)',
-			taskId: 'yoctoAutoSetup',
+			command: downloadToolsCommand,
+			cwd: `${sdkPath}`,
+			taskName: 'Download Tools (Yocto)',
+			taskId: 'yoctoDownloadTools',
 			showTerminal: true
 		});
+		
+		axonSuccess(`✅ Tools 다운로드 완료`);
+
+				// 압축 해제 후 10초 대기 (파일 시스템 동기화 대기)
+		axonLog(`⏳ 파일 시스템 동기화를 위해 10초 대기 중...`);
+		await new Promise(resolve => setTimeout(resolve, 10000));
+		axonLog(`✅ 대기 완료`);
+
+		// 2-2. tar 압축 해제 및 파일 삭제 (한 번에 처리)
+		axonLog(`📦 Extracting ${TOOLS_FILE}...`);
+		
+		const extractAndCleanCommand = `tar xzf ${TOOLS_FILE} &> /dev/null && rm ${TOOLS_FILE}`;
+		
+		await this.executeShellTask({
+			command: extractAndCleanCommand,
+			cwd: `${sdkPath}`,
+			taskName: 'Extract Tools (Yocto)',
+			taskId: 'yoctoExtractTools',
+			showTerminal: true
+		});
+		
+		axonSuccess(`✅ Tools 압축 해제 및 정리 완료`);
+		
+		// 압축 해제 후 10초 대기 (파일 시스템 동기화 대기)
+		axonLog(`⏳ 파일 시스템 동기화를 위해 10초 대기 중...`);
+		await new Promise(resolve => setTimeout(resolve, 10000));
+		axonLog(`✅ 대기 완료`);
+		
+		// 2-3. source-mirror 디렉토리 생성 및 다운로드
+		axonLog(`📂 Creating ${DL_SOURCE_MIRROR_DIR} directory and downloading source mirror...`);
+		
+		const downloadMirrorCommand = `mkdir -p ${DL_SOURCE_MIRROR_DIR} && cd ${DL_SOURCE_MIRROR_DIR} && ncftp -u ${FTP_USER} -p ${FTP_PASS} ${FTP_ADDR} &> /dev/null << 'End-Of-Session'
+bin
+cd /share/tcn100x
+get -R -T *
+bye
+End-Of-Session`;
+		
+		await this.executeShellTask({
+			command: downloadMirrorCommand,
+			cwd: `${sdkPath}`,
+			taskName: 'Download Source Mirror (Yocto)',
+			taskId: 'yoctoDownloadSourceMirror',
+			showTerminal: false
+		});
+		
+		axonSuccess(`✅ Source mirror 다운로드 완료`);
+		
+		// 3. gcc 버전 확인 및 buildtools 스크립트 선택
+		axonLog(`🔍 GCC 버전 확인 및 buildtools 선택...`);
+		
+		// GCC 버전에 따라 스크립트 선택하는 shell 스크립트
+		const selectAndInstallCommand = `
+# GCC 버전 확인
+GCC_VERSION=$(gcc -dumpversion)
+echo "GCC Version: $GCC_VERSION"
+
+# 버전 파싱 (major.minor)
+MAJOR_MINOR=$(echo $GCC_VERSION | cut -d. -f1,2)
+echo "Major.Minor: $MAJOR_MINOR"
+
+# 버전 비교 및 스크립트 선택
+if awk -v ver="$MAJOR_MINOR" 'BEGIN {exit !(ver >= 7.5)}'; then
+    BUILDTOOLS_SCRIPT="x86_64-buildtools-nativesdk-standalone-4.0.sh"
+    echo "GCC >= 7.5: Using $BUILDTOOLS_SCRIPT"
+else
+    BUILDTOOLS_SCRIPT="x86_64-buildtools-extended-nativesdk-standalone-4.0.sh"
+    echo "GCC < 7.5: Using $BUILDTOOLS_SCRIPT"
+fi
+
+# 스크립트 존재 확인
+if [ ! -f "tools/$BUILDTOOLS_SCRIPT" ]; then
+    echo "Error: Buildtools installer not found at tools/$BUILDTOOLS_SCRIPT"
+    exit 1
+fi
+
+# buildtools 설치
+echo "Installing buildtools..."
+echo buildtools | tools/$BUILDTOOLS_SCRIPT
+`;
+		
+		axonLog(`🔨 Buildtools 설치 중... (이 작업은 시간이 걸릴 수 있습니다)`);
+		
+		await this.executeShellTask({
+			command: selectAndInstallCommand,
+			cwd: `${sdkPath}`,
+			taskName: 'Install Buildtools (Yocto)',
+			taskId: 'yoctoInstallBuildtools',
+			showTerminal: false
+		});
+		
+		axonSuccess(`✅ Buildtools 설치가 완료되었습니다.`);
+		axonLog(`📝 Toolchain installation completed. You can now run build actions manually.`);
 	}
 
 	/**

@@ -121,16 +121,6 @@
           "type": "string",
           "default": "boot-firmware_tcn1000",
           "description": "Boot firmware folder name to search for"
-        },
-        "axon.git.executablePath": {
-          "type": "string",
-          "default": "git",
-          "description": "Path to the Git executable. (No longer used, relies on built-in Git extension)"
-        },
-        "axon.west.executablePath": {
-          "type": "string",
-          "default": "west",
-          "description": "Path to the west executable for Zephyr projects."
         }
       }
     },
