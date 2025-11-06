@@ -40,6 +40,14 @@
             </select>
         </div>
 
+        <!-- 경고 문구 (Load 후에만 표시) -->
+        <div class="warning-message" id="warningMessage" style="display: none;">
+            <div class="warning-icon">⚠️</div>
+            <div class="warning-content">
+                <strong>주의:</strong> Load만 하고 생성을 완료하지 않으면 불필요한 폴더가 원격 서버에 남아있을 수 있습니다.
+            </div>
+        </div>
+
         <div class="actions">
             <button class="btn-secondary" id="cancelBtn">취소</button>
             <button id="createBtn" disabled>생성</button>

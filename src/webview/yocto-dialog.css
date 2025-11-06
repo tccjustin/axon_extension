@@ -69,6 +69,12 @@ input[readonly] {
     opacity: 0.6;
 }
 
+input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--vscode-input-background);
+}
+
 .button-group {
     display: flex;
     gap: 8px;
@@ -110,6 +116,56 @@ button:disabled {
 
 .btn-secondary:hover {
     background: var(--vscode-button-secondaryHoverBackground);
+}
+
+/* Select box 스타일 */
+select {
+    width: 100%;
+    padding: 8px;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    box-sizing: border-box;
+}
+
+select:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+}
+
+/* 경고 메시지 스타일 */
+.warning-message {
+    margin-top: 16px;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--vscode-inputValidation-warningBackground);
+    border: 1px solid var(--vscode-inputValidation-warningBorder);
+    border-left: 4px solid var(--vscode-inputValidation-warningBorder);
+    border-radius: 4px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.warning-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+
+.warning-content {
+    flex: 1;
+    font-size: 0.95em;
+    line-height: 1.5;
+}
+
+.warning-content strong {
+    color: var(--vscode-inputValidation-warningForeground);
+}
+
+.warning-note {
+    font-size: 0.9em;
+    opacity: 0.9;
+    display: inline-block;
+    margin-top: 4px;
 }
 
 
