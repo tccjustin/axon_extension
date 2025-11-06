@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
 import { axonLog, axonError, axonSuccess, getAxonOutputChannel } from './logger';
-import { getAxonConfig, findBootFirmwareFolder } from './utils';
+import { getAxonConfig, findBootFirmwareFolder, convertRemotePathToSamba } from './utils';
 
 // FWDN 설정 인터페이스
 export interface FwdnConfig {
@@ -17,14 +17,27 @@ export async function getFwdnConfig(): Promise<FwdnConfig> {
 
 	// Boot Firmware 경로는 매번 새로 검색 (캐시 사용하지 않음) - 빠른 방식 사용
 	axonLog(`🔍 Boot Firmware 경로 자동 검색 시작 (빠른 방식)...`);
-	const bootFirmwarePath = await findBootFirmwareFolder();
+	const bootFirmwarePathOrUri = await findBootFirmwareFolder();
 
-	if (!bootFirmwarePath) {
+	if (!bootFirmwarePathOrUri) {
 		axonLog(`❌ Boot Firmware 경로를 찾을 수 없습니다.`);
 		throw new Error('Boot Firmware 경로를 찾을 수 없습니다. "Axon: Auto-detect Boot Firmware Path" 명령을 먼저 실행하거나 수동으로 설정해주세요.');
 	}
 
-	axonLog(`✅ Boot Firmware 경로를 찾았습니다: ${bootFirmwarePath}`);
+	// FWDN은 로컬 Windows에서 실행되므로 Windows 경로 필요
+	// URI 문자열(vscode-remote://...)이면 Samba 경로(Z:\...)로 변환
+	let bootFirmwarePath: string;
+	if (bootFirmwarePathOrUri.startsWith('vscode-remote://')) {
+		// URI 파싱하여 Unix 경로 추출 후 Samba 경로로 변환
+		const uri = vscode.Uri.parse(bootFirmwarePathOrUri);
+		bootFirmwarePath = convertRemotePathToSamba(uri.path);
+		axonLog(`🔄 [FWDN] 원격 경로를 Samba 경로로 변환: ${uri.path} → ${bootFirmwarePath}`);
+	} else {
+		// 이미 Windows 경로
+		bootFirmwarePath = bootFirmwarePathOrUri;
+	}
+
+	axonLog(`✅ Boot Firmware 경로 (FWDN용): ${bootFirmwarePath}`);
 
 	return {
 		fwdnExePath: config.get<string>('fwdn.exePath', 'C:\\Users\\jhlee17\\work\\FWDN\\fwdn.exe'),

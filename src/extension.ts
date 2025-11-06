@@ -18,6 +18,7 @@ import {
 } from './utils';
 import { McuProjectDialog } from './projects/mcu/dialog';
 import { YoctoProjectDialog } from './projects/yocto/dialog';
+import { YoctoProjectBuilder } from './projects/yocto/builder';
 
 // Axon Tree Item
 class AxonTreeItem extends vscode.TreeItem {
@@ -127,8 +128,55 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 
 	getChildren(element?: AxonTreeItem): Thenable<AxonTreeItem[]> {
 		if (!element) {
+			// 최상위 레벨: MCU, Yocto 폴더
 			return Promise.resolve([
-				// 향후 빌드 항목들을 여기에 추가
+				new AxonTreeItem(
+					'buildMcu',
+					'MCU',
+					vscode.TreeItemCollapsibleState.Collapsed,
+					undefined,
+					'circuit-board',
+					'MCU 빌드 항목'
+				),
+				new AxonTreeItem(
+					'buildYocto',
+					'Yocto',
+					vscode.TreeItemCollapsibleState.Collapsed,
+					undefined,
+					'package',
+					'Yocto 빌드 항목'
+				)
+			]);
+		} else if (element.id === 'buildMcu') {
+			// MCU 하위 항목들
+			return Promise.resolve([
+				// 향후 MCU 빌드 항목 추가
+			]);
+		} else if (element.id === 'buildYocto') {
+			// Yocto 하위 항목들
+			return Promise.resolve([
+				new AxonTreeItem(
+					'buildYoctoAp',
+					'Build AP',
+					vscode.TreeItemCollapsibleState.None,
+					{
+						command: 'axon.buildYoctoAp',
+						title: 'Build Yocto AP'
+					},
+					'tools',
+					'Yocto AP 이미지 빌드'
+				),
+				new AxonTreeItem(
+					'buildYoctoMcu',
+					'Build MCU',
+					vscode.TreeItemCollapsibleState.None,
+					{
+						command: 'axon.buildYoctoMcu',
+						title: 'Build Yocto MCU'
+					},
+					'chip',
+					'Yocto MCU 빌드'
+				)
 			]);
 		}
 		return Promise.resolve([]);
@@ -141,11 +189,15 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 
 // 워크스페이스 폴더 가져오기
 function getWorkspaceFolder(): vscode.WorkspaceFolder | null {
-		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		if (!workspaceFolder) {
-			const errorMsg = '워크스페이스 폴더를 찾을 수 없습니다.';
-			axonError(errorMsg);
-			vscode.window.showErrorMessage(errorMsg);
+	const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+	if (!workspaceFolder) {
+		const errorMsg = '워크스페이스 폴더를 찾을 수 없습니다.\n\n' +
+			'해결 방법:\n' +
+			'1. VS Code에서 "파일 > 폴더 열기"를 선택하세요.\n' +
+			'2. 프로젝트가 있는 폴더를 선택하세요.\n' +
+			'3. 폴더가 열린 후 다시 시도하세요.';
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
 		return null;
 	}
 	return workspaceFolder;
@@ -367,6 +419,22 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
+	// Build Yocto AP 명령
+	const buildYoctoApDisposable = vscode.commands.registerCommand(
+		'axon.buildYoctoAp',
+		async () => {
+			await YoctoProjectBuilder.buildAp();
+		}
+	);
+
+	// Build Yocto MCU 명령
+	const buildYoctoMcuDisposable = vscode.commands.registerCommand(
+		'axon.buildYoctoMcu',
+		async () => {
+			await YoctoProjectBuilder.buildMcu();
+		}
+	);
+
         context.subscriptions.push(
 		configureSettingsDisposable, // 상위 설정 메뉴 명령어
 		runFwdnAllDisposable,
@@ -378,7 +446,10 @@ export async function activate(context: vscode.ExtensionContext) {
 		configureBootFirmwareFolderDisposable,
 		// 새로운 프로젝트 생성 명령어들
 		createMcuStandaloneProjectDisposable,
-		createYoctoProjectDisposable
+		createYoctoProjectDisposable,
+		// 빌드 명령어들
+		buildYoctoApDisposable,
+		buildYoctoMcuDisposable
 	);
 }
 

@@ -128,7 +128,8 @@ export class YoctoProjectCreator {
 	await createVscodeSettingsUtil(projectFullUri, {
 		'axon.projectType': 'yocto_project',
 		'axon.buildAxonFolderName': 'build-axon',
-		'axon.bootFirmwareFolderName': 'boot-firmware_tcn1000'
+		'axon.bootFirmwareFolderName': 'boot-firmware_tcn1000',
+		'axon.yocto.projectRoot': projectPath  // Yocto 프로젝트 루트 경로 저장
 	});
 	axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 
@@ -423,7 +424,8 @@ echo buildtools | tools/$BUILDTOOLS_SCRIPT
 	 */
 	static async fetchManifestList(manifestGitUrl: string, projectPath: vscode.Uri): Promise<string[]> {
 		axonLog(`📋 Fetching manifest list from: ${manifestGitUrl} (원격 환경)`);
-		axonLog(`📂 프로젝트 폴더: ${projectPath.fsPath}`);
+		const projectPathStr = projectPath.scheme === 'file' ? projectPath.fsPath : projectPath.path;
+		axonLog(`📂 프로젝트 폴더: ${projectPathStr}`);
 		
 		// Git clone으로 자동 생성될 폴더명 추출 (예: manifest-cgw.git → manifest-cgw)
 		const repoName = manifestGitUrl.split('/').pop()?.replace('.git', '') || 'manifest-cgw';
@@ -432,18 +434,17 @@ echo buildtools | tools/$BUILDTOOLS_SCRIPT
 		let projectFolderCreated = false;
 		
 		try {
-			// 프로젝트 폴더 생성
-			try {
-				await vscode.workspace.fs.createDirectory(projectPath);
-				projectFolderCreated = true;
-				axonLog(`✅ 프로젝트 폴더 생성: ${projectPath.fsPath}`);
-			} catch (error) {
-				// 폴더가 이미 존재하면 무시
-				axonLog(`📁 프로젝트 폴더가 이미 존재하거나 생성 중 오류 (계속 진행): ${error}`);
-			}
+		// 프로젝트 폴더 생성
+		try {
+			await vscode.workspace.fs.createDirectory(projectPath);
+			projectFolderCreated = true;
+			axonLog(`✅ 프로젝트 폴더 생성: ${projectPathStr}`);
+		} catch (error) {
+			// 폴더가 이미 존재하면 무시
+			axonLog(`📁 프로젝트 폴더가 이미 존재하거나 생성 중 오류 (계속 진행): ${error}`);
+		}
 			
 			// Buildscript 클론 (가장 먼저!)
-			const projectPathStr = projectPath.scheme === 'file' ? projectPath.fsPath : projectPath.path;
 			axonLog(`🔄 Buildscript 클론 시작...`);
 			try {
 				await this.cloneBuildscript(projectPathStr);
@@ -508,7 +509,7 @@ echo buildtools | tools/$BUILDTOOLS_SCRIPT
 			if (projectFolderCreated) {
 				try {
 					await vscode.workspace.fs.delete(projectPath, { recursive: true, useTrash: false });
-					axonLog(`🗑️ 생성된 프로젝트 폴더 삭제: ${projectPath.fsPath}`);
+					axonLog(`🗑️ 생성된 프로젝트 폴더 삭제: ${projectPathStr}`);
 				} catch (cleanupError) {
 					axonLog(`⚠️ 프로젝트 폴더 정리 실패: ${cleanupError}`);
 				}

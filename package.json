@@ -26,6 +26,8 @@
     "onCommand:axon.buildAndCopyScripts",
     "onCommand:axon.createMcuStandaloneProject",
     "onCommand:axon.createYoctoProject",
+    "onCommand:axon.buildYoctoAp",
+    "onCommand:axon.buildYoctoMcu",
     "onView:axonCreateProjectsView",
     "onView:axonConfigurationsView",
     "onView:axonBuildView"
@@ -71,6 +73,16 @@
       {
         "command": "axon.createYoctoProject",
         "title": "Create Yocto Project",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.buildYoctoAp",
+        "title": "Build Yocto AP",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.buildYoctoMcu",
+        "title": "Build Yocto MCU",
         "category": "Axon"
       }
     ],
@@ -124,6 +136,11 @@
           "type": "string",
           "default": "boot-firmware_tcn1000",
           "description": "Boot firmware folder name to search for"
+        },
+        "axon.yocto.projectRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Yocto project root directory path (automatically set when creating a project)"
         }
       }
     },

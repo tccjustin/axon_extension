@@ -267,7 +267,9 @@ export async function searchBootFirmwareInDirectory(baseUri: vscode.Uri, current
 		try {
 			const stat = await vscode.workspace.fs.stat(targetPath);
 			if (stat.type === vscode.FileType.Directory) {
-				const finalPath = targetPath.scheme === 'file' ? targetPath.fsPath : convertRemotePathToSamba(targetPath.path);
+				// 로컬: fsPath 반환 (Windows 경로)
+				// 원격: URI 문자열 반환 (vscode-remote://...)
+				const finalPath = targetPath.scheme === 'file' ? targetPath.fsPath : targetPath.toString();
 				axonLog(`✅ depth ${currentDepth}에서 ${bootFirmwareFolderName} 폴더를 찾았습니다: ${finalPath}`);
 				return finalPath;
 			}

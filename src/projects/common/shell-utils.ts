@@ -88,6 +88,8 @@ export async function executeShellTask(options: ShellTaskOptions): Promise<void>
 	}
 
 	// Task API 사용 (안정적인 완료 감지)
+	// cwd는 항상 전달 (Unix 경로 또는 Windows 경로)
+	// 호출자가 환경에 맞는 경로를 전달할 책임이 있음
 	const task = new vscode.Task(
 		{ type: 'shell', task: taskId },
 		vscode.TaskScope.Workspace,
