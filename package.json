@@ -84,6 +84,21 @@
         "command": "axon.buildYoctoMcu",
         "title": "Build Yocto MCU",
         "category": "Axon"
+      },
+      {
+        "command": "axon.cleanYoctoAp",
+        "title": "Clean Yocto AP",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.cleanYoctoMcu",
+        "title": "Clean Yocto MCU",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.cleanYoctoAll",
+        "title": "Clean Yocto All",
+        "category": "Axon"
       }
     ],
   "views": {

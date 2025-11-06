@@ -176,6 +176,39 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 					},
 					'chip',
 					'Yocto MCU 빌드'
+				),
+				new AxonTreeItem(
+					'cleanYoctoAp',
+					'Clean AP',
+					vscode.TreeItemCollapsibleState.None,
+					{
+						command: 'axon.cleanYoctoAp',
+						title: 'Clean Yocto AP'
+					},
+					'trash',
+					'Yocto AP 빌드 폴더 정리'
+				),
+				new AxonTreeItem(
+					'cleanYoctoMcu',
+					'Clean MCU',
+					vscode.TreeItemCollapsibleState.None,
+					{
+						command: 'axon.cleanYoctoMcu',
+						title: 'Clean Yocto MCU'
+					},
+					'trash',
+					'Yocto MCU 빌드 폴더 정리'
+				),
+				new AxonTreeItem(
+					'cleanYoctoAll',
+					'Clean All',
+					vscode.TreeItemCollapsibleState.None,
+					{
+						command: 'axon.cleanYoctoAll',
+						title: 'Clean Yocto All'
+					},
+					'trash',
+					'Yocto AP + MCU 빌드 폴더 정리'
 				)
 			]);
 		}
@@ -435,6 +468,30 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
+	// Clean Yocto AP 명령
+	const cleanYoctoApDisposable = vscode.commands.registerCommand(
+		'axon.cleanYoctoAp',
+		async () => {
+			await YoctoProjectBuilder.cleanApBuild();
+		}
+	);
+
+	// Clean Yocto MCU 명령
+	const cleanYoctoMcuDisposable = vscode.commands.registerCommand(
+		'axon.cleanYoctoMcu',
+		async () => {
+			await YoctoProjectBuilder.cleanMcuBuild();
+		}
+	);
+
+	// Clean Yocto All 명령
+	const cleanYoctoAllDisposable = vscode.commands.registerCommand(
+		'axon.cleanYoctoAll',
+		async () => {
+			await YoctoProjectBuilder.cleanAllBuild();
+		}
+	);
+
         context.subscriptions.push(
 		configureSettingsDisposable, // 상위 설정 메뉴 명령어
 		runFwdnAllDisposable,
@@ -449,7 +506,11 @@ export async function activate(context: vscode.ExtensionContext) {
 		createYoctoProjectDisposable,
 		// 빌드 명령어들
 		buildYoctoApDisposable,
-		buildYoctoMcuDisposable
+		buildYoctoMcuDisposable,
+		// 클린 명령어들
+		cleanYoctoApDisposable,
+		cleanYoctoMcuDisposable,
+		cleanYoctoAllDisposable
 	);
 }
 
