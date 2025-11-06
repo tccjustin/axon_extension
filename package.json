@@ -25,7 +25,9 @@
     "onCommand:axon.buildAndCopyScripts",
     "onCommand:axon.createMcuStandaloneProject",
     "onCommand:axon.createYoctoProject",
-    "onView:axonProjectView"
+    "onView:axonCreateProjectsView",
+    "onView:axonConfigurationsView",
+    "onView:axonBuildView"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -71,16 +73,28 @@
         "category": "Axon"
       }
     ],
-    "views": {
-      "axon": [
-        {
-          "id": "axonProjectView",
-          "name": "Projects",
-          "icon": "$(circuit-board)",
-          "contextualTitle": "Axon Project Tools"
-        }
-      ]
-    },
+  "views": {
+    "axon": [
+      {
+        "id": "axonCreateProjectsView",
+        "name": "Create Projects",
+        "icon": "$(new-folder)",
+        "contextualTitle": "Project Creation Tools"
+      },
+      {
+        "id": "axonConfigurationsView",
+        "name": "Configurations",
+        "icon": "$(settings-gear)",
+        "contextualTitle": "Configuration Settings"
+      },
+      {
+        "id": "axonBuildView",
+        "name": "Build",
+        "icon": "$(tools)",
+        "contextualTitle": "Build Tools"
+      }
+    ]
+  },
     "viewsContainers": {
       "activitybar": [
         {
@@ -90,20 +104,8 @@
         }
       ]
     },
-    "menus": {
-      "view/title": [
-        {
-          "command": "axon.createMcuStandaloneProject",
-          "when": "view == axonProjectView",
-          "group": "navigation"
-        },
-        {
-          "command": "axon.createYoctoProject",
-          "when": "view == axonProjectView",
-          "group": "navigation"
-        }
-      ]
-    },
+  "menus": {
+  },
     "configuration": {
       "title": "Axon",
       "properties": {

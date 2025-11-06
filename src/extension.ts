@@ -19,13 +19,15 @@ import {
 import { McuProjectDialog } from './projects/mcu/dialog';
 import { YoctoProjectDialog } from './projects/yocto/dialog';
 
-// Axon Project Tree Item
-class AxonProjectItem extends vscode.TreeItem {
+// Axon Tree Item
+class AxonTreeItem extends vscode.TreeItem {
 	constructor(
 		public readonly id: string,
 		public readonly label: string,
 		public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-		public readonly command?: vscode.Command
+		public readonly command?: vscode.Command,
+		public readonly iconName?: string,
+		public readonly tooltipText?: string
 	) {
 		super(label, collapsibleState);
 
@@ -33,58 +35,103 @@ class AxonProjectItem extends vscode.TreeItem {
 			this.command = command;
 		}
 
-		// 아이콘 설정
-		if (id === 'createMcuStandaloneProject') {
-			this.iconPath = new vscode.ThemeIcon('circuit-board');
-			this.tooltip = 'Create a new MCU standalone project';
-		} else if (id === 'createYoctoProject') {
-			this.iconPath = new vscode.ThemeIcon('package');
-			this.tooltip = 'Create a new Yocto project';
+		if (iconName) {
+			this.iconPath = new vscode.ThemeIcon(iconName);
+		}
+
+		if (tooltipText) {
+			this.tooltip = tooltipText;
 		}
 	}
 }
 
-// Axon Project Tree Data Provider
-class AxonProjectProvider implements vscode.TreeDataProvider<AxonProjectItem> {
-	private _onDidChangeTreeData: vscode.EventEmitter<AxonProjectItem | undefined | null | void> = new vscode.EventEmitter<AxonProjectItem | undefined | null | void>();
-	readonly onDidChangeTreeData: vscode.Event<AxonProjectItem | undefined | null | void> = this._onDidChangeTreeData.event;
-
-	constructor() {}
+// Create Projects View Provider
+class CreateProjectsProvider implements vscode.TreeDataProvider<AxonTreeItem> {
+	private _onDidChangeTreeData: vscode.EventEmitter<AxonTreeItem | undefined | null | void> = new vscode.EventEmitter<AxonTreeItem | undefined | null | void>();
+	readonly onDidChangeTreeData: vscode.Event<AxonTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
 	refresh(): void {
 		this._onDidChangeTreeData.fire(undefined);
 	}
 
-	getTreeItem(element: AxonProjectItem): vscode.TreeItem {
+	getTreeItem(element: AxonTreeItem): vscode.TreeItem {
 		return element;
 	}
 
-	getChildren(element?: AxonProjectItem): Thenable<AxonProjectItem[]> {
-		if (element) {
-			return Promise.resolve([]);
-		} else {
-			// Root level items
+	getChildren(element?: AxonTreeItem): Thenable<AxonTreeItem[]> {
+		if (!element) {
 			return Promise.resolve([
-				new AxonProjectItem(
+				new AxonTreeItem(
 					'createMcuStandaloneProject',
-					'Create MCU Standalone Project',
+					'MCU Standalone Project',
 					vscode.TreeItemCollapsibleState.None,
 					{
 						command: 'axon.createMcuStandaloneProject',
 						title: 'Create MCU Standalone Project'
-					}
+					},
+					'circuit-board',
+					'Create a new MCU standalone project'
 				),
-				new AxonProjectItem(
+				new AxonTreeItem(
 					'createYoctoProject',
-					'Create Yocto Project',
+					'Yocto Project',
 					vscode.TreeItemCollapsibleState.None,
 					{
 						command: 'axon.createYoctoProject',
 						title: 'Create Yocto Project'
-					}
+					},
+					'package',
+					'Create a new Yocto project'
 				)
 			]);
 		}
+		return Promise.resolve([]);
+	}
+}
+
+// Configurations View Provider
+class ConfigurationsProvider implements vscode.TreeDataProvider<AxonTreeItem> {
+	private _onDidChangeTreeData: vscode.EventEmitter<AxonTreeItem | undefined | null | void> = new vscode.EventEmitter<AxonTreeItem | undefined | null | void>();
+	readonly onDidChangeTreeData: vscode.Event<AxonTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
+
+	refresh(): void {
+		this._onDidChangeTreeData.fire(undefined);
+	}
+
+	getTreeItem(element: AxonTreeItem): vscode.TreeItem {
+		return element;
+	}
+
+	getChildren(element?: AxonTreeItem): Thenable<AxonTreeItem[]> {
+		if (!element) {
+			return Promise.resolve([
+				// 향후 설정 항목들을 여기에 추가
+			]);
+		}
+		return Promise.resolve([]);
+	}
+}
+
+// Build View Provider
+class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
+	private _onDidChangeTreeData: vscode.EventEmitter<AxonTreeItem | undefined | null | void> = new vscode.EventEmitter<AxonTreeItem | undefined | null | void>();
+	readonly onDidChangeTreeData: vscode.Event<AxonTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
+
+	refresh(): void {
+		this._onDidChangeTreeData.fire(undefined);
+	}
+
+	getTreeItem(element: AxonTreeItem): vscode.TreeItem {
+		return element;
+	}
+
+	getChildren(element?: AxonTreeItem): Thenable<AxonTreeItem[]> {
+		if (!element) {
+			return Promise.resolve([
+				// 향후 빌드 항목들을 여기에 추가
+			]);
+		}
+		return Promise.resolve([]);
 	}
 }
 
@@ -164,9 +211,14 @@ export async function activate(context: vscode.ExtensionContext) {
 	axonLog('===========================================');
 	axonOutputChannel.show();
 
-	// Axon Project Tree Data Provider 등록
-	const axonProjectProvider = new AxonProjectProvider();
-	vscode.window.registerTreeDataProvider('axonProjectView', axonProjectProvider);
+	// Axon Tree Data Providers 등록
+	const createProjectsProvider = new CreateProjectsProvider();
+	const configurationsProvider = new ConfigurationsProvider();
+	const buildProvider = new BuildProvider();
+	
+	vscode.window.registerTreeDataProvider('axonCreateProjectsView', createProjectsProvider);
+	vscode.window.registerTreeDataProvider('axonConfigurationsView', configurationsProvider);
+	vscode.window.registerTreeDataProvider('axonBuildView', buildProvider);
 
 	// MCU Project Dialog Provider 등록
 	const mcuProjectDialog = new McuProjectDialog(context);
