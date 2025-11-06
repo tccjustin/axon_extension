@@ -1,3 +1,5 @@
+import * as vscode from 'vscode';
+
 /**
  * 공통 타입 정의
  */
@@ -12,5 +14,6 @@ export interface ShellTaskOptions {
 	taskId: string;
 	showTerminal?: boolean;  // true: 터미널 표시 및 포커스, false: 숨김 (기본값: false)
 	useScriptFile?: boolean;  // true: 명령어를 heredoc으로 감싸서 실행 (터미널에 명령어 내용 숨김, 기본값: false)
+	cwdUri?: vscode.Uri;  // cwd를 URI로 직접 전달 (원격 환경 지원)
 }
 

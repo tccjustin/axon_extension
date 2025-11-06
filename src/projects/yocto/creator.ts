@@ -102,10 +102,10 @@ export class YoctoProjectCreator {
 			await this.createBuildScriptSymlink(buildScriptSourcePath, sdkFsPath, sdkName, isRemote);
 			axonSuccess(`✅ Build script 심볼릭 링크가 생성되었습니다.`);
 			
-			// 5. auto-setup 실행 (SDK 폴더에서)
-			axonLog(`⚙️ Auto-setup 실행...`);
-			await this.runAutoSetup(sdkFsPath, sdkName, isRemote);
-			axonSuccess(`✅ Auto-setup이 완료되었습니다.`);
+		// 5. auto-setup 실행 (SDK 폴더에서)
+		axonLog(`⚙️ Auto-setup 실행...`);
+		await this.runAutoSetup(sdkFsPath, sdkName, isRemote, sdkPath);
+		axonSuccess(`✅ Auto-setup이 완료되었습니다.`);
 		}
 		// Git Clone 방식 (기존 방식)
 		else if (gitUrl) {
@@ -123,10 +123,14 @@ export class YoctoProjectCreator {
 			}
 		}
 
-		// .vscode/settings.json 생성
-		axonLog(`⚙️ Yocto 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
-		await createVscodeSettingsUtil(projectFullUri, { 'axon.projectType': 'yocto' });
-		axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
+	// .vscode/settings.json 생성
+	axonLog(`⚙️ Yocto 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
+	await createVscodeSettingsUtil(projectFullUri, {
+		'axon.projectType': 'yocto_project',
+		'axon.buildAxonFolderName': 'build-axon',
+		'axon.bootFirmwareFolderName': 'boot-firmware_tcn1000'
+	});
+	axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 
 		// 생성된 프로젝트 폴더를 VS Code에서 열기
 		await vscode.commands.executeCommand('vscode.openFolder', projectFullUri, { forceNewWindow: true });
@@ -253,7 +257,7 @@ export class YoctoProjectCreator {
 	 * Auto-setup 실행
 	 * build-axon.py의 --auto-setup 옵션 로직과 download.sh의 내용을 구현
 	 */
-	private static async runAutoSetup(sdkPath: string, sdkName: string, isRemote: boolean = false): Promise<void> {
+	private static async runAutoSetup(sdkPath: string, sdkName: string, isRemote: boolean = false, sdkUri?: vscode.Uri): Promise<void> {
 		axonLog(`⚙️ Running auto-setup in: ${sdkPath}`);
 		axonLog(`🌐 실행 환경: ${isRemote ? '원격 (Remote SSH/WSL)' : '로컬'}`);
 		
@@ -269,7 +273,8 @@ export class YoctoProjectCreator {
 				cwd: sdkPath,
 				taskName: 'Check Buildtools (Yocto)',
 				taskId: 'yoctoCheckBuildtools',
-				showTerminal: false
+				showTerminal: false,
+				cwdUri: sdkUri
 			});
 			
 			// 파일이 존재하면 여기까지 도달
@@ -309,7 +314,8 @@ End-Of-Session`;
 			taskName: 'Download Tools (Yocto)',
 			taskId: 'yoctoDownloadTools',
 			showTerminal: true,
-			useScriptFile: true  // heredoc으로 감싸서 명령어 내용 숨김
+			useScriptFile: true,  // heredoc으로 감싸서 명령어 내용 숨김
+			cwdUri: sdkUri
 		});
 		
 		axonSuccess(`✅ Tools 다운로드 완료`);
@@ -325,7 +331,8 @@ End-Of-Session`;
 			cwd: `${sdkPath}`,
 			taskName: 'Extract Tools (Yocto)',
 			taskId: 'yoctoExtractTools',
-			showTerminal: true
+			showTerminal: true,
+			cwdUri: sdkUri
 		});
 		
 		axonSuccess(`✅ Tools 압축 해제 및 정리 완료`);
@@ -355,7 +362,8 @@ cd ..
 			taskName: 'Download Source Mirror (Yocto)',
 			taskId: 'yoctoDownloadSourceMirror',
 			showTerminal: true,
-			useScriptFile: true  // heredoc으로 감싸서 명령어 내용 숨김
+			useScriptFile: true,  // heredoc으로 감싸서 명령어 내용 숨김
+			cwdUri: sdkUri
 		});
 		
 		axonSuccess(`✅ Source mirror 다운로드 완료`);
@@ -401,7 +409,8 @@ echo buildtools | tools/$BUILDTOOLS_SCRIPT
 			taskName: 'Install Buildtools (Yocto)',
 			taskId: 'yoctoInstallBuildtools',
 			showTerminal: true,
-			useScriptFile: true  // heredoc으로 감싸서 명령어 내용 숨김
+			useScriptFile: true,  // heredoc으로 감싸서 명령어 내용 숨김
+			cwdUri: sdkUri
 		});
 		
 		axonSuccess(`✅ Buildtools 설치가 완료되었습니다.`);

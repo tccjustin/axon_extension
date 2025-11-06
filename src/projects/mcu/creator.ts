@@ -67,13 +67,14 @@ export class McuProjectCreator {
 		await this.runMcuBootfw(projectPath);
 		axonSuccess(`✅ MCU bootfw 빌드가 완료되었습니다.`);
 
-		// .vscode/settings.json 생성
-		axonLog(`⚙️ 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
-		await createVscodeSettingsUtil(projectFullUri, {
-			'axon.buildAxonFolderName': 'mcu-tcn100x',
-			'axon.bootFirmwareFolderName': 'boot-firmware-tcn100x'
-		});
-		axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
+	// .vscode/settings.json 생성
+	axonLog(`⚙️ 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
+	await createVscodeSettingsUtil(projectFullUri, {
+		'axon.projectType': 'mcu_project',
+		'axon.buildAxonFolderName': 'mcu-tcn100x',
+		'axon.bootFirmwareFolderName': 'boot-firmware-tcn100x'
+	});
+	axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 
 		// 생성된 프로젝트 폴더를 VS Code에서 열기
 		await vscode.commands.executeCommand('vscode.openFolder', projectFullUri, { forceNewWindow: true });

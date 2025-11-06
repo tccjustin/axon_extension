@@ -6,7 +6,7 @@ import { ShellTaskOptions } from './types';
  * Shell Task 실행 공통 함수 (Yocto 개선 버전)
  */
 export async function executeShellTask(options: ShellTaskOptions): Promise<void> {
-	const { command, cwd, taskName, taskId, showTerminal = false, useScriptFile = false } = options;
+	const { command, cwd, taskName, taskId, showTerminal = false, useScriptFile = false, cwdUri: providedCwdUri } = options;
 	
 	axonLog(`📂 작업 디렉토리: ${cwd}`);
 	axonLog(`🔧 실행 명령 길이: ${command.length} bytes`);
@@ -18,30 +18,38 @@ export async function executeShellTask(options: ShellTaskOptions): Promise<void>
 	if (useScriptFile) {
 		const scriptFileName = `.axon_temp_${taskId}.sh`;
 		
-		// cwd를 URI로 변환 (워크스페이스 기준)
+		// cwd를 URI로 변환
 		let cwdUri: vscode.Uri;
 		
-		// 워크스페이스 폴더 가져오기 (원격 환경 자동 감지)
-		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		if (workspaceFolder) {
-			// 워크스페이스의 scheme을 사용 (file:// 또는 vscode-remote://)
-			const wsScheme = workspaceFolder.uri.scheme;
-			const wsAuthority = workspaceFolder.uri.authority;
-			
-			if (wsScheme === 'file') {
-				// 로컬 환경
-				cwdUri = vscode.Uri.file(cwd);
-			} else {
-				// 원격 환경 (vscode-remote://)
-				cwdUri = vscode.Uri.from({
-					scheme: wsScheme,
-					authority: wsAuthority,
-					path: cwd
-				});
-			}
+		// providedCwdUri가 제공되면 우선 사용 (프로젝트 생성 중에 유용)
+		if (providedCwdUri) {
+			cwdUri = providedCwdUri;
+			axonLog(`✅ 제공된 cwdUri 사용: ${cwdUri.toString()}`);
 		} else {
-			// 워크스페이스가 없으면 기본 file URI
-			cwdUri = vscode.Uri.file(cwd);
+			// 워크스페이스 폴더 가져오기 (원격 환경 자동 감지)
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+			if (workspaceFolder) {
+				// 워크스페이스의 scheme을 사용 (file:// 또는 vscode-remote://)
+				const wsScheme = workspaceFolder.uri.scheme;
+				const wsAuthority = workspaceFolder.uri.authority;
+				
+				if (wsScheme === 'file') {
+					// 로컬 환경
+					cwdUri = vscode.Uri.file(cwd);
+				} else {
+					// 원격 환경 (vscode-remote://)
+					// cwd가 절대 경로인지 확인
+					const normalizedPath = cwd.startsWith('/') ? cwd : `/${cwd}`;
+					cwdUri = vscode.Uri.from({
+						scheme: wsScheme,
+						authority: wsAuthority,
+						path: normalizedPath
+					});
+				}
+			} else {
+				// 워크스페이스가 없으면 기본 file URI
+				cwdUri = vscode.Uri.file(cwd);
+			}
 		}
 		
 		scriptFileUri = vscode.Uri.joinPath(cwdUri, scriptFileName);
@@ -51,6 +59,13 @@ export async function executeShellTask(options: ShellTaskOptions): Promise<void>
 		axonLog(`🔍 scriptFileUri: ${scriptFileUri.toString()}`);
 		
 		try {
+			// cwd 폴더가 존재하는지 확인
+			try {
+				await vscode.workspace.fs.stat(cwdUri);
+			} catch (statError) {
+				throw new Error(`작업 디렉토리가 존재하지 않습니다: ${cwd}`);
+			}
+			
 			// 스크립트 내용 작성
 			const scriptContent = `#!/bin/bash\nset -e\n${command}`;
 			await vscode.workspace.fs.writeFile(scriptFileUri, Buffer.from(scriptContent, 'utf8'));
@@ -60,13 +75,14 @@ export async function executeShellTask(options: ShellTaskOptions): Promise<void>
 			const stat = await vscode.workspace.fs.stat(scriptFileUri);
 			axonLog(`✅ 파일 생성 확인: ${stat.size} bytes`);
 			
-			// 상대 경로로 스크립트 실행 (cwd 기준)
-			actualCommand = `bash "${scriptFileName}"`;
+			// 상대 경로로 스크립트 실행 (cwd 기준) + 실행 권한 추가
+			actualCommand = `chmod +x "${scriptFileName}" && bash "${scriptFileName}"`;
 			axonLog(`✅ 실행 명령: ${actualCommand}`);
 		} catch (error) {
 			axonError(`❌ 임시 스크립트 파일 생성/확인 실패: ${error}`);
 			// 실패시 원본 명령어 그대로 사용
 			scriptFileUri = null;
+			actualCommand = command;
 			axonLog(`⚠️ 원본 명령어로 폴백`);
 		}
 	}
