@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { axonLog, axonSuccess, axonError } from '../../logger';
+import { executeShellTask, cloneGitRepository, createAndPushBranch } from '../common/shell-utils';
+import { createVscodeSettings as createVscodeSettingsUtil } from '../common/vscode-utils';
 
 /**
  * MCU 프로젝트 생성 데이터
@@ -9,17 +11,6 @@ export interface McuProjectData {
 	projectUri: vscode.Uri;
 	gitUrl: string;
 	branchName?: string;
-}
-
-/**
- * Shell Task 실행 옵션
- */
-interface ShellTaskOptions {
-	command: string;
-	cwd: string;
-	taskName: string;
-	taskId: string;
-	showTerminal?: boolean;  // true: 터미널 표시 및 포커스, false: 숨김 (기본값: false)
 }
 
 /**
@@ -56,13 +47,13 @@ export class McuProjectCreator {
 			: projectFullUri.path;
 		
 		// 새로 생성된 폴더 안으로 클론합니다.
-		await this.cloneGitRepository(gitUrl, projectPath);
+		await cloneGitRepository(gitUrl, projectPath, 'MCU');
 		axonSuccess(`✅ Git 저장소 '${gitUrl}'을(를) '${projectFullUri.toString()}'에 클론했습니다.`);
 
 		// 새 브랜치 이름이 제공된 경우, 브랜치 생성 및 푸시 작업 실행
 		if (branchName) {
 			axonLog(`🌿 새 브랜치 '${branchName}' 생성 및 푸시 작업을 시작합니다.`);
-			await this.createAndPushBranch(branchName, projectPath);
+			await createAndPushBranch(branchName, projectPath, 'MCU');
 			axonSuccess(`✅ 새 브랜치 '${branchName}'를 원격 저장소에 성공적으로 푸시했습니다.`);
 		}
 
@@ -78,7 +69,10 @@ export class McuProjectCreator {
 
 		// .vscode/settings.json 생성
 		axonLog(`⚙️ 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
-		await this.createVscodeSettings(projectFullUri);
+		await createVscodeSettingsUtil(projectFullUri, {
+			'axon.buildAxonFolderName': 'mcu-tcn100x',
+			'axon.bootFirmwareFolderName': 'boot-firmware-tcn100x'
+		});
 		axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 
 		// 생성된 프로젝트 폴더를 VS Code에서 열기
@@ -87,83 +81,12 @@ export class McuProjectCreator {
 	}
 
 	/**
-	 * Shell Task 실행 공통 함수
-	 */
-	private static async executeShellTask(options: ShellTaskOptions): Promise<void> {
-		const { command, cwd, taskName, taskId, showTerminal = false } = options;
-
-		const task = new vscode.Task(
-			{ type: 'shell', task: taskId },
-			vscode.TaskScope.Workspace,
-			taskName,
-			'Axon',
-			new vscode.ShellExecution(command, { cwd })
-		);
-
-		// 터미널 표시 옵션 설정
-		task.presentationOptions = {
-			reveal: showTerminal ? vscode.TaskRevealKind.Always : vscode.TaskRevealKind.Silent,
-			focus: showTerminal,
-			panel: vscode.TaskPanelKind.Shared,
-			showReuseMessage: false,
-			clear: true
-		};
-
-		return new Promise<void>((resolve, reject) => {
-			const disposable = vscode.tasks.onDidEndTaskProcess(e => {
-				if (e.execution.task.name === taskName) {
-					disposable.dispose();
-					if (e.exitCode === 0) {
-						resolve();
-					} else {
-						reject(new Error(`${taskName} failed with exit code ${e.exitCode}. Check the terminal for details.`));
-					}
-				}
-			});
-
-			vscode.tasks.executeTask(task).then(undefined, (error) => {
-				reject(new Error(`Failed to start ${taskName} task: ${error}`));
-			});
-		});
-	}
-
-	/**
-	 * Git 저장소 클론
-	 */
-	private static async cloneGitRepository(gitUrl: string, targetDir: string): Promise<void> {
-		axonLog(`🔄 Cloning repository using VS Code Tasks API into ${targetDir}...`);
-		
-		await this.executeShellTask({
-			command: `git clone --progress ${gitUrl}`,
-			cwd: targetDir,
-			taskName: 'Git Clone',
-			taskId: 'gitClone',
-			showTerminal: true
-		});
-	}
-
-	/**
-	 * 새 브랜치 생성 및 푸시
-	 */
-	private static async createAndPushBranch(branchName: string, projectDir: string): Promise<void> {
-		axonLog(`🔄 Running branch creation task in: ${projectDir}`);
-		
-		await this.executeShellTask({
-			command: `git switch -c ${branchName} && git push -u origin ${branchName}`,
-			cwd: projectDir,
-			taskName: 'Create and Push Branch',
-			taskId: 'createAndPushBranch',
-			showTerminal: true
-		});
-	}
-
-	/**
 	 * MCU defconfig 실행
 	 */
 	private static async runMcuDefconfig(projectDir: string): Promise<void> {
 		axonLog(`🔄 Running MCU defconfig in: ${projectDir}/mcu-tcn100x`);
 		
-		await this.executeShellTask({
+		await executeShellTask({
 			command: `cd mcu-tcn100x && make tcn100x_m7-1_defconfig`,
 			cwd: projectDir,
 			taskName: 'MCU Defconfig',
@@ -178,7 +101,7 @@ export class McuProjectCreator {
 	private static async runMcuBootfw(projectDir: string): Promise<void> {
 		axonLog(`🔄 Running MCU bootfw build in: ${projectDir}/mcu-tcn100x`);
 		
-		await this.executeShellTask({
+		await executeShellTask({
 			command: `cd mcu-tcn100x && make bootfw`,
 			cwd: projectDir,
 			taskName: 'MCU Bootfw Build',
@@ -187,47 +110,5 @@ export class McuProjectCreator {
 		});
 	}
 
-	/**
-	 * .vscode/settings.json 파일 생성
-	 */
-	private static async createVscodeSettings(projectFullUri: vscode.Uri): Promise<void> {
-		axonLog(`⚙️ .vscode/settings.json 생성 시작`);
-
-		// .vscode 폴더 경로
-		const vscodeFolder = vscode.Uri.joinPath(projectFullUri, '.vscode');
-		
-		// .vscode 폴더 생성
-		try {
-			await vscode.workspace.fs.createDirectory(vscodeFolder);
-			axonLog(`✅ .vscode 폴더 생성 완료: ${vscodeFolder.fsPath}`);
-		} catch (error) {
-			axonLog(`⚠️ .vscode 폴더가 이미 존재하거나 생성 중 오류: ${error}`);
-		}
-
-		// settings.json 파일 경로
-		const settingsFile = vscode.Uri.joinPath(vscodeFolder, 'settings.json');
-
-		// 기존 settings.json 읽기 (있으면)
-		let existingSettings: any = {};
-		try {
-			const existingContent = await vscode.workspace.fs.readFile(settingsFile);
-			const existingText = Buffer.from(existingContent).toString('utf8');
-			existingSettings = JSON.parse(existingText);
-			axonLog(`📖 기존 settings.json 파일을 읽었습니다`);
-		} catch (error) {
-			axonLog(`📝 새로운 settings.json 파일을 생성합니다`);
-		}
-
-		// 설정 추가 또는 업데이트
-		existingSettings['axon.buildAxonFolderName'] = 'mcu-tcn100x';
-		existingSettings['axon.bootFirmwareFolderName'] = 'boot-firmware-tcn100x';
-
-		// JSON 문자열로 변환 (들여쓰기 포함)
-		const settingsContent = JSON.stringify(existingSettings, null, 4);
-
-		// 파일 쓰기
-		await vscode.workspace.fs.writeFile(settingsFile, Buffer.from(settingsContent, 'utf8'));
-		axonLog(`✅ settings.json 파일 저장 완료: ${settingsFile.fsPath}`);
-	}
 }
 

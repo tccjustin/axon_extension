@@ -4,6 +4,7 @@
   "publisher": "justin-lee",
   "description": "A powerful VS Code extension for enhanced development experience",
   "version": "0.3.9",
+  "icon": "icon.png",
   "extensionKind": ["ui","workspace"],
   "repository": {
     "type": "git",
@@ -100,7 +101,7 @@
         {
           "id": "axon",
           "title": "Axon",
-          "icon": "$(circuit-board)"
+          "icon": "resources/axon-icon.svg"
         }
       ]
     },

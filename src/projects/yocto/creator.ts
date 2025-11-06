@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { axonLog, axonSuccess, axonError } from '../../logger';
+import { executeShellTask, cloneGitRepository, createAndPushBranch } from '../common/shell-utils';
+import { createVscodeSettings as createVscodeSettingsUtil } from '../common/vscode-utils';
 
 /**
  * Yocto 프로젝트 생성 데이터
@@ -11,18 +13,6 @@ export interface YoctoProjectData {
 	branchName?: string;
 	manifestGitUrl?: string;
 	selectedManifest?: string;
-}
-
-/**
- * Shell Task 실행 옵션
- */
-interface ShellTaskOptions {
-	command: string;
-	cwd: string;
-	taskName: string;
-	taskId: string;
-	showTerminal?: boolean;  // true: 터미널 표시 및 포커스, false: 숨김 (기본값: false)
-	useScriptFile?: boolean;  // true: 명령어를 heredoc으로 감싸서 실행 (터미널에 명령어 내용 숨김, 기본값: false)
 }
 
 /**
@@ -122,20 +112,20 @@ export class YoctoProjectCreator {
 			axonLog(`🔄 Git 저장소에서 Yocto 프로젝트 생성: ${gitUrl}`);
 			
 			// 새로 생성된 폴더 안으로 클론합니다.
-			await this.cloneGitRepository(gitUrl, projectPath);
+			await cloneGitRepository(gitUrl, projectPath, 'Yocto');
 			axonSuccess(`✅ Git 저장소 '${gitUrl}'을(를) '${projectFullUri.toString()}'에 클론했습니다.`);
 
 			// 새 브랜치 이름이 제공된 경우, 브랜치 생성 및 푸시 작업 실행
 			if (branchName) {
 				axonLog(`🌿 새 브랜치 '${branchName}' 생성 및 푸시 작업을 시작합니다.`);
-				await this.createAndPushBranch(branchName, projectPath);
+				await createAndPushBranch(branchName, projectPath, 'Yocto');
 				axonSuccess(`✅ 새 브랜치 '${branchName}'를 원격 저장소에 성공적으로 푸시했습니다.`);
 			}
 		}
 
 		// .vscode/settings.json 생성
 		axonLog(`⚙️ Yocto 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
-		await this.createVscodeSettings(projectFullUri);
+		await createVscodeSettingsUtil(projectFullUri, { 'axon.projectType': 'yocto' });
 		axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 
 		// 생성된 프로젝트 폴더를 VS Code에서 열기
@@ -144,129 +134,12 @@ export class YoctoProjectCreator {
 	}
 
 	/**
-	 * Shell Task 실행 공통 함수
-	 */
-	private static async executeShellTask(options: ShellTaskOptions): Promise<void> {
-		const { command, cwd, taskName, taskId, showTerminal = false, useScriptFile = false } = options;
-		
-		axonLog(`📂 작업 디렉토리: ${cwd}`);
-		axonLog(`🔧 실행 명령 길이: ${command.length} bytes`);
-
-		let actualCommand = command;
-		let scriptFileUri: vscode.Uri | null = null;
-
-		// 임시 스크립트 파일 생성 (명령어 내용 숨김)
-		if (useScriptFile) {
-			const scriptFileName = `.axon_temp_${taskId}.sh`;
-			
-			// cwd를 URI로 변환 (워크스페이스 기준)
-			let cwdUri: vscode.Uri;
-			
-			// 워크스페이스 폴더 가져오기 (원격 환경 자동 감지)
-			const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-			if (workspaceFolder) {
-				// 워크스페이스의 scheme을 사용 (file:// 또는 vscode-remote://)
-				const wsScheme = workspaceFolder.uri.scheme;
-				const wsAuthority = workspaceFolder.uri.authority;
-				
-				if (wsScheme === 'file') {
-					// 로컬 환경
-					cwdUri = vscode.Uri.file(cwd);
-				} else {
-					// 원격 환경 (vscode-remote://)
-					cwdUri = vscode.Uri.from({
-						scheme: wsScheme,
-						authority: wsAuthority,
-						path: cwd
-					});
-				}
-			} else {
-				// 워크스페이스가 없으면 기본 file URI
-				cwdUri = vscode.Uri.file(cwd);
-			}
-			
-			scriptFileUri = vscode.Uri.joinPath(cwdUri, scriptFileName);
-			
-			axonLog(`📝 임시 스크립트 파일 생성 시작: ${scriptFileName}`);
-			axonLog(`🔍 cwdUri: ${cwdUri.toString()}`);
-			axonLog(`🔍 scriptFileUri: ${scriptFileUri.toString()}`);
-			
-			try {
-				// 스크립트 내용 작성
-				const scriptContent = `#!/bin/bash\nset -e\n${command}`;
-				await vscode.workspace.fs.writeFile(scriptFileUri, Buffer.from(scriptContent, 'utf8'));
-				axonLog(`✅ 파일 쓰기 완료`);
-				
-				// 파일 생성 확인
-//				await new Promise(resolve => setTimeout(resolve, 200));
-				const stat = await vscode.workspace.fs.stat(scriptFileUri);
-				axonLog(`✅ 파일 생성 확인: ${stat.size} bytes`);
-				
-				// 상대 경로로 스크립트 실행 (cwd 기준)
-				actualCommand = `bash "${scriptFileName}"`;
-				axonLog(`✅ 실행 명령: ${actualCommand}`);
-			} catch (error) {
-				axonError(`❌ 임시 스크립트 파일 생성/확인 실패: ${error}`);
-				// 실패시 원본 명령어 그대로 사용
-				scriptFileUri = null;
-				axonLog(`⚠️ 원본 명령어로 폴백`);
-			}
-		}
-
-		// Task API 사용 (안정적인 완료 감지)
-		const task = new vscode.Task(
-			{ type: 'shell', task: taskId },
-			vscode.TaskScope.Workspace,
-			taskName,
-			'Axon',
-			new vscode.ShellExecution(actualCommand, { cwd })
-		);
-
-		// 터미널 표시 옵션 설정
-		task.presentationOptions = {
-			reveal: showTerminal ? vscode.TaskRevealKind.Always : vscode.TaskRevealKind.Silent,
-			focus: showTerminal,
-			panel: vscode.TaskPanelKind.Shared,
-			showReuseMessage: false,
-			clear: false  // 터미널 내용을 지우지 않고 누적
-		};
-
-		return new Promise<void>((resolve, reject) => {
-			const disposable = vscode.tasks.onDidEndTaskProcess(async e => {
-				if (e.execution.task.name === taskName) {
-					disposable.dispose();
-					
-					// 임시 스크립트 파일 삭제
-					if (scriptFileUri) {
-						try {
-							await vscode.workspace.fs.delete(scriptFileUri);
-							axonLog(`🗑️ 임시 스크립트 파일 삭제 완료`);
-						} catch (error) {
-							axonLog(`⚠️ 임시 스크립트 파일 삭제 실패 (무시): ${error}`);
-						}
-					}
-					
-					if (e.exitCode === 0) {
-						resolve();
-					} else {
-						reject(new Error(`${taskName} failed with exit code ${e.exitCode}. Check the terminal for details.`));
-					}
-				}
-			});
-
-			vscode.tasks.executeTask(task).then(undefined, (error) => {
-				reject(new Error(`Failed to start ${taskName} task: ${error}`));
-			});
-		});
-	}
-
-	/**
 	 * Buildscript 클론
 	 */
 	private static async cloneBuildscript(projectPath: string): Promise<void> {
 		axonLog(`🔄 Cloning buildscript repository...`);
 		
-		await this.executeShellTask({
+		await executeShellTask({
 			command: `git clone ssh://git@bitbucket.telechips.com:7999/axon/build-axon.git -b dev`,
 			cwd: projectPath,
 			taskName: 'Clone Buildscript (Yocto)',
@@ -276,84 +149,12 @@ export class YoctoProjectCreator {
 	}
 
 	/**
-	 * Git 저장소 클론
-	 */
-	private static async cloneGitRepository(gitUrl: string, targetDir: string): Promise<void> {
-		axonLog(`🔄 Cloning Yocto repository using VS Code Tasks API into ${targetDir}...`);
-		
-		await this.executeShellTask({
-			command: `git clone --progress ${gitUrl}`,
-			cwd: targetDir,
-			taskName: 'Git Clone (Yocto)',
-			taskId: 'yoctoGitClone',
-			showTerminal: true
-		});
-	}
-
-	/**
-	 * 새 브랜치 생성 및 푸시
-	 */
-	private static async createAndPushBranch(branchName: string, projectDir: string): Promise<void> {
-		axonLog(`🔄 Running Yocto branch creation task in: ${projectDir}`);
-		
-		await this.executeShellTask({
-			command: `git switch -c ${branchName} && git push -u origin ${branchName}`,
-			cwd: projectDir,
-			taskName: 'Create and Push Branch (Yocto)',
-			taskId: 'yoctoCreateAndPushBranch',
-			showTerminal: true
-		});
-	}
-
-	/**
-	 * .vscode/settings.json 파일 생성
-	 */
-	private static async createVscodeSettings(projectFullUri: vscode.Uri): Promise<void> {
-		axonLog(`⚙️ .vscode/settings.json 생성 시작 (Yocto)`);
-
-		// .vscode 폴더 경로
-		const vscodeFolder = vscode.Uri.joinPath(projectFullUri, '.vscode');
-		
-		// .vscode 폴더 생성
-		try {
-			await vscode.workspace.fs.createDirectory(vscodeFolder);
-			axonLog(`✅ .vscode 폴더 생성 완료: ${vscodeFolder.fsPath}`);
-		} catch (error) {
-			axonLog(`⚠️ .vscode 폴더가 이미 존재하거나 생성 중 오류: ${error}`);
-		}
-
-		// settings.json 파일 경로
-		const settingsFile = vscode.Uri.joinPath(vscodeFolder, 'settings.json');
-
-		// 기존 settings.json 읽기 (있으면)
-		let existingSettings: any = {};
-		try {
-			const existingContent = await vscode.workspace.fs.readFile(settingsFile);
-			const existingText = Buffer.from(existingContent).toString('utf8');
-			existingSettings = JSON.parse(existingText);
-			axonLog(`📖 기존 settings.json 파일을 읽었습니다`);
-		} catch (error) {
-			axonLog(`📝 새로운 settings.json 파일을 생성합니다`);
-		}
-
-		// 설정 추가 또는 업데이트 (Yocto 전용 설정)
-		existingSettings['axon.projectType'] = 'yocto';
-
-		// JSON 문자열로 변환 (들여쓰기 포함)
-		const settingsContent = JSON.stringify(existingSettings, null, 4);
-
-		// 파일 쓰기
-		await vscode.workspace.fs.writeFile(settingsFile, Buffer.from(settingsContent, 'utf8'));
-		axonLog(`✅ settings.json 파일 저장 완료: ${settingsFile.fsPath}`);
-	}
-
-	/**
 	 * repo init 실행
 	 */
 	private static async repoInit(manifestGitUrl: string, manifestFile: string, targetDir: string): Promise<void> {
 		axonLog(`🔄 Running repo init in: ${targetDir}`);
 		
-		await this.executeShellTask({
+		await executeShellTask({
 			command: `repo init -u ${manifestGitUrl} -m ${manifestFile}`,
 			cwd: targetDir,
 			taskName: 'Repo Init (Yocto)',
@@ -376,7 +177,7 @@ export class YoctoProjectCreator {
 		
 		axonLog(`🔧 Sync 명령: ${syncCommand} (원격: ${isRemote}, 플랫폼: ${process.platform})`);
 		
-		await this.executeShellTask({
+		await executeShellTask({
 			command: syncCommand,
 			cwd: targetDir,
 			taskName: 'Repo Sync (Yocto)',
@@ -411,7 +212,7 @@ export class YoctoProjectCreator {
 			
 			axonLog(`🔗 심볼릭 링크: ${linkName} -> ${relativeSource}`);
 			
-			await this.executeShellTask({
+			await executeShellTask({
 				command: `ln -sf "${relativeSource}" "${linkName}" && chmod +x "${linkName}"`,
 				cwd: sdkPath,
 				taskName: 'Create Build Script Link (Yocto)',
@@ -463,7 +264,7 @@ export class YoctoProjectCreator {
 		try {
 			// shell 명령으로 파일 존재 확인 (원격 환경 지원)
 			// 항상 성공하는 명령으로 변경 (exit code 0)
-			await this.executeShellTask({
+			await executeShellTask({
 				command: `if [ -f ${envSetupRelativePath} ]; then echo "EXISTS"; exit 0; else echo "NOT_EXISTS"; exit 1; fi`,
 				cwd: sdkPath,
 				taskName: 'Check Buildtools (Yocto)',
@@ -502,7 +303,7 @@ get /share/${TOOLS_FILE}
 bye
 End-Of-Session`;
 		
-		await this.executeShellTask({
+		await executeShellTask({
 			command: downloadToolsCommand,
 			cwd: `${sdkPath}`,
 			taskName: 'Download Tools (Yocto)',
@@ -519,7 +320,7 @@ End-Of-Session`;
 		
 		const extractAndCleanCommand = `tar xzf ${TOOLS_FILE} &> /dev/null && rm ${TOOLS_FILE}`;
 		
-		await this.executeShellTask({
+		await executeShellTask({
 			command: extractAndCleanCommand,
 			cwd: `${sdkPath}`,
 			taskName: 'Extract Tools (Yocto)',
@@ -548,7 +349,7 @@ fi
 cd ..
 `;
 		
-		await this.executeShellTask({
+		await executeShellTask({
 			command: downloadMirrorCommand,
 			cwd: `${sdkPath}`,
 			taskName: 'Download Source Mirror (Yocto)',
@@ -594,7 +395,7 @@ echo buildtools | tools/$BUILDTOOLS_SCRIPT
 		
 		axonLog(`🔨 Buildtools 설치 중... (이 작업은 시간이 걸릴 수 있습니다)`);
 		
-		await this.executeShellTask({
+		await executeShellTask({
 			command: selectAndInstallCommand,
 			cwd: `${sdkPath}`,
 			taskName: 'Install Buildtools (Yocto)',
@@ -647,7 +448,7 @@ echo buildtools | tools/$BUILDTOOLS_SCRIPT
 			axonLog(`🔄 Cloning manifest repository (원격 환경)...`);
 			
 			try {
-				await this.executeShellTask({
+				await executeShellTask({
 					command: `git clone ${manifestGitUrl}`,
 					cwd: projectPath.scheme === 'file' ? projectPath.fsPath : projectPath.path,
 					taskName: 'Load Manifests (Yocto)',
