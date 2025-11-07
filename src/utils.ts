@@ -65,13 +65,51 @@ export function dirToDisplay(uri: vscode.Uri): string {
 }
 
 /**
- * 원격 경로를 Samba 네트워크 드라이브 경로로 변환
- * SSH/WSL 환경에서 로컬 Samba 매핑으로 변환
+ * 원격 경로를 Windows에서 접근 가능한 경로로 변환
+ * - SSH: Samba 네트워크 드라이브 경로 (Z:\...)
+ * - WSL: \\wsl$\{distro}\... 형식
+ * @param remotePath Unix 형식 경로
+ * @param remoteType 'ssh' | 'wsl' | undefined
  */
-export function convertRemotePathToSamba(remotePath: string): string {
-	axonLog(`🔄 원격 경로를 Samba 경로로 변환: ${remotePath}`);
+export function convertRemotePathToSamba(remotePath: string, remoteType?: string): string {
+	axonLog(`🔄 원격 경로 변환 시작: ${remotePath} (타입: ${remoteType || 'unknown'})`);
 
 	try {
+		// WSL 환경 처리
+		if (remoteType === 'wsl') {
+			axonLog(`🐧 WSL 환경 감지 - \\\\wsl$ 경로로 변환`);
+			
+			// WSL의 /mnt/c/... 패턴: C:\... 로 직접 변환
+			if (remotePath.startsWith('/mnt/c/')) {
+				const afterMntC = remotePath.split('/mnt/c/')[1];
+				if (afterMntC) {
+					const windowsPath = `C:\\${afterMntC.replace(/\//g, '\\')}`;
+					axonLog(`✅ WSL /mnt/c/ → Windows: ${remotePath} → ${windowsPath}`);
+					return windowsPath;
+				}
+			}
+			
+			// WSL의 다른 마운트 포인트: /mnt/d/, /mnt/e/ 등
+			const mntMatch = remotePath.match(/^\/mnt\/([a-z])\/(.*)/);
+			if (mntMatch) {
+				const driveLetter = mntMatch[1].toUpperCase();
+				const afterDrive = mntMatch[2];
+				const windowsPath = `${driveLetter}:\\${afterDrive.replace(/\//g, '\\')}`;
+				axonLog(`✅ WSL /mnt/${mntMatch[1]}/ → Windows: ${remotePath} → ${windowsPath}`);
+				return windowsPath;
+			}
+			
+			// WSL의 /home/... 또는 기타 경로: \\wsl$\{distro}\... 형식
+			// distro 이름은 설정에서 가져오거나 기본값 사용
+			const distroName = vscode.workspace.getConfiguration('axon').get<string>('wsl.distroName', 'Ubuntu');
+			const wslPath = `\\\\wsl$\\${distroName}${remotePath.replace(/\//g, '\\')}`;
+			axonLog(`✅ WSL 경로 → \\\\wsl$ 형식: ${remotePath} → ${wslPath}`);
+			return wslPath;
+		}
+		
+		// SSH 환경 처리 (기존 로직)
+		axonLog(`🔐 SSH 환경 - Samba 경로로 변환`);
+		
 		// 사용자의 특정 환경: /home/id/{프로젝트}/... → Z:\{프로젝트}\...
 		if (remotePath.startsWith('/home/id/')) {
 			const afterId = remotePath.split('/home/id/')[1];
@@ -126,16 +164,6 @@ export function convertRemotePathToSamba(remotePath: string): string {
 			if (afterHome) {
 				const sambaPath = `Z:\\${afterHome.replace(/\//g, '\\')}`;
 				axonLog(`⚠️ /home/ 패턴 (단순 변환): ${remotePath} → ${sambaPath}`);
-				return sambaPath;
-			}
-		}
-
-		// 일반적인 WSL 패턴: /mnt/c/Users/... → C:\Users\...
-		if (remotePath.startsWith('/mnt/c/')) {
-			const afterMntC = remotePath.split('/mnt/c/')[1];
-			if (afterMntC) {
-				const sambaPath = `C:\\${afterMntC.replace(/\//g, '\\')}`;
-				axonLog(`✅ WSL /mnt/c/ 매핑: ${remotePath} → ${sambaPath}`);
 				return sambaPath;
 			}
 		}

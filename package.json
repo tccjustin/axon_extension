@@ -176,6 +176,11 @@
           "type": "string",
           "default": "",
           "description": "Yocto project root directory path (automatically set when creating a project)"
+        },
+        "axon.wsl.distroName": {
+          "type": "string",
+          "default": "Ubuntu",
+          "description": "WSL distribution name for \\\\wsl$ path conversion (e.g., Ubuntu, Ubuntu-20.04, Debian)"
         }
       }
     },

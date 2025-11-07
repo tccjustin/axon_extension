@@ -25,13 +25,21 @@ export async function getFwdnConfig(): Promise<FwdnConfig> {
 	}
 
 	// FWDN은 로컬 Windows에서 실행되므로 Windows 경로 필요
-	// URI 문자열(vscode-remote://...)이면 Samba 경로(Z:\...)로 변환
+	// URI 문자열(vscode-remote://...)이면 Samba 경로 또는 WSL 경로로 변환
 	let bootFirmwarePath: string;
 	if (bootFirmwarePathOrUri.startsWith('vscode-remote://')) {
-		// URI 파싱하여 Unix 경로 추출 후 Samba 경로로 변환
+		// URI 파싱하여 Unix 경로 추출
 		const uri = vscode.Uri.parse(bootFirmwarePathOrUri);
-		bootFirmwarePath = convertRemotePathToSamba(uri.path);
-		axonLog(`🔄 [FWDN] 원격 경로를 Samba 경로로 변환: ${uri.path} → ${bootFirmwarePath}`);
+		
+		// 원격 환경 타입 감지 (WSL vs SSH)
+		const remoteName = vscode.env.remoteName || '';
+		const remoteType = remoteName.startsWith('wsl') ? 'wsl' : 'ssh';
+		
+		axonLog(`🌐 [FWDN] 원격 환경 감지: ${remoteName} → 타입: ${remoteType}`);
+		
+		// 환경에 맞는 경로 변환
+		bootFirmwarePath = convertRemotePathToSamba(uri.path, remoteType);
+		axonLog(`🔄 [FWDN] 원격 경로 변환 완료: ${uri.path} → ${bootFirmwarePath}`);
 	} else {
 		// 이미 Windows 경로
 		bootFirmwarePath = bootFirmwarePathOrUri;
