@@ -3,7 +3,7 @@
   "displayName": "Axon",
   "publisher": "justin-lee",
   "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "icon": "icon.png",
   "extensionKind": ["ui","workspace"],
   "repository": {
@@ -86,6 +86,11 @@
         "category": "Axon"
       },
       {
+        "command": "axon.buildYoctoKernel",
+        "title": "Build Yocto Kernel",
+        "category": "Axon"
+      },
+      {
         "command": "axon.cleanYoctoAp",
         "title": "Clean Yocto AP",
         "category": "Axon"
@@ -98,6 +103,21 @@
       {
         "command": "axon.cleanYoctoAll",
         "title": "Clean Yocto All",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.editApLocalConf",
+        "title": "Edit AP local.conf",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.editMcuLocalConf",
+        "title": "Edit MCU local.conf",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.editBranchSrcrev",
+        "title": "Edit Branch/Srcrev",
         "category": "Axon"
       }
     ],

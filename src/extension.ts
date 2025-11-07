@@ -105,8 +105,53 @@ class ConfigurationsProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 
 	getChildren(element?: AxonTreeItem): Thenable<AxonTreeItem[]> {
 		if (!element) {
+			// 최상위 레벨: Yocto 폴더
 			return Promise.resolve([
-				// 향후 설정 항목들을 여기에 추가
+				new AxonTreeItem(
+					'configYocto',
+					'Yocto',
+					vscode.TreeItemCollapsibleState.Collapsed,
+					undefined,
+					'package',
+					'Yocto 설정 항목'
+				)
+			]);
+		} else if (element.id === 'configYocto') {
+			// Yocto 하위 설정 항목들
+			return Promise.resolve([
+				new AxonTreeItem(
+					'editApLocalConf',
+					'AP : conf/local.conf',
+					vscode.TreeItemCollapsibleState.None,
+					{
+						command: 'axon.editApLocalConf',
+						title: 'Edit AP local.conf'
+					},
+					'edit',
+					'AP의 build/tcn1000/conf/local.conf 파일 편집'
+				),
+				new AxonTreeItem(
+					'editMcuLocalConf',
+					'MCU : conf/local.conf',
+					vscode.TreeItemCollapsibleState.None,
+					{
+						command: 'axon.editMcuLocalConf',
+						title: 'Edit MCU local.conf'
+					},
+					'edit',
+					'MCU의 build/tcn1000-mcu/conf/local.conf 파일 편집'
+				),
+				new AxonTreeItem(
+					'editBranchSrcrev',
+					'Modify : branch/srcrev',
+					vscode.TreeItemCollapsibleState.None,
+					{
+						command: 'axon.editBranchSrcrev',
+						title: 'Edit Branch/Srcrev'
+					},
+					'git-branch',
+					'poky/meta-telechips/meta-dev/telechips-cgw-rev.inc 파일 편집'
+				)
 			]);
 		}
 		return Promise.resolve([]);
@@ -166,20 +211,31 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 					'tools',
 					'Yocto AP 이미지 빌드'
 				),
-				new AxonTreeItem(
-					'buildYoctoMcu',
-					'Build MCU',
-					vscode.TreeItemCollapsibleState.None,
-					{
-						command: 'axon.buildYoctoMcu',
-						title: 'Build Yocto MCU'
-					},
-					'chip',
-					'Yocto MCU 빌드'
-				),
-				new AxonTreeItem(
-					'cleanYoctoAp',
-					'Clean AP',
+			new AxonTreeItem(
+				'buildYoctoMcu',
+				'Build MCU',
+				vscode.TreeItemCollapsibleState.None,
+				{
+					command: 'axon.buildYoctoMcu',
+					title: 'Build Yocto MCU'
+				},
+				'chip',
+				'Yocto MCU 빌드'
+			),
+			new AxonTreeItem(
+				'buildYoctoKernel',
+				'Build Kernel',
+				vscode.TreeItemCollapsibleState.None,
+				{
+					command: 'axon.buildYoctoKernel',
+					title: 'Build Yocto Kernel'
+				},
+				'file-binary',
+				'Yocto Kernel 빌드 (linux-telechips + make SD_fai.rom)'
+			),
+			new AxonTreeItem(
+				'cleanYoctoAp',
+				'Clean AP',
 					vscode.TreeItemCollapsibleState.None,
 					{
 						command: 'axon.cleanYoctoAp',
@@ -468,6 +524,14 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
+	// Build Yocto Kernel 명령
+	const buildYoctoKernelDisposable = vscode.commands.registerCommand(
+		'axon.buildYoctoKernel',
+		async () => {
+			await YoctoProjectBuilder.buildKernel();
+		}
+	);
+
 	// Clean Yocto AP 명령
 	const cleanYoctoApDisposable = vscode.commands.registerCommand(
 		'axon.cleanYoctoAp',
@@ -492,7 +556,31 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
-        context.subscriptions.push(
+	// Edit AP local.conf 명령
+	const editApLocalConfDisposable = vscode.commands.registerCommand(
+		'axon.editApLocalConf',
+		async () => {
+			await YoctoProjectBuilder.editApLocalConf();
+		}
+	);
+
+	// Edit MCU local.conf 명령
+	const editMcuLocalConfDisposable = vscode.commands.registerCommand(
+		'axon.editMcuLocalConf',
+		async () => {
+			await YoctoProjectBuilder.editMcuLocalConf();
+		}
+	);
+
+	// Edit Branch/Srcrev 명령
+	const editBranchSrcrevDisposable = vscode.commands.registerCommand(
+		'axon.editBranchSrcrev',
+		async () => {
+			await YoctoProjectBuilder.editBranchSrcrev();
+		}
+	);
+
+	context.subscriptions.push(
 		configureSettingsDisposable, // 상위 설정 메뉴 명령어
 		runFwdnAllDisposable,
 		mcuBuildMakeDisposable,
@@ -507,10 +595,15 @@ export async function activate(context: vscode.ExtensionContext) {
 		// 빌드 명령어들
 		buildYoctoApDisposable,
 		buildYoctoMcuDisposable,
+		buildYoctoKernelDisposable,
 		// 클린 명령어들
 		cleanYoctoApDisposable,
 		cleanYoctoMcuDisposable,
-		cleanYoctoAllDisposable
+		cleanYoctoAllDisposable,
+		// 설정 편집 명령어들
+		editApLocalConfDisposable,
+		editMcuLocalConfDisposable,
+		editBranchSrcrevDisposable
 	);
 }
 
