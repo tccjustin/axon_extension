@@ -160,15 +160,94 @@ export async function executeFwdnCommand(extensionPath: string): Promise<void> {
 	// 환경 정보 로깅 (디버깅용)
 	axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
 
-	// 설정 가져오기
+	// 필수 설정 확인 및 사용자 선택
+	const workspaceConfig = vscode.workspace.getConfiguration('axon');
+	
+	// 현재 설정 상태 로깅 (디버깅용)
+	axonLog(`📋 현재 설정 확인:`);
+	axonLog(`  - buildAxonFolderName: ${workspaceConfig.get<string>('buildAxonFolderName') || '(없음)'}`);
+	axonLog(`  - bootFirmwareFolderName: ${workspaceConfig.get<string>('bootFirmwareFolderName') || '(없음)'}`);
+	
+	// buildAxonFolderName 설정 확인
+	let buildAxonFolderName = workspaceConfig.get<string>('buildAxonFolderName');
+	if (!buildAxonFolderName || buildAxonFolderName.trim() === '') {
+		axonLog(`⚠️ buildAxonFolderName이 설정되지 않았습니다. 사용자 선택을 요청합니다.`);
+		
+		const buildFolderOptions = [
+			{ label: 'mcu-tcn100x', description: 'MCU Standalone 프로젝트용 폴더' },
+			{ label: 'build-axon', description: 'Yocto 프로젝트용 폴더' }
+		];
+		
+		const selectedBuildFolder = await vscode.window.showQuickPick(buildFolderOptions, {
+			placeHolder: '빌드 폴더명을 선택하세요',
+			title: 'Build Folder Name 선택',
+			ignoreFocusOut: true
+		});
+		
+		if (!selectedBuildFolder) {
+			axonLog('❌ 사용자가 빌드 폴더 선택을 취소했습니다.');
+			vscode.window.showInformationMessage('FWDN이 취소되었습니다.');
+			return;
+		}
+		
+		buildAxonFolderName = selectedBuildFolder.label;
+		await updateConfiguration('buildAxonFolderName', buildAxonFolderName, 'Build 폴더명');
+		axonLog(`✅ buildAxonFolderName 설정 완료: ${buildAxonFolderName}`);
+	}
+	
+	// bootFirmwareFolderName 설정 확인
+	let bootFirmwareFolderName = workspaceConfig.get<string>('bootFirmwareFolderName');
+	if (!bootFirmwareFolderName || bootFirmwareFolderName.trim() === '') {
+		axonLog(`⚠️ bootFirmwareFolderName이 설정되지 않았습니다. 사용자 선택을 요청합니다.`);
+		
+		const bootFirmwareOptions = [
+			{ label: 'boot-firmware-tcn100x', description: 'MCU standalone project 용 Boot Firmware 폴더명' },
+			{ label: 'boot-firmware_tcn1000', description: 'Yocto project 용 Boot Firmware 폴더명' }
+		];
+		
+		const selectedBootFirmware = await vscode.window.showQuickPick(bootFirmwareOptions, {
+			placeHolder: 'Boot Firmware 폴더명을 선택하세요',
+			title: 'Boot Firmware Folder Name 선택',
+			ignoreFocusOut: true
+		});
+		
+		if (!selectedBootFirmware) {
+			axonLog('❌ 사용자가 Boot Firmware 폴더 선택을 취소했습니다.');
+			vscode.window.showInformationMessage('FWDN이 취소되었습니다.');
+			return;
+		}
+		
+		bootFirmwareFolderName = selectedBootFirmware.label;
+		await updateConfiguration('bootFirmwareFolderName', bootFirmwareFolderName, 'Boot Firmware 폴더명');
+		axonLog(`✅ bootFirmwareFolderName 설정 완료: ${bootFirmwareFolderName}`);
+	}
+
+	// 설정된 폴더로 FWDN 설정 가져오기
 	let config: FwdnConfig;
 	try {
 		config = await getFwdnConfig();
 		axonLog(`📋 설정 - FWDN 경로: ${config.fwdnExePath}, Boot Firmware 경로: ${config.bootFirmwarePath}`);
 	} catch (error) {
-		// Boot Firmware 경로가 설정되지 않은 경우
+		// 선택한 폴더를 찾을 수 없는 경우
 		axonError(`설정 오류: ${error}`);
-		vscode.window.showErrorMessage(`Boot Firmware 경로가 설정되지 않았습니다. "Axon: Auto-detect Boot Firmware Path" 명령을 먼저 실행해주세요.`);
+		
+		const errorMsg = `Boot Firmware 폴더를 찾을 수 없습니다.\n\n` +
+			`현재 설정:\n` +
+			`- 빌드 폴더: ${buildAxonFolderName}\n` +
+			`- Boot Firmware 폴더: ${bootFirmwareFolderName}\n\n` +
+			`워크스페이스에 해당 폴더가 존재하는지 확인하거나,\n` +
+			`다른 폴더명으로 다시 시도해주세요.`;
+		
+		vscode.window.showErrorMessage(errorMsg, '설정 변경', '다시 시도').then(selection => {
+			if (selection === '설정 변경') {
+				vscode.commands.executeCommand('axon.configureSettings');
+			} else if (selection === '다시 시도') {
+				// settings.json의 설정을 초기화하고 다시 시도
+				workspaceConfig.update('buildAxonFolderName', undefined, vscode.ConfigurationTarget.Workspace);
+				workspaceConfig.update('bootFirmwareFolderName', undefined, vscode.ConfigurationTarget.Workspace);
+				vscode.commands.executeCommand('axon.FWDN_ALL');
+			}
+		});
 		return;
 	}
 
@@ -237,6 +316,12 @@ export async function executeFwdnCommand(extensionPath: string): Promise<void> {
 		}
 
 		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
+
+		// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
 
 		// 배치 파일 완료 신호 대기 및 자동 창 닫기
 		await executeFwdnWithAutoClose(terminal);

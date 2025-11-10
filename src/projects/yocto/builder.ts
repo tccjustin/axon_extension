@@ -18,6 +18,28 @@ export class YoctoProjectBuilder {
 	private static readonly DEFAULT_VERSION = 'dev';
 	
 	/**
+	 * bootFirmwareFolderName 설정 확인 및 선택
+	 * (프로젝트 타입 기반으로 자동 설정)
+	 */
+	private static async ensureBootFirmwareFolderName(): Promise<string | undefined> {
+		const { ensureProjectType, getAxonConfig } = await import('../../utils');
+		
+		// 프로젝트 타입 선택 (자동으로 bootFirmwareFolderName도 설정됨)
+		const projectType = await ensureProjectType();
+		
+		if (!projectType) {
+			axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
+			return undefined;
+		}
+		
+		// 설정된 bootFirmwareFolderName 반환
+		const config = getAxonConfig();
+		axonLog(`✅ bootFirmwareFolderName: ${config.bootFirmwareFolderName}`);
+		
+		return config.bootFirmwareFolderName;
+	}
+	
+	/**
 	 * Yocto 프로젝트 루트 경로 찾기
 	 * 
 	 * 전략:
@@ -130,6 +152,13 @@ export class YoctoProjectBuilder {
 		axonLog('🔨 Yocto AP 빌드 시작...');
 		
 		try {
+			// 0. bootFirmwareFolderName 설정 확인 및 선택
+			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
+			if (!bootFirmwareFolderName) {
+				vscode.window.showInformationMessage('빌드가 취소되었습니다.');
+				return;
+			}
+			
 			// 1. Yocto 프로젝트 루트 찾기 (Unix 경로)
 			const projectRoot = await this.getYoctoProjectRoot();
 			axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
@@ -317,6 +346,12 @@ export class YoctoProjectBuilder {
 			showTerminal: true
 		});
 		
+		// Build View에 포커스 복원
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
+		
 		// 9. 빌드 완료
 		const successMsg = `✅ Yocto AP 빌드가 완료되었습니다!\n\nMACHINE: ${machine}\nSDK VERSION: ${cgwVersion}\n빌드 디렉토리: ${buildDir}`;
 		axonSuccess(successMsg);
@@ -338,6 +373,13 @@ export class YoctoProjectBuilder {
 		axonLog('🔨 Yocto MCU 빌드 시작...');
 		
 		try {
+			// 0. bootFirmwareFolderName 설정 확인 및 선택
+			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
+			if (!bootFirmwareFolderName) {
+				vscode.window.showInformationMessage('빌드가 취소되었습니다.');
+				return;
+			}
+			
 			// 1. Yocto 프로젝트 루트 찾기 (Unix 경로)
 			const projectRoot = await this.getYoctoProjectRoot();
 			axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
@@ -524,6 +566,12 @@ export class YoctoProjectBuilder {
 			showTerminal: true
 		});
 		
+		// Build View에 포커스 복원
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
+		
 		// 9. 빌드 완료
 		const successMsg = `✅ Yocto MCU 빌드가 완료되었습니다!\n\nMACHINE: ${mcuMachine}\nSDK VERSION: ${mcuVersion}\n빌드 디렉토리: ${buildDir}`;
 		axonSuccess(successMsg);
@@ -545,6 +593,13 @@ export class YoctoProjectBuilder {
 		axonLog('🔨 Yocto Kernel 빌드 시작...');
 		
 		try {
+			// 0. bootFirmwareFolderName 설정 확인 및 선택
+			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
+			if (!bootFirmwareFolderName) {
+				vscode.window.showInformationMessage('빌드가 취소되었습니다.');
+				return;
+			}
+			
 			// 1. Yocto 프로젝트 루트 찾기 (Unix 경로)
 			const projectRoot = await this.getYoctoProjectRoot();
 			axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
@@ -734,6 +789,12 @@ export class YoctoProjectBuilder {
 				showTerminal: true
 			});
 			
+			// Build View에 포커스 복원
+			setTimeout(async () => {
+				await vscode.commands.executeCommand('axonBuildView.focus');
+				axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+			}, 100);
+			
 			// 9. 빌드 완료
 			const successMsg = `✅ Yocto Kernel 빌드가 완료되었습니다!\n\nMACHINE: ${machine}\nSDK VERSION: ${cgwVersion}\n빌드 디렉토리: ${buildDir}`;
 			axonSuccess(successMsg);
@@ -755,6 +816,13 @@ export class YoctoProjectBuilder {
 		axonLog('🧹 Yocto AP 빌드 클린 시작...');
 		
 		try {
+			// 0. bootFirmwareFolderName 설정 확인 및 선택
+			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
+			if (!bootFirmwareFolderName) {
+				vscode.window.showInformationMessage('작업이 취소되었습니다.');
+				return;
+			}
+			
 			// 1. Yocto 프로젝트 루트 찾기 (Unix 경로)
 			const projectRoot = await this.getYoctoProjectRoot();
 			axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
@@ -812,6 +880,12 @@ export class YoctoProjectBuilder {
 			taskId: 'yoctoApClean',
 			showTerminal: true
 		});
+		
+		// Build View에 포커스 복원
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
 			
 			// 6. 완료
 			const successMsg = `✅ AP 빌드 정리가 완료되었습니다!\n\n경로: ${apBuildDir}`;
@@ -834,6 +908,13 @@ export class YoctoProjectBuilder {
 		axonLog('🧹 Yocto MCU 빌드 클린 시작...');
 		
 		try {
+			// 0. bootFirmwareFolderName 설정 확인 및 선택
+			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
+			if (!bootFirmwareFolderName) {
+				vscode.window.showInformationMessage('작업이 취소되었습니다.');
+				return;
+			}
+			
 			// 1. Yocto 프로젝트 루트 찾기 (Unix 경로)
 			const projectRoot = await this.getYoctoProjectRoot();
 			axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
@@ -891,6 +972,12 @@ export class YoctoProjectBuilder {
 			taskId: 'yoctoMcuClean',
 			showTerminal: true
 		});
+		
+		// Build View에 포커스 복원
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
 			
 			// 6. 완료
 			const successMsg = `✅ MCU 빌드 정리가 완료되었습니다!\n\n경로: ${mcuBuildDir}`;
@@ -914,6 +1001,13 @@ export class YoctoProjectBuilder {
 		axonLog('🧹 Yocto AP + MCU 빌드 클린 시작...');
 		
 		try {
+			// 0. bootFirmwareFolderName 설정 확인 및 선택
+			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
+			if (!bootFirmwareFolderName) {
+				vscode.window.showInformationMessage('작업이 취소되었습니다.');
+				return;
+			}
+			
 			// 1. Yocto 프로젝트 루트 찾기 (Unix 경로)
 			const projectRoot = await this.getYoctoProjectRoot();
 			axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
@@ -1029,6 +1123,12 @@ export class YoctoProjectBuilder {
 			taskId: 'yoctoCleanAllWait',
 			showTerminal: true
 		});
+		
+		// Build View에 포커스 복원
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
 			
 			// 5. 완료
 			const successMsg = `✅ ${foldersToClean.join(' + ')} 빌드 정리가 완료되었습니다!`;

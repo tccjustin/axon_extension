@@ -21,9 +21,13 @@ export const EXCLUDE_FOLDERS = [
 	'tools'
 ];
 
+// 프로젝트 타입
+export type ProjectType = 'mcu_project' | 'yocto_project' | '';
+
 // Axon 설정 인터페이스
 export interface AxonConfig {
 	fwdnExePath: string;
+	projectType: ProjectType;
 	buildAxonFolderName: string;
 	bootFirmwareFolderName: string;
 }
@@ -34,9 +38,103 @@ export function getAxonConfig(): AxonConfig {
 
 	return {
 		fwdnExePath: config.get<string>('fwdn.exePath', 'C:\\Users\\jhlee17\\work\\FWDN\\fwdn.exe'),
-		buildAxonFolderName: config.get<string>('buildAxonFolderName', 'build-axon'),
-		bootFirmwareFolderName: config.get<string>('bootFirmwareFolderName', 'boot-firmware_tcn1000')
+		projectType: config.get<ProjectType>('projectType', ''),
+		buildAxonFolderName: config.get<string>('buildAxonFolderName', ''),
+		bootFirmwareFolderName: config.get<string>('bootFirmwareFolderName', '')
 	};
+}
+
+/**
+ * 프로젝트 타입에 따른 폴더명 매핑
+ */
+export const PROJECT_TYPE_FOLDERS = {
+	mcu_project: {
+		buildFolder: 'mcu-tcn100x',
+		bootFirmwareFolder: 'boot-firmware-tcn100x'
+	},
+	yocto_project: {
+		buildFolder: 'build-axon',
+		bootFirmwareFolder: 'boot-firmware_tcn1000'
+	}
+} as const;
+
+/**
+ * 프로젝트 타입 선택 및 자동 설정
+ * 설정이 없으면 QuickPick으로 선택하도록 유도하고, 선택한 타입에 따라 관련 폴더명들을 자동으로 설정
+ * 
+ * @returns 선택된 프로젝트 타입 또는 undefined (취소한 경우)
+ */
+export async function ensureProjectType(): Promise<ProjectType | undefined> {
+	const config = vscode.workspace.getConfiguration('axon');
+	let projectType = config.get<ProjectType>('projectType', '');
+	
+	// 설정이 없거나 빈 문자열이면 사용자에게 선택 요청
+	if (!projectType || projectType.trim() === '') {
+		axonLog(`⚠️ projectType 설정이 없습니다. 사용자 선택 요청...`);
+		
+		const selected = await vscode.window.showQuickPick(
+			[
+				{ 
+					label: 'MCU Standalone Project', 
+					value: 'mcu_project' as const,
+					description: 'MCU 단독 프로젝트 (mcu-tcn100x + boot-firmware-tcn100x)',
+					detail: '빌드 폴더: mcu-tcn100x, Boot Firmware: boot-firmware-tcn100x'
+				},
+				{ 
+					label: 'Yocto Project', 
+					value: 'yocto_project' as const,
+					description: 'Yocto 프로젝트 (build-axon + boot-firmware_tcn1000)',
+					detail: '빌드 폴더: build-axon, Boot Firmware: boot-firmware_tcn1000'
+				}
+			],
+			{
+				placeHolder: '프로젝트 타입을 선택하세요',
+				title: 'Axon Project Type 선택',
+				ignoreFocusOut: true
+			}
+		);
+		
+		if (!selected) {
+			axonLog(`ℹ️ 사용자가 프로젝트 타입 선택을 취소했습니다.`);
+			return undefined;
+		}
+		
+		projectType = selected.value;
+		
+		// 프로젝트 타입에 따른 폴더명 가져오기
+		const folders = PROJECT_TYPE_FOLDERS[projectType];
+		
+		// settings.json에 모두 저장
+		await config.update('projectType', projectType, vscode.ConfigurationTarget.Workspace);
+		await config.update('buildAxonFolderName', folders.buildFolder, vscode.ConfigurationTarget.Workspace);
+		await config.update('bootFirmwareFolderName', folders.bootFirmwareFolder, vscode.ConfigurationTarget.Workspace);
+		
+		axonLog(`💾 프로젝트 타입 설정 저장: ${projectType}`);
+		axonLog(`  - buildAxonFolderName: ${folders.buildFolder}`);
+		axonLog(`  - bootFirmwareFolderName: ${folders.bootFirmwareFolder}`);
+		
+		vscode.window.showInformationMessage(
+			`프로젝트 타입이 설정되었습니다: ${selected.label}\n` +
+			`빌드 폴더: ${folders.buildFolder}\n` +
+			`Boot Firmware 폴더: ${folders.bootFirmwareFolder}`
+		);
+	} else {
+		// 이미 설정된 경우, 폴더명도 자동으로 동기화 (혹시 수동으로 변경되었을 수 있으니)
+		const folders = PROJECT_TYPE_FOLDERS[projectType];
+		const currentBuildFolder = config.get<string>('buildAxonFolderName', '');
+		const currentBootFirmwareFolder = config.get<string>('bootFirmwareFolderName', '');
+		
+		// 폴더명이 프로젝트 타입과 맞지 않으면 자동 수정
+		if (currentBuildFolder !== folders.buildFolder || currentBootFirmwareFolder !== folders.bootFirmwareFolder) {
+			axonLog(`🔄 프로젝트 타입(${projectType})에 맞게 폴더명을 동기화합니다...`);
+			await config.update('buildAxonFolderName', folders.buildFolder, vscode.ConfigurationTarget.Workspace);
+			await config.update('bootFirmwareFolderName', folders.bootFirmwareFolder, vscode.ConfigurationTarget.Workspace);
+			axonLog(`  - buildAxonFolderName: ${folders.buildFolder}`);
+			axonLog(`  - bootFirmwareFolderName: ${folders.bootFirmwareFolder}`);
+		}
+	}
+	
+	return projectType;
 }
 
 /**

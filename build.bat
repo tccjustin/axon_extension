@@ -16,6 +16,9 @@ echo [SUCCESS] Compilation completed!
 echo.
 
 echo [2/3] Starting package creation...
+echo [INFO] Cleaning up old .vsix files...
+del /F /Q axon-*.vsix 2>nul
+echo.
 call npm run package:auto
 if %errorlevel% neq 0 (
     echo [ERROR] Package creation failed!

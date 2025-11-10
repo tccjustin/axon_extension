@@ -242,6 +242,28 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 					},
 					'wrench',
 					'MCU Make 빌드 실행'
+				),
+				new AxonTreeItem(
+					'mcuClean',
+					'Clean',
+					vscode.TreeItemCollapsibleState.None,
+					{
+						command: 'axon.mcuClean',
+						title: 'MCU Clean'
+					},
+					'trash',
+					'MCU 빌드 정리 (make clean)'
+				),
+				new AxonTreeItem(
+					'mcuFwdn',
+					'FWDN',
+					vscode.TreeItemCollapsibleState.None,
+					{
+						command: 'axon.FWDN_ALL',
+						title: 'MCU FWDN'
+					},
+					'plug',
+					'MCU 펌웨어 다운로드 실행 (fwdn.exe)'
 				)
 			]);
 		} else if (element.id === 'buildYocto') {
@@ -279,6 +301,17 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 				},
 				'file-binary',
 				'Yocto Kernel 빌드 (linux-telechips + make SD_fai.rom)'
+			),
+			new AxonTreeItem(
+				'yoctoFwdn',
+				'FWDN',
+				vscode.TreeItemCollapsibleState.None,
+				{
+					command: 'axon.FWDN_ALL',
+					title: 'Yocto FWDN'
+				},
+				'plug',
+				'Yocto 펌웨어 다운로드 실행 (fwdn.exe)'
 			),
 			new AxonTreeItem(
 				'cleanYoctoAp',
@@ -467,7 +500,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		async () => {
 			axonLog('📁 [configureProjectFolder] 명령 시작');
 			const config = vscode.workspace.getConfiguration('axon');
-			const currentValue = config.get<string>('buildAxonFolderName', 'build-axon');
+			const currentValue = config.get<string>('buildAxonFolderName', '');
 			axonLog(`📁 [configureProjectFolder] 현재 값: ${currentValue}`);
 
 			axonLog('⌨️ [configureProjectFolder] 입력 박스 표시 중...');
@@ -502,7 +535,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		async () => {
 			axonLog('📂 [configureBootFirmwareFolder] 명령 시작');
 			const config = vscode.workspace.getConfiguration('axon');
-			const currentValue = config.get<string>('bootFirmwareFolderName', 'boot-firmware_tcn1000');
+			const currentValue = config.get<string>('bootFirmwareFolderName', '');
 			axonLog(`📂 [configureBootFirmwareFolder] 현재 값: ${currentValue}`);
 
 			axonLog('⌨️ [configureBootFirmwareFolder] 입력 박스 표시 중...');
@@ -547,6 +580,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	const mcuSelectCoreDisposable = vscode.commands.registerCommand(
 		'axon.mcuSelectCore',
 		async () => executeMcuSelectCore(context.extensionPath)
+	);
+
+	// MCU Clean 실행 명령
+	const mcuCleanDisposable = vscode.commands.registerCommand(
+		'axon.mcuClean',
+		async () => executeMcuClean(context.extensionPath)
 	);
 
 	// Build and Copy Scripts 실행 명령
@@ -649,6 +688,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		mcuBuildMakeDisposable,
 		mcuBuildAllDisposable,
 		mcuSelectCoreDisposable,
+		mcuCleanDisposable,
 		buildAndCopyScriptsDisposable,
 		// 하위 명령어들도 프로그램에서 호출할 수 있도록 등록은 유지합니다.
 		configureFwdnExeDisposable,
@@ -741,9 +781,10 @@ async function searchBuildAxonInDirectory(baseUri: vscode.Uri, currentDepth: num
 	}
 }
 
-// mcu-tcn100x 폴더를 찾는 재귀 검색 함수
+// 설정된 빌드 폴더를 찾는 재귀 검색 함수
 async function searchMcuTcn100xInDirectory(baseUri: vscode.Uri, currentDepth: number = 0, maxDepth: number = 4): Promise<string | null> {
-	const mcuFolderName = 'mcu-tcn100x';
+	const config = getAxonConfig();
+	const mcuFolderName = config.buildAxonFolderName || 'mcu-tcn100x';
 
 	try {
 		// baseUri가 이미 mcu-tcn100x 폴더인지 확인
@@ -806,9 +847,10 @@ async function searchMcuTcn100xInDirectory(baseUri: vscode.Uri, currentDepth: nu
 	}
 }
 
-// mcu-tcn100x 폴더를 찾는 함수 (MCU Standalone 프로젝트용)
+// 설정된 빌드 폴더를 찾는 함수 (MCU Standalone 또는 Yocto 프로젝트용)
 async function findMcuTcn100xFolder(): Promise<string | null> {
-	const mcuFolderName = 'mcu-tcn100x';
+	const config = getAxonConfig();
+	const mcuFolderName = config.buildAxonFolderName || 'mcu-tcn100x';
 	
 	const workspaceFolders = vscode.workspace.workspaceFolders;
 	
@@ -946,6 +988,26 @@ async function findBuildAxonFolder(): Promise<string | null> {
 	}
 }
 
+// buildAxonFolderName 설정 확인 및 선택 공통 함수
+// (프로젝트 타입 기반으로 자동 설정)
+async function ensureBuildAxonFolderName(): Promise<string | null> {
+	const { ensureProjectType } = await import('./utils');
+	
+	// 프로젝트 타입 선택 (자동으로 buildAxonFolderName도 설정됨)
+	const projectType = await ensureProjectType();
+	
+	if (!projectType) {
+		axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
+		return null;
+	}
+	
+	// 설정된 buildAxonFolderName 반환
+	const config = getAxonConfig();
+	axonLog(`✅ buildAxonFolderName: ${config.buildAxonFolderName}`);
+	
+	return config.buildAxonFolderName;
+}
+
 // MCU 빌드 make 실행 함수 (MCU Standalone 프로젝트용)
 async function executeMcuBuildMake(extensionPath: string): Promise<void> {
 	axonLog(`🚀 MCU Build Make 실행 명령 시작 (MCU Standalone 프로젝트)`);
@@ -954,17 +1016,24 @@ async function executeMcuBuildMake(extensionPath: string): Promise<void> {
 	axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
 
 	try {
-		// mcu-tcn100x 폴더 찾기
-		axonLog(`🔍 mcu-tcn100x 폴더 자동 검색 시작...`);
+		// buildAxonFolderName 설정 확인 및 선택
+		const buildAxonFolderName = await ensureBuildAxonFolderName();
+		if (!buildAxonFolderName) {
+			vscode.window.showInformationMessage('빌드가 취소되었습니다.');
+			return;
+		}
+		
+		// 빌드 폴더 찾기
+		axonLog(`🔍 ${buildAxonFolderName} 폴더 자동 검색 시작...`);
 		const mcuBuildPath = await findMcuTcn100xFolder();
 
 		if (!mcuBuildPath) {
-			axonLog(`❌ mcu-tcn100x 폴더를 찾을 수 없습니다.`);
-			vscode.window.showErrorMessage('mcu-tcn100x 폴더를 찾을 수 없습니다. MCU Standalone 프로젝트를 열어주세요.');
+			axonLog(`❌ ${buildAxonFolderName} 폴더를 찾을 수 없습니다.`);
+			vscode.window.showErrorMessage(`${buildAxonFolderName} 폴더를 찾을 수 없습니다. 워크스페이스를 확인해주세요.`);
 			return;
 		}
 
-		axonLog(`✅ mcu-tcn100x 폴더를 찾았습니다: ${mcuBuildPath}`);
+		axonLog(`✅ ${buildAxonFolderName} 폴더를 찾았습니다: ${mcuBuildPath}`);
 
 		// 빌드 설정 확인 표시
 		const configInfo = [
@@ -1074,17 +1143,26 @@ async function executeMcuBuildMake(extensionPath: string): Promise<void> {
 					});
 					axonLog(`✅ 폴백으로 bash 터미널을 직접 생성했습니다`);
 				}
-			}
 		}
+	}
 
-		// MCU 빌드 디렉토리로 이동 후 make 실행
-		terminal.sendText(`cd "${mcuBuildPath}" && make`, true);
+	// 터미널 표시 (포커스는 주지 않음)
+	terminal.show(false);
+	axonLog(`📺 터미널을 백그라운드로 표시합니다`);
 
-		const successMsg = `MCU Build Make이 실행되었습니다! 경로: ${mcuBuildPath}`;
-		axonSuccess(successMsg);
-		vscode.window.showInformationMessage(successMsg);
+	// MCU 빌드 디렉토리로 이동 후 make 실행
+	terminal.sendText(`cd "${mcuBuildPath}" && make`, true);
 
-		axonLog(`✅ MCU Build Make 실행 완료`);
+	const successMsg = `MCU Build Make이 실행되었습니다! 경로: ${mcuBuildPath}`;
+	axonSuccess(successMsg);
+	
+	// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
+	setTimeout(async () => {
+		await vscode.commands.executeCommand('axonBuildView.focus');
+		axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+	}, 100);
+
+	axonLog(`✅ MCU Build Make 실행 완료`);
 
 	} catch (error) {
 		const errorMsg = `MCU Build Make 실행 중 오류가 발생했습니다: ${error}`;
@@ -1101,17 +1179,24 @@ async function executeMcuBuildAll(extensionPath: string): Promise<void> {
 	axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
 
 	try {
-		// mcu-tcn100x 폴더 찾기
-		axonLog(`🔍 mcu-tcn100x 폴더 자동 검색 시작...`);
+		// buildAxonFolderName 설정 확인 및 선택
+		const buildAxonFolderName = await ensureBuildAxonFolderName();
+		if (!buildAxonFolderName) {
+			vscode.window.showInformationMessage('빌드가 취소되었습니다.');
+			return;
+		}
+		
+		// 빌드 폴더 찾기
+		axonLog(`🔍 ${buildAxonFolderName} 폴더 자동 검색 시작...`);
 		const mcuBuildPath = await findMcuTcn100xFolder();
 
 		if (!mcuBuildPath) {
-			axonLog(`❌ mcu-tcn100x 폴더를 찾을 수 없습니다.`);
-			vscode.window.showErrorMessage('mcu-tcn100x 폴더를 찾을 수 없습니다. MCU Standalone 프로젝트를 열어주세요.');
+			axonLog(`❌ ${buildAxonFolderName} 폴더를 찾을 수 없습니다.`);
+			vscode.window.showErrorMessage(`${buildAxonFolderName} 폴더를 찾을 수 없습니다. 워크스페이스를 확인해주세요.`);
 			return;
 		}
 
-		axonLog(`✅ mcu-tcn100x 폴더를 찾았습니다: ${mcuBuildPath}`);
+		axonLog(`✅ ${buildAxonFolderName} 폴더를 찾았습니다: ${mcuBuildPath}`);
 
 		// defconfig 목록 (실행 순서대로)
 		const defconfigs = [
@@ -1221,14 +1306,18 @@ async function executeMcuBuildAll(extensionPath: string): Promise<void> {
 					});
 					axonLog(`✅ 폴백으로 bash 터미널을 직접 생성했습니다`);
 				}
-			}
 		}
+	}
 
-		// MCU 빌드 디렉토리로 이동
-		terminal.sendText(`cd "${mcuBuildPath}"`, true);
-		
-		// 각 defconfig에 대해 순차적으로 실행
-		axonLog(`🔨 MCU Build All 시작: ${defconfigs.length}개 타겟`);
+	// 터미널 표시 (포커스는 주지 않음)
+	terminal.show(false);
+	axonLog(`📺 터미널을 백그라운드로 표시합니다`);
+
+	// MCU 빌드 디렉토리로 이동
+	terminal.sendText(`cd "${mcuBuildPath}"`, true);
+	
+	// 각 defconfig에 대해 순차적으로 실행
+	axonLog(`🔨 MCU Build All 시작: ${defconfigs.length}개 타겟`);
 		
 		for (const defconfig of defconfigs) {
 			axonLog(`  - ${defconfig}`);
@@ -1243,7 +1332,12 @@ async function executeMcuBuildAll(extensionPath: string): Promise<void> {
 
 		const successMsg = `MCU Build All이 시작되었습니다!\n경로: ${mcuBuildPath}\n타겟: ${defconfigs.join(', ')}`;
 		axonSuccess(successMsg);
-		vscode.window.showInformationMessage('MCU Build All이 시작되었습니다. 터미널을 확인하세요.');
+		
+		// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
 
 		axonLog(`✅ MCU Build All 명령 전송 완료`);
 
@@ -1262,6 +1356,13 @@ async function executeMcuSelectCore(extensionPath: string): Promise<void> {
 	axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
 
 	try {
+		// buildAxonFolderName 설정 확인 및 선택
+		const buildAxonFolderName = await ensureBuildAxonFolderName();
+		if (!buildAxonFolderName) {
+			vscode.window.showInformationMessage('작업이 취소되었습니다.');
+			return;
+		}
+		
 		// 코어 목록 정의
 		const coreOptions = [
 			{ label: 'm7-np', defconfig: 'tcn100x_m7-np_defconfig', description: 'M7 Non-Processor' },
@@ -1283,17 +1384,19 @@ async function executeMcuSelectCore(extensionPath: string): Promise<void> {
 
 		axonLog(`✅ 선택된 코어: ${selectedCore.label} (${selectedCore.defconfig})`);
 
-		// mcu-tcn100x 폴더 찾기
-		axonLog(`🔍 mcu-tcn100x 폴더 자동 검색 시작...`);
+		// 빌드 폴더 찾기
+		axonLog(`🔍 빌드 폴더 자동 검색 시작...`);
 		const mcuBuildPath = await findMcuTcn100xFolder();
 
 		if (!mcuBuildPath) {
-			axonLog(`❌ mcu-tcn100x 폴더를 찾을 수 없습니다.`);
-			vscode.window.showErrorMessage('mcu-tcn100x 폴더를 찾을 수 없습니다. MCU Standalone 프로젝트를 열어주세요.');
+			const config = getAxonConfig();
+			const folderName = config.buildAxonFolderName || 'mcu-tcn100x';
+			axonLog(`❌ ${folderName} 폴더를 찾을 수 없습니다.`);
+			vscode.window.showErrorMessage(`${folderName} 폴더를 찾을 수 없습니다. 워크스페이스를 확인해주세요.`);
 			return;
 		}
 
-		axonLog(`✅ mcu-tcn100x 폴더를 찾았습니다: ${mcuBuildPath}`);
+		axonLog(`✅ 빌드 폴더를 찾았습니다: ${mcuBuildPath}`);
 
 		// 환경 감지 및 터미널 생성
 		const isRemote = vscode.env.remoteName !== undefined;
@@ -1370,6 +1473,10 @@ async function executeMcuSelectCore(extensionPath: string): Promise<void> {
 			}
 		}
 
+		// 터미널 표시 (포커스는 주지 않음)
+		terminal.show(false);
+		axonLog(`📺 터미널을 백그라운드로 표시합니다`);
+
 		// MCU 빌드 디렉토리로 이동하고 선택한 defconfig 실행
 		terminal.sendText(`cd "${mcuBuildPath}"`, true);
 		terminal.sendText(`make ${selectedCore.defconfig}`, true);
@@ -1381,9 +1488,6 @@ async function executeMcuSelectCore(extensionPath: string): Promise<void> {
 
 		const successMsg = `${selectedCore.label} defconfig가 실행되었습니다!\n경로: ${mcuBuildPath}\n명령: make ${selectedCore.defconfig}`;
 		axonSuccess(successMsg);
-		vscode.window.showInformationMessage(`${selectedCore.label} defconfig가 실행되었습니다.`);
-
-		axonLog(`✅ MCU Select Core (${selectedCore.label}) 명령 전송 완료`);
 
 		// TreeView 업데이트 - 마지막 선택한 코어 표시
 		if (globalBuildProvider) {
@@ -1391,8 +1495,179 @@ async function executeMcuSelectCore(extensionPath: string): Promise<void> {
 			axonLog(`🔄 TreeView 업데이트: 마지막 선택 코어 = ${selectedCore.label}`);
 		}
 
+		// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
+
+		axonLog(`✅ MCU Select Core (${selectedCore.label}) 명령 전송 완료`);
+
 	} catch (error) {
 		const errorMsg = `MCU Select Core 실행 중 오류가 발생했습니다: ${error}`;
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
+	}
+}
+
+// MCU Clean 실행 함수 (MCU Standalone 프로젝트용)
+async function executeMcuClean(extensionPath: string): Promise<void> {
+	axonLog(`🚀 MCU Clean 실행 명령 시작 (MCU Standalone 프로젝트)`);
+
+	// 환경 정보 로깅 (디버깅용)
+	axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
+
+	try {
+		// buildAxonFolderName 설정 확인 및 선택
+		const buildAxonFolderName = await ensureBuildAxonFolderName();
+		if (!buildAxonFolderName) {
+			vscode.window.showInformationMessage('작업이 취소되었습니다.');
+			return;
+		}
+		
+		// 빌드 폴더 찾기
+		axonLog(`🔍 ${buildAxonFolderName} 폴더 자동 검색 시작...`);
+		const mcuBuildPath = await findMcuTcn100xFolder();
+
+		if (!mcuBuildPath) {
+			axonLog(`❌ ${buildAxonFolderName} 폴더를 찾을 수 없습니다.`);
+			vscode.window.showErrorMessage(`${buildAxonFolderName} 폴더를 찾을 수 없습니다. 워크스페이스를 확인해주세요.`);
+			return;
+		}
+
+		axonLog(`✅ ${buildAxonFolderName} 폴더를 찾았습니다: ${mcuBuildPath}`);
+
+		// 빌드 설정 확인 표시
+		const configInfo = [
+			'',
+			'==================================================',
+			'         MCU Clean Configuration',
+			'==================================================',
+			`  빌드 경로: ${mcuBuildPath}`,
+			`  명령: make clean`,
+			'==================================================',
+			''
+		].join('\n');
+		
+		axonLog(configInfo);
+		
+		// 사용자 확인
+		const confirm = await vscode.window.showWarningMessage(
+			`MCU Clean을 시작하시겠습니까?\n\n경로: ${mcuBuildPath}\n명령: make clean\n\n빌드된 파일들이 삭제됩니다.`,
+			{ modal: true },
+			'Clean 시작',
+			'취소'
+		);
+		
+		if (confirm !== 'Clean 시작') {
+			axonLog('❌ 사용자 취소: Clean이 취소되었습니다.');
+			vscode.window.showInformationMessage('Clean이 취소되었습니다.');
+			return;
+		}
+
+		// 환경 감지 및 터미널 생성
+		const isRemote = vscode.env.remoteName !== undefined;
+		let terminal: vscode.Terminal;
+
+		if (isRemote) {
+			// 원격 환경: bash를 사용하는 원격 터미널 생성 (기존 bash 터미널 재사용)
+			axonLog(`🔧 원격 환경 감지 - bash 터미널 생성 또는 재사용`);
+
+			// 열려있는 bash 터미널 찾기
+			let bashTerminal = vscode.window.terminals.find(term => {
+				const terminalName = term.name || '';
+				return terminalName.toLowerCase().includes('bash') ||
+					   terminalName.toLowerCase().includes('terminal') ||
+					   terminalName === '';
+			});
+
+			if (bashTerminal) {
+				// 기존 bash 터미널이 있으면 재사용
+				terminal = bashTerminal;
+				axonLog(`✅ 기존 bash 터미널을 재사용합니다: ${bashTerminal.name}`);
+			} else {
+				// bash 터미널이 없으면 새로 생성
+				try {
+					await vscode.commands.executeCommand('workbench.action.terminal.new');
+					const remoteTerminal = vscode.window.activeTerminal;
+					if (remoteTerminal) {
+						terminal = remoteTerminal;
+						axonLog(`✅ 새 bash 터미널을 생성했습니다`);
+					} else {
+						throw new Error('원격 bash 터미널 생성에 실패했습니다.');
+					}
+				} catch {
+					// 폴백: 직접 bash 터미널 생성
+					terminal = vscode.window.createTerminal({
+						name: `MCU Clean (Bash)`,
+						shellPath: 'bash',
+						shellArgs: ['--login'],
+						isTransient: true
+					});
+					axonLog(`✅ 폴백으로 bash 터미널을 직접 생성했습니다`);
+				}
+			}
+		} else {
+			// 로컬 환경: bash 터미널 생성 또는 재사용
+			axonLog(`🔧 로컬 환경 - bash 터미널 생성 또는 재사용`);
+
+			// 열려있는 bash 터미널 찾기
+			let bashTerminal = vscode.window.terminals.find(term => {
+				const terminalName = term.name || '';
+				return terminalName.toLowerCase().includes('bash') ||
+					   terminalName.toLowerCase().includes('terminal') ||
+					   terminalName === '';
+			});
+
+			if (bashTerminal) {
+				// 기존 bash 터미널이 있으면 재사용
+				terminal = bashTerminal;
+				axonLog(`✅ 기존 bash 터미널을 재사용합니다: ${bashTerminal.name}`);
+			} else {
+				// bash 터미널이 없으면 새로 생성 시도
+				try {
+					await vscode.commands.executeCommand('workbench.action.terminal.new');
+					const basicTerminal = vscode.window.activeTerminal;
+					if (basicTerminal) {
+						// 새로 생성된 터미널을 사용 (VS Code에서 기본적으로 적절한 shell을 선택)
+						terminal = basicTerminal;
+						axonLog(`✅ 새 터미널을 생성했습니다: ${basicTerminal.name}`);
+					} else {
+						throw new Error('기본 터미널 생성에 실패했습니다.');
+					}
+				} catch {
+					// 폴백: 직접 bash 터미널 생성
+					terminal = vscode.window.createTerminal({
+						name: `MCU Clean (Bash)`,
+						shellPath: 'bash',
+						shellArgs: ['--login'],
+						isTransient: true
+					});
+					axonLog(`✅ 폴백으로 bash 터미널을 직접 생성했습니다`);
+				}
+			}
+		}
+
+		// 터미널 표시 (포커스는 주지 않음)
+		terminal.show(false);
+		axonLog(`📺 터미널을 백그라운드로 표시합니다`);
+
+		// MCU 빌드 디렉토리로 이동 후 make clean 실행
+		terminal.sendText(`cd "${mcuBuildPath}" && make clean`, true);
+
+		const successMsg = `MCU Clean이 실행되었습니다! 경로: ${mcuBuildPath}`;
+		axonSuccess(successMsg);
+
+		// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
+
+		axonLog(`✅ MCU Clean 실행 완료`);
+
+	} catch (error) {
+		const errorMsg = `MCU Clean 실행 중 오류가 발생했습니다: ${error}`;
 		axonError(errorMsg);
 		vscode.window.showErrorMessage(errorMsg);
 	}

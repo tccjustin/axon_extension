@@ -3,7 +3,7 @@
   "displayName": "Axon",
   "publisher": "justin-lee",
   "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "icon": "icon.png",
   "extensionKind": ["ui","workspace"],
   "repository": {
@@ -23,6 +23,7 @@
     "onCommand:axon.mcuBuildMake",
     "onCommand:axon.mcuBuildAll",
     "onCommand:axon.mcuSelectCore",
+    "onCommand:axon.mcuClean",
     "onCommand:axon.configureProjectFolder",
     "onCommand:axon.configureBootFirmwareFolder",
     "onCommand:axon.buildAndCopyScripts",
@@ -60,6 +61,11 @@
       {
         "command": "axon.mcuSelectCore",
         "title": "MCU Select Core",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.mcuClean",
+        "title": "MCU Clean",
         "category": "Axon"
       },
       {
@@ -174,15 +180,21 @@
           "default": "C:\\Users\\jhlee17\\work\\FWDN\\fwdn.exe",
           "description": "FWDN executable path"
         },
+        "axon.projectType": {
+          "type": "string",
+          "enum": ["mcu_project", "yocto_project"],
+          "default": "",
+          "description": "Project type (automatically sets buildAxonFolderName and bootFirmwareFolderName)"
+        },
         "axon.buildAxonFolderName": {
           "type": "string",
-          "default": "build-axon",
-          "description": "Project folder name to search for"
+          "default": "",
+          "description": "[Auto-set by projectType] Project folder name to search for (mcu-tcn100x or build-axon)"
         },
         "axon.bootFirmwareFolderName": {
           "type": "string",
-          "default": "boot-firmware_tcn1000",
-          "description": "Boot firmware folder name to search for"
+          "default": "",
+          "description": "[Auto-set by projectType] Boot firmware folder name to search for (boot-firmware-tcn100x or boot-firmware_tcn1000)"
         },
         "axon.yocto.projectRoot": {
           "type": "string",
@@ -240,7 +252,7 @@
     "package:minor": "vsce package --minor",
     "package:major": "vsce package --major",
     "build": "npm run compile && npm run package:auto",
-    "package:auto": "echo y | vsce package",
+    "package:auto": "vsce package",
     "build:clean": "npm run compile && echo y | vsce package --out axon-$(date +%Y%m%d-%H%M%S).vsix"
   },
   "devDependencies": {
