@@ -1,396 +1,144 @@
 # Axon
 
-VS Code 확장 프로그램으로, FWDN 도구를 쉽게 실행하고 설정할 수 있도록 도와줍니다.
-
-## 🌟 프로젝트 개요
-
-Axon은 MCU 펌웨어 개발을 위한 VS Code 확장 프로그램으로, 복잡한 FWDN 도구의 실행과 설정을 간편하게 만들어줍니다. 특히 **원격 개발 환경(SSH/WSL/컨테이너)**과 **다양한 프로젝트 구조**에 최적화되어 있어 개발 생산성을 크게 향상시킵니다.
+VS Code 확장 프로그램으로, MCU/Yocto 펌웨어 개발을 위한 빌드 및 배포 자동화 도구입니다.
 
 ## ✨ 주요 기능
 
-- **🚀 FWDN MCU 실행**: MCU 펌웨어 업데이트를 위한 FWDN Step 1-3 실행 (로컬 전용)
-- **🚀 FWDN ALL 실행**: 전체 펌웨어 업데이트를 위한 FWDN Step 1-4 실행 (로컬 전용)
-- **🔨 Build and Copy**: MCU 빌드 및 ROM 자동 복사 (원격 전용)
-- **📋 Build and Copy Scripts**: MCU 개발용 스크립트 자동 복사 및 설치 (findBuildAxonFolder로 지능적 검색, scripts_{버전} 폴더 생성, 로컬 scripts/ 폴더를 원격/로컬에 복사)
-- **⚙️ FWDN 실행 파일 경로 설정**: FWDN 실행 파일의 경로를 설정하고 관리
-- **🔍 Boot Firmware 경로 자동 감지**: 워크스페이스에서 boot-firmware_tcn1000 폴더를 **지능적으로 자동 검색**
-- **⚙️ Boot Firmware 경로 수동 설정**: 부트 펌웨어가 위치한 폴더 경로를 수동으로 설정하고 관리
-- **🖥️ 로컬 PowerShell 실행**: 로컬 환경에서 PowerShell을 통해 FWDN을 직접 실행
+### 프로젝트 생성
+- **MCU Standalone 프로젝트 생성**: MCU 개발 환경 자동 구성
+- **Yocto 프로젝트 생성**: Yocto 빌드 환경 자동 구성
 
-## 🎯 고급 기능
+### MCU 빌드
+- **MCU Build Make**: 선택한 코어(m7-0, m7-1, m5-0)에 대해 make 빌드 실행
+- **MCU Build All**: 모든 defconfig(tcn100x_m70_defconfig, tcn100x_m71_defconfig, tcn100x_m50_defconfig)를 한번에 빌드
+- **MCU Select Core**: 빌드할 MCU 코어 선택
+- **MCU Clean**: 빌드 결과물 정리
 
-- **🌐 원격 개발 환경 지원**: SSH, WSL, 컨테이너 환경에서 URI 스킴을 보존하여 안정적 작동
-  - **Samba 경로 자동 변환**: 원격 경로를 Windows Samba 드라이브(Z:)로 자동 변환
-    - `/home/{사용자}/{프로젝트}/...` → `Z:\{프로젝트}\...` (사용자 이름 제외)
-    - `/mnt/c/Users/...` → `C:\Users\...` (WSL 환경)
-    - `/Users/...` → `Z:\Users\...` (macOS/Linux 환경)
-    - `/{프로젝트}/...` → `Z:\{프로젝트}\...` (SSH 직접 매핑)
-  - **유연한 프로젝트 디렉토리 인식**: work1, work, project, workspace, dev, autotest_cs, build-axon 등의 다양한 프로젝트 디렉토리 패턴 자동 인식
-- **사용자 환경 특화**: `/home/id/{프로젝트}/...` → `Z:\{프로젝트}\...` 패턴 지원
-  - **다양한 원격 패턴 지원**: 사용자 환경과 프로젝트 구조에 맞는 매핑 자동 인식
-- **🔧 지능적 폴더 검색**: 다양한 프로젝트 구조 패턴을 자동으로 인식하고 검색
-  - `**/boot-firmware_tcn1000` - 워크스페이스 내 어디든
-  - `**/build-axon/**/boot-firmware_tcn1000` - build-axon 폴더 하위
-  - **워크스페이스 내 build-axon 검색**: 워크스페이스 경로에 build-axon이 포함된 경우, workspace 안의 build-axon 폴더에서 boot-firmware_tcn1000 검색
-  - `**/linux_yp*/**/boot-firmware_tcn1000` - linux_yp로 시작하는 폴더 하위
-  - `**/*linux*yp*/**/boot-firmware_tcn1000` - linux가 포함된 폴더 하위
-  - `**/cgw*/**/boot-firmware_tcn1000` - cgw 폴더 하위
-- **🐛 상세 디버깅**: 실시간 로그와 디버깅 정보로 문제 진단
-  - Output 패널의 Axon 채널에서 상세한 검색 과정 확인
-  - 각 패턴의 검색 결과와 소요 시간 실시간 모니터링
-  - VS Code 콘솔에서 직접 API 테스트 가능
-- **📦 배치 파일 자동 포함**: FWDN 배치 파일을 익스텐션에 포함하여 배포
-- **🔄 실시간 설정 동기화**: 설정 변경 시 즉시 모든 명령에 반영
-- **🐍 MCU Build and Copy**: MCU 빌드 및 ROM 자동 복사 스크립트 (mcu_build_and_copy.py) 포함
+### Yocto 빌드
+- **Build Yocto AP**: AP 이미지 빌드
+- **Build Yocto MCU**: MCU 이미지 빌드
+- **Build Yocto Kernel**: 커널 빌드
+- **Clean Yocto AP/MCU/All**: 빌드 결과물 정리
+- **Edit AP/MCU local.conf**: Yocto 빌드 설정 파일 편집
+- **Edit Branch/Srcrev**: 소스 버전 관리 파일 편집
 
-## 요구사항
+### FWDN (펌웨어 다운로드)
+- **FWDN ALL**: 전체 펌웨어 다운로드 (로컬 Windows 환경 전용)
 
-- VS Code 1.74.0 이상
+### 설정 관리
+- **Configure Settings**: FWDN 경로, 프로젝트 타입, WSL 설정 등 관리
+- **Configure Project Folder**: 프로젝트 폴더명 설정
+- **Configure Boot Firmware Folder**: Boot Firmware 폴더명 설정
 
-## 📦 설치 방식
+### 스크립트 관리
+- **Build and Copy Scripts**: MCU 빌드 스크립트 자동 복사
 
-### Universal Extension (로컬 + 원격 자동 설치)
+### 사이드바 뷰
+- **Create Projects**: 프로젝트 생성 관련 명령어 모음
+- **Configurations**: 설정 관련 명령어 모음
+- **Build**: 빌드 관련 명령어 모음
 
-Axon은 **Universal Extension**으로 설정되어 있지만, **VSIX 파일로 설치한 경우**에도 다음과 같이 작동합니다:
+## 📋 요구 사항
 
-- **🖥️ 로컬 환경**: Windows PowerShell 기반 FWDN 실행
-- **🌐 원격 환경**: Remote-SSH 연결 시 **자동으로 설치되지 않습니다** (VSCode Remote-SSH 정책)
+- **VS Code**: 1.74.0 이상
+- **개발 환경**: WSL 또는 SSH 리눅스 환경 (FWDN 제외)
+- **FWDN 실행**: Windows 로컬 환경 (fwdn.exe)
+- **빌드/개발**: WSL 또는 SSH 리눅스 환경
 
-### 설치 방법
+## 📦 설치 방법
 
-1. **로컬 VS Code에 설치**:
-   ```bash
-   # VS Code Extension Marketplace에서 "Axon" 검색 후 설치
-   # 또는
-   code --install-extension axon-0.3.6.vsix
-   ```
-
-2. **원격 서버에 수동 설치** (VSIX 파일로 설치한 경우 포함):
-   ```bash
-   # 1. 로컬에서 .vsix 파일 생성
-   npm run compile && vsce package  # axon-0.3.6.vsix 생성
-
-   # 2. .vsix 파일을 원격 서버로 복사
-   scp axon-0.3.6.vsix user@remote-server:/tmp/
-
-   # 3. 원격 서버에서 설치
-   ssh user@remote-server
-   code --install-extension /tmp/axon-0.3.6.vsix
-   ```
-
-   **또는**
-
-   ```bash
-   # 원격 서버에서 직접 .vsix 다운로드 후 설치
-   code --install-extension axon-0.3.6.vsix
-   ```
-
-   **⚠️ 중요**: Extension Marketplace나 VSIX 파일로 설치한 경우, **원격 서버에 별도로 설치해야 합니다**
-
-### 🔧 Extension Development 모드 (테스트용)
-
-**Extension 개발 시 원격 자동 설치가 필요하다면:**
-
-1. 이 저장소를 클론합니다
-2. `npm install` 명령을 실행합니다
-3. `F5` 키를 눌러 **Extension Development Host** 실행
-4. **Extension Development Host**에서 Remote-SSH로 원격 서버 연결
-5. **Axon extension이 자동으로 원격 서버에 설치됨**
-6. Command Palette에서 "Axon" 명령어 테스트 가능
-
-**⚠️ 주의**: Extension Development 모드에서만 원격에 자동 설치됩니다
-
-## 사용법
-
-### 🚀 FWDN 실행
-
-1. Command Palette (`Ctrl+Shift+P`)를 열고 다음 명령 중 하나를 선택합니다:
-   - **"Axon: FWDN MCU (Step 1-3)"**: MCU 펌웨어 업데이트 실행
-   - **"Axon: FWDN ALL (Step 1-4)"**: 전체 펌웨어 업데이트 실행
-
-### 🔨 Build and Copy (원격 전용)
-
-**⚠️ Remote-SSH 환경에서만 실행됩니다**
-
-**scripts/mcu_build_and_copy.py를 원격에서 실행하여 MCU 빌드와 ROM 복사를 자동화합니다!**
-
-1. **Remote-SSH로 원격 서버에 연결된 상태**에서 Command Palette (`Ctrl+Shift+P`)를 엽니다
-2. **"Axon: Build and Copy"** 명령을 실행합니다
-3. **자동으로 다음 작업이 수행됩니다**:
-   - **build-axon 폴더 지능적 검색**: 상위 경로 + depth 2까지 재귀 탐색
-   - **MCU 빌드 디렉토리 자동 계산**: `linux_yp4.0_cgw_1.x.x_dev/build/tcn1000-mcu/tmp/work/...` 경로 생성
-   - **make 실행**: 원격 bash 터미널에서 make 명령 실행
-   - **ROM 파일 자동 복사**: tcn100x_snor.rom을 boot-firmware에서 찾아서 복사
-     - 60초 timeout 기반 최신 파일 검증
-     - 자동 대상 디렉토리 생성
-     - 복사 완료 후 검증
-4. **실시간 모니터링**:
-   - VSCode 터미널에서 make 및 ROM 복사 과정 실시간 확인
-   - Axon Output 채널에서 각 단계별 상세 로그 확인
-
-#### 🔍 Build and Copy의 고급 기능
-
-- **지능적 build-axon 검색**: 상위 경로부터 현재 디렉토리까지 depth 2까지 탐색
-- **자동 타겟 경로 계산**: build-axon 위치로부터 MCU 빌드 경로 자동 생성
-- **ROM 파일 검증**: 60초 timeout으로 최신 파일만 복사
-- **자동 정리**: 임시 파일 자동 삭제
-
-### 📋 Build and Copy Scripts
-
-**MCU 개발용 스크립트 자동 복사 및 설치 기능입니다!**
-
-1. **Command Palette (`Ctrl+Shift+P`)를 열고 "Axon: Build and Copy Scripts" 명령을 실행합니다**
-2. **자동으로 다음 작업이 수행됩니다**:
-   - **환경 감지**: 로컬/원격 환경을 자동으로 감지합니다
-   - **지능적 폴더 검색**: `findBuildAxonFolder` 함수를 사용해서 워크스페이스 내 depth 4까지 재귀적으로 build-axon 폴더를 찾아냅니다
-   - **스크립트 복사**: 로컬의 `scripts/` 폴더의 모든 파일과 폴더가 찾은 build-axon 폴더에 복사됩니다
-   - **버전별 폴더 생성**: `build-axon/scripts_{확장 버전}` (예: `build-axon/scripts_0.3.6`) 폴더가 생성됩니다
-   - **스크립트 실행 확인**: 복사 완료 후 MCU Build and Copy 스크립트 실행 여부를 묻습니다
-
-**⚠️ 원격 환경에서 사용 시**:
-- 로컬 VS Code에 Axon extension이 설치되어 있어야 합니다
-- 원격 서버에는 extension이 설치되지 않아도 됩니다
-- 로컬의 scripts 폴더가 원격 서버의 buildAxonFolderName 폴더로 복사됩니다
-- 원격 SSH에서 Linux 경로(`/home/user/...`)가 올바르게 인식됩니다
-3. **스크립트 실행 시**:
-   - **mcu_build_and_copy.py 실행**: `findBuildAxonFolder`로 찾은 build-axon 폴더에서 스크립트를 실행합니다
-   - **MCU 빌드 경로 계산**: 스크립트가 적절한 빌드 디렉토리를 자동으로 계산합니다
-   - **make 실행**: MCU 빌드를 수행합니다
-   - **ROM 복사**: 최신 tcn100x_snor.rom 파일을 boot-firmware로 복사합니다
-
-#### 🔍 Build and Copy Scripts의 고급 기능
-
-- **지능적 build-axon 검색**: `findBuildAxonFolder` 함수를 사용해서 워크스페이스 내 depth 4까지 재귀적으로 build-axon 폴더를 찾아냅니다
-- **로컬-원격 자동 복사**: 로컬 scripts 폴더를 원격/로컬 워크스페이스에 자동 복사 (Linux 경로 자동 변환)
-- **buildAxonFolderName 설정 연동**: 설정된 buildAxonFolderName 폴더에 자동 복사
-- **자동 버전 관리**: 확장 프로그램 버전에 따라 폴더명 자동 생성
-- **자동 폴더 생성**: buildAxonFolderName 폴더가 없으면 자동으로 생성
-- **안전한 폴더 확인**: fs.statSync를 사용한 정확한 폴더 존재 확인
-- **실시간 모니터링**: VSCode 터미널과 Axon Output 채널에서 모든 과정 확인 가능
-- **상세한 디버깅 로그**: 각 단계별 경로와 상태를 자세히 로그로 출력 (변수 타입, 길이, 변환 과정 포함)
-- **에러 복구**: 복사 실패 시 상세한 에러 메시지와 복구 방법 제공
-- **Linux 경로 검증**: 원격 환경에서 Python 스크립트 실행 시 올바른 Linux 경로 확인
-- **디렉토리 강제 생성**: 파일 복사 시 대상 디렉토리가 반드시 생성되도록 보장
-- **성능 최적화**: 검색 시간 측정과 EXCLUDE_FOLDERS 제외로 빠른 검색
-
-### ⚡ 빠른 실행
-
-- **F5 키**: 디버깅 모드로 익스텐션 실행 및 테스트
-- **Ctrl+Shift+P**: Command Palette에서 모든 Axon 명령어 접근
-- **Output 패널 → Axon 채널**: 실시간 로그와 디버깅 정보 확인
-
-### 🚀 모든 사용 가능한 명령어
-
-| 명령어 | 설명 | 환경 |
-|--------|------|------|
-| **Axon: FWDN ALL (Step 1-4)** | 전체 펌웨어 업데이트 실행 | 로컬 |
-| **Axon: MCU Build Make** | MCU 빌드를 위한 `make` 명령 실행 | 원격/로컬 |
-| **Axon: Build and Copy Scripts** | 로컬 scripts 폴더를 findBuildAxonFolder로 찾은 build-axon 폴더에 복사 | 로컬/원격 |
-| **Axon: Configure Settings** | FWDN 경로, Build 폴더명 등 확장 프로그램 관련 설정을 변경합니다. | 로컬/원격 |
-
-### 설정 구성
-
-#### 확장 프로그램 설정 변경
-
-1. Command Palette에서 **"Axon: Configure FWDN Executable Path"** 명령을 실행합니다
-2. 나타나는 메뉴에서 변경하고자 하는 항목을 선택합니다.
-   - **🔧 FWDN 실행 파일 경로 설정**: `fwdn.exe` 파일의 위치를 설정합니다.
-   - **📁 Build 폴더명 설정**: 프로젝트의 빌드 폴더 이름(예: `build-axon`)을 설정합니다.
-   - **📂 Boot Firmware 폴더명 설정**: Boot Firmware 폴더 이름(예: `boot-firmware_tcn1000`)을 설정합니다.
-3. 안내에 따라 값을 입력하거나 파일을 선택하면 설정이 자동으로 저장됩니다.
-
-### 기본 설정값
-
-**FWDN 실행 파일 경로 (기본값):**
-```
-C:\Users\jhlee17\work\FWDN\fwdn.exe
-```
-
-**Boot Firmware 경로 (기본값):**
-```
-Z:\work1\can2ethimp\mcu-tcn100x\boot-firmware-tcn100x
-```
-
-### VS Code 설정
-
-다음 설정 항목들이 VS Code 설정에서 관리됩니다:
-
-**FWDN 설정:**
-- `axon.fwdn.exePath`: FWDN 실행 파일 경로
-- `axon.bootFirmware.path`: Boot Firmware 폴더 경로
-
-## 🛠️ 개발
-
-### 환경 설정
+### 1. VSIX 파일로 설치
 
 ```bash
-npm install
-npm run compile
-npm run watch
+# 로컬 VS Code에 설치
+code --install-extension axon-0.4.1.vsix
 ```
 
-### 디버깅
+## 🚀 사용 방법
 
-#### VS Code 디버깅 모드
+### 프로젝트 생성
 
-1. **F5 키**를 눌러 디버깅 모드 시작
-2. 새 창에서 **c:\Users\jhlee17\work** 워크스페이스 열기
-3. **F12 키** → **Console 탭**에서 실시간 디버깅
+1. **사이드바에서 Axon 아이콘 클릭**
+2. **Create Projects 뷰에서 원하는 프로젝트 타입 선택**:
+   - `Create MCU Standalone Project`: MCU 단독 개발 환경
+   - `Create Yocto Project`: Yocto 통합 빌드 환경
 
-#### 콘솔에서 직접 테스트
+### MCU 빌드
 
-디버깅 모드의 콘솔에서 실행할 수 있는 코드들:
+#### 특정 코어 빌드
 
-```javascript
-// 워크스페이스 정보 확인 (URI 스킴 포함)
-vscode.workspace.workspaceFolders?.[0]?.uri?.toString()
+1. **Command Palette** (`Ctrl+Shift+P`) 열기
+2. **"Axon: MCU Select Core"** 실행
+3. 빌드할 코어 선택 (m7-0, m7-1, m5-0)
+4. **"Axon: MCU Build Make"** 실행
 
-// boot-firmware_tcn1000 검색
-await vscode.workspace.findFiles('../**/boot-firmware_tcn1000', null, 5)
+#### 전체 코어 빌드
 
-// build-axon 패턴 검색
-await vscode.workspace.findFiles('**/build-axon/**/boot-firmware_tcn1000', null, 3)
+1. **Command Palette** (`Ctrl+Shift+P`) 열기
+2. **"Axon: MCU Build All"** 실행
+   - 모든 defconfig(m70, m71, m50)를 순차적으로 빌드
 
-// Samba 경로 변환 테스트 (원격 환경에서)
-convertRemotePathToSamba('/home/id/autotest_cs/build-axon/linux_yp4.0_cgw_1.x.x_dev/boot-firmware_tcn1000')
-// 결과: Z:\autotest_cs\build-axon\linux_yp4.0_cgw_1.x.x_dev\boot-firmware_tcn1000
+#### 사이드바에서 빌드
 
-// 다른 사용자/프로젝트 패턴들 테스트
-convertRemotePathToSamba('/home/B030240/work1/autotest_cs/build-axon/boot-firmware_tcn1000')
-// 결과: Z:\work1\autotest_cs\build-axon\boot-firmware_tcn1000
+1. **사이드바의 Build 뷰**에서 원하는 코어 클릭
+2. 빌드가 자동으로 시작됨
 
-convertRemotePathToSamba('/home/developer/project_x/mytest/boot-firmware_tcn1000')
-// 결과: Z:\project_x\mytest\boot-firmware_tcn1000
+### Yocto 빌드
 
-// SSH 직접 패턴
-convertRemotePathToSamba('/id/autotest_cs/boot-firmware_tcn1000')
-// 결과: Z:\autotest_cs\boot-firmware_tcn1000
+#### AP 빌드
 
-// WSL 패턴 테스트
-convertRemotePathToSamba('/mnt/c/Users/test/work1/project/boot-firmware_tcn1000')
-// 결과: C:\Users\test\work1\project\boot-firmware_tcn1000
+1. **Command Palette** (`Ctrl+Shift+P`) 열기
+2. **"Axon: Build Yocto AP"** 실행
 
-// 디렉토리 내용 확인
-const entries = await vscode.workspace.fs.readDirectory(vscode.workspace.workspaceFolders[0].uri);
-console.log('Directory:', entries.map(([name, type]) => `${type === 1 ? '📁' : '📄'} ${name}`))
-```
+#### MCU 빌드
 
-#### 브레이크포인트 설정
+1. **Command Palette** (`Ctrl+Shift+P`) 열기
+2. **"Axon: Build Yocto MCU"** 실행
 
-- `src/extension.ts`의 193, 225, 249, 397번 라인에 브레이크포인트 설정
-- 코드 실행을 한 줄씩 관찰하며 디버깅 가능
+#### 커널 빌드
 
-### 로그 확인
+1. **Command Palette** (`Ctrl+Shift+P`) 열기
+2. **"Axon: Build Yocto Kernel"** 실행
 
-- **Output 패널** → **Axon 채널**에서 상세한 실행 로그 확인
-- 각 패턴의 검색 결과와 소요 시간 실시간 모니터링
-- 디버깅 정보로 문제 진단
+#### 설정 파일 편집
 
-## 📦 빌드 및 배포
+1. **Command Palette** (`Ctrl+Shift+P`) 열기
+2. 편집할 파일 선택:
+   - **"Axon: Edit AP local.conf"**: AP 빌드 설정
+   - **"Axon: Edit MCU local.conf"**: MCU 빌드 설정
+   - **"Axon: Edit Branch/Srcrev"**: 소스 버전 관리
 
-```bash
-# 컴파일 후 패키징
-npm run build
+### FWDN 실행
 
-# 자동 패치 버전 업데이트 후 패키징
-npm run package:auto
+**⚠️ 주의**: FWDN은 **로컬 Windows 환경**에서만 실행됩니다.
 
-# 특정 버전 업데이트 후 패키징
-npm run package:patch    # 패치 버전 증가
-npm run package:minor    # 마이너 버전 증가
-npm run package:major    # 메이저 버전 증가
-```
+1. **Command Palette** (`Ctrl+Shift+P`) 열기
+2. **"Axon: FWDN"** 실행
+3. 펌웨어 다운로드가 자동으로 진행됨
 
-## 🔧 문제 해결
+### 설정 관리
 
-### 일반적인 에러 해결 방법
+1. **Command Palette** (`Ctrl+Shift+P`) 열기
+2. **"Axon: Configure Settings"** 실행
+3. 변경할 설정 선택:
+   - **FWDN 실행 파일 경로**: fwdn.exe 위치 설정
+   - **프로젝트 타입**: MCU 또는 Yocto 선택
+   - **프로젝트 폴더명**: 빌드 폴더 이름 설정
+   - **Boot Firmware 폴더명**: Boot Firmware 폴더 이름 설정
+   - **WSL Distro 이름**: WSL 배포판 이름 설정
 
-**드라이브 연결 오류 (시스템이 지정된 드라이브를 찾을 수 없습니다):**
-- Z: 드라이브가 네트워크로 연결되어 있는지 확인하세요
-- 네트워크 드라이브가 매핑되어 있는지 확인하세요
+### 빠른 실행
 
-**환경변수 오류:**
-- 배치 파일에서 환경변수가 제대로 설정되어 있는지 확인하세요
-- `%USERPROFILE%` 등의 환경변수가 올바른 값으로 설정되어 있는지 확인하세요
+- **사이드바 Axon 아이콘**: 모든 기능에 빠르게 접근
+- **Build 뷰**: MCU 코어 클릭으로 즉시 빌드
+- **Configurations 뷰**: 설정 관리
+- **Create Projects 뷰**: 프로젝트 생성
 
-**경로 오류:**
-- 모든 경로가 올바르게 설정되어 있는지 확인하세요
-- 특히 Boot Firmware 경로와 FWDN 실행 파일 경로를 확인하세요
+### Output 로그 확인
 
-**Boot Firmware 폴더를 찾을 수 없습니다:**
-- Output 패널의 Axon 채널에서 상세한 검색 로그를 확인하세요
-- `**/boot-firmware_tcn1000/**` 패턴으로 폴더 내부의 파일이 있는지 확인하세요
-- 워크스페이스 경로에 `build-axon`이 포함되어 있는지 확인하고, 그 안에서 boot-firmware_tcn1000를 찾아보세요
-- VS Code 콘솔에서 직접 검색 테스트: `await vscode.workspace.findFiles('../**/boot-firmware_tcn1000', null, 5)`
-
-**원격 환경(SSH/WSL/컨테이너)에서 작동하지 않습니다:**
-- URI 스킴이 `vscode-remote://` 또는 `wsl://`로 시작하는지 확인하세요
-- 디버깅 모드(F5)에서 콘솔을 열고 `vscode.workspace.workspaceFolders?.[0]?.uri?.toString()` 실행
-- `vscode.workspace.findFiles` API가 원격 환경에서 올바르게 작동하는지 확인하세요
-
-**Samba 경로 변환 오류:**
-- 원격 경로가 Samba 드라이브(Z:)로 올바르게 변환되는지 확인하세요
-- Output 패널에서 `📝 최종 설정 경로:` 로그를 확인하여 변환 결과 확인
-- `📝 사용자: {사용자명}, 프로젝트: {프로젝트디렉토리}` 로그로 변환 과정 확인
-- `/home/id/` 환경의 경우 `autotest_cs`, `build-axon` 등의 프로젝트 디렉토리가 올바르게 인식되는지 확인
-- 사용자의 환경에 맞는 매핑 패턴이 필요하다면 코드의 `convertRemotePathToSamba` 함수 수정
-- VS Code 콘솔에서 `convertRemotePathToSamba('/home/id/{프로젝트}/...')`로 직접 테스트
-
-**익스텐션 명령이 나타나지 않습니다:**
-- VS Code를 완전히 재시작하세요
-- 새 패키지를 다시 설치하세요: `code --install-extension axon-0.3.5.vsix`
-- Command Palette에서 "Axon"으로 검색하여 사용 가능한 명령 확인
-
-**원격 서버에서 extension이 설치되지 않습니다:**
-- Extension Marketplace나 VSIX 파일로 설치한 경우, 원격에 **자동으로 설치되지 않습니다**
-- **Extension Development 모드(F5)에서만** 원격 연결 시 자동 설치됩니다
-- 상단의 **"원격 서버에 수동 설치"** 방법을 따라해주세요
-- 원격 서버에서 `code --list-extensions` 명령으로 설치 확인
-- 원격 서버의 `~/.vscode-server/extensions/` 디렉토리 확인
-
-**VSIX 파일로 설치한 경우:**
-```bash
-# 로컬에서 VSIX 생성
-npm run compile && vsce package
-
-# 원격 서버로 복사 후 설치
-scp axon-0.3.6.vsix user@remote-server:/tmp/
-ssh user@remote-server "code --install-extension /tmp/axon-0.3.6.vsix"
-```
-
-## 📋 버전 정보
-
-현재 버전: **0.3.5**
-
-### 🚀 최근 업데이트 (v0.3.5)
-- 🌐 **Universal Extension**: 로컬과 원격 환경 모두에 자동 설치
-  - **extensionKind**: `["ui", "workspace"]`로 변경
-  - **자동 설치**: Remote-SSH 연결 시 원격 서버에 자동 설치
-  - **환경별 기능**: 로컬/원격 전용 명령어 자동 활성화
-
-### 🔄 이전 버전 (v0.3.1)
-- ⚡ **초고속 검색**: 기존 findFiles 방식에서 직접 경로 탐색 방식으로 변경
-  - depth 4까지 재귀적 폴더 탐색으로 더 깊고 빠른 검색
-  - boot-firmware_tcn1000을 찾는 즉시 중단하여 불필요한 탐색 방지
-- ⏱️ **성능 모니터링**: 검색 수행 시간 측정 및 로그 출력
-  - 성공/실패/오류별로 소요 시간 확인 가능
-  - 밀리초 단위의 정확한 시간 측정
-- 🚫 **스마트 제외**: EXCLUDE_PATTERNS 기반으로 불필요한 폴더 자동 제외
-  - node_modules, .git, build, dist, tools 등 13개 폴더 타입 자동 제외
-  - 검색 속도 향상 및 오탐지 방지
-- ⏰ **안전한 타임아웃**: 5초 타임아웃으로 무한 대기 방지
-- 🔧 **VS Code 표준 API**: CancellationTokenSource를 통한 표준 취소 메커니즘
-
-### 🔄 이전 버전 (v0.2.0)
-- ✅ **지능적 폴더 검색**: `**/${name}/**` 패턴으로 폴더 자동 감지
-- ✅ **원격 환경 대응**: SSH/WSL/컨테이너에서 URI 스킴 보존
-- ✅ **사용자 환경 특화 Samba 변환**: `/home/id/{프로젝트}/...` → `Z:\{프로젝트}\...`
-- ✅ **워크스페이스 내 build-axon 검색**: workspace 안의 build-axon 폴더에서 boot-firmware_tcn1000 자동 검색
-- ✅ **상세 디버깅**: 실시간 로그와 콘솔 테스트 기능
-
-### 🔄 이전 버전
-- v0.1.0: 초기 FWDN 실행 기능
-- v0.1.1: Boot Firmware 경로 설정 추가
+1. **View** → **Output** (또는 `Ctrl+Shift+U`)
+2. 드롭다운에서 **"Axon"** 선택
+3. 모든 빌드 과정과 로그 실시간 확인
 
 ## 라이선스
 
