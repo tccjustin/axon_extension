@@ -21,6 +21,8 @@
     "onCommand:axon.configureSettings",
     "onCommand:axon.FWDN_ALL",
     "onCommand:axon.mcuBuildMake",
+    "onCommand:axon.mcuBuildAll",
+    "onCommand:axon.mcuSelectCore",
     "onCommand:axon.configureProjectFolder",
     "onCommand:axon.configureBootFirmwareFolder",
     "onCommand:axon.buildAndCopyScripts",
@@ -48,6 +50,16 @@
       {
         "command": "axon.mcuBuildMake",
         "title": "MCU Build Make",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.mcuBuildAll",
+        "title": "MCU Build All",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.mcuSelectCore",
+        "title": "MCU Select Core",
         "category": "Axon"
       },
       {
