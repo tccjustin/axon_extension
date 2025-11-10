@@ -1333,6 +1333,12 @@ async function executeMcuBuildAll(extensionPath: string): Promise<void> {
 		const successMsg = `MCU Build All이 시작되었습니다!\n경로: ${mcuBuildPath}\n타겟: ${defconfigs.join(', ')}`;
 		axonSuccess(successMsg);
 		
+		// TreeView 업데이트 - 마지막으로 빌드된 코어 표시 (m7-1)
+		if (globalBuildProvider) {
+			globalBuildProvider.setLastSelectedCore('m7-1');
+			axonLog(`🔄 TreeView 업데이트: 마지막 빌드 코어 = m7-1`);
+		}
+		
 		// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
 		setTimeout(async () => {
 			await vscode.commands.executeCommand('axonBuildView.focus');
