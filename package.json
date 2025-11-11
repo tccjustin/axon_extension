@@ -31,6 +31,8 @@
     "onCommand:axon.createYoctoProject",
     "onCommand:axon.buildYoctoAp",
     "onCommand:axon.buildYoctoMcu",
+    "onCommand:axon.devtoolCreateModify",
+    "onCommand:axon.devtoolBuild",
     "onView:axonCreateProjectsView",
     "onView:axonConfigurationsView",
     "onView:axonBuildView"
@@ -137,6 +139,16 @@
         "command": "axon.editBranchSrcrev",
         "title": "Edit Branch/Srcrev",
         "category": "Axon"
+      },
+      {
+        "command": "axon.devtoolCreateModify",
+        "title": "DevTool Create & Modify",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.devtoolBuild",
+        "title": "DevTool Build",
+        "category": "Axon"
       }
     ],
   "views": {
@@ -205,6 +217,11 @@
           "type": "string",
           "default": "Ubuntu",
           "description": "WSL distribution name for \\\\wsl$ path conversion (e.g., Ubuntu, Ubuntu-20.04, Debian)"
+        },
+        "axon.devtool.recipes": {
+          "type": "array",
+          "default": [],
+          "description": "List of devtool recipes that have been created (automatically managed)"
         }
       }
     },

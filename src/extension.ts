@@ -165,6 +165,9 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 	
 	// 마지막으로 선택한 MCU 코어 저장
 	private lastSelectedCore: string = '';
+	
+	// DevTool 레시피 목록 저장
+	private devtoolRecipes: string[] = [];
 
 	refresh(): void {
 		this._onDidChangeTreeData.fire(undefined);
@@ -178,6 +181,28 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 	getLastSelectedCore(): string {
 		return this.lastSelectedCore;
 	}
+	
+	// DevTool 레시피 추가
+	addDevtoolRecipe(recipeName: string): void {
+		if (!this.devtoolRecipes.includes(recipeName)) {
+			this.devtoolRecipes.push(recipeName);
+			this.saveDevtoolRecipes();
+			this.refresh();
+		}
+	}
+	
+	// DevTool 레시피 목록 저장 (workspace settings)
+	private saveDevtoolRecipes(): void {
+		const config = vscode.workspace.getConfiguration('axon');
+		config.update('devtool.recipes', this.devtoolRecipes, vscode.ConfigurationTarget.Workspace);
+	}
+	
+	// DevTool 레시피 목록 로드
+	loadDevtoolRecipes(): void {
+		const config = vscode.workspace.getConfiguration('axon');
+		const recipes = config.get<string[]>('devtool.recipes', []);
+		this.devtoolRecipes = recipes;
+	}
 
 	getTreeItem(element: AxonTreeItem): vscode.TreeItem {
 		return element;
@@ -185,7 +210,7 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 
 	getChildren(element?: AxonTreeItem): Thenable<AxonTreeItem[]> {
 		if (!element) {
-			// 최상위 레벨: MCU, Yocto 폴더
+			// 최상위 레벨: MCU, Yocto, DevTool 폴더
 			return Promise.resolve([
 				new AxonTreeItem(
 					'buildMcu',
@@ -202,6 +227,14 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 					undefined,
 					'package',
 					'Yocto 빌드 항목'
+				),
+				new AxonTreeItem(
+					'buildDevTool',
+					'DevTool',
+					vscode.TreeItemCollapsibleState.Collapsed,
+					undefined,
+					'beaker',
+					'DevTool 항목'
 				)
 			]);
 		} else if (element.id === 'buildMcu') {
@@ -335,18 +368,51 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 					'trash',
 					'Yocto MCU 빌드 폴더 정리'
 				),
+			new AxonTreeItem(
+				'cleanYoctoAll',
+				'Clean All',
+				vscode.TreeItemCollapsibleState.None,
+				{
+					command: 'axon.cleanYoctoAll',
+					title: 'Clean Yocto All'
+				},
+				'trash',
+				'Yocto AP + MCU 빌드 폴더 정리'
+			)
+		]);
+		} else if (element.id === 'buildDevTool') {
+			// DevTool 하위 항목들
+			const items: AxonTreeItem[] = [
 				new AxonTreeItem(
-					'cleanYoctoAll',
-					'Clean All',
+					'devtoolCreateModify',
+					'Create & Modify',
 					vscode.TreeItemCollapsibleState.None,
 					{
-						command: 'axon.cleanYoctoAll',
-						title: 'Clean Yocto All'
+						command: 'axon.devtoolCreateModify',
+						title: 'DevTool Create & Modify'
 					},
-					'trash',
-					'Yocto AP + MCU 빌드 폴더 정리'
+					'file-code',
+					'devtool modify 워크스페이스 생성 및 레시피 수정'
 				)
-			]);
+			];
+			
+			// 저장된 레시피 목록 추가
+			for (const recipe of this.devtoolRecipes) {
+				items.push(new AxonTreeItem(
+					`devtoolBuild_${recipe}`,
+					recipe,
+					vscode.TreeItemCollapsibleState.None,
+					{
+						command: 'axon.devtoolBuild',
+						title: `DevTool Build ${recipe}`,
+						arguments: [recipe]
+					},
+					'package',
+					`devtool build ${recipe} 실행`
+				));
+			}
+			
+			return Promise.resolve(items);
 		}
 		return Promise.resolve([]);
 	}
@@ -415,6 +481,291 @@ async function showConfigurationMenu() {
 	}
 }
 
+/**
+ * DevTool Create & Modify 실행
+ * 
+ * 사용자가 선택한 레시피(linux-telechips, m7-0, m7-1, m7-2, m7-np)에 대해:
+ * 1. 드롭박스에서 레시피 선택
+ * 2. Yocto 환경 초기화 (source poky/oe-init-build-env)
+ * 3. devtool create-workspace 실행
+ * 4. devtool modify 실행
+ * 5. fix-devtool-bbappend.sh 스크립트 실행
+ */
+async function executeDevtoolCreateModify(extensionPath: string): Promise<void> {
+	axonLog('🔧 [DevTool Create & Modify] 시작');
+
+	try {
+		// Yocto 프로젝트 루트 경로 확인
+		const config = vscode.workspace.getConfiguration('axon');
+		const yoctoRoot = config.get<string>('yocto.projectRoot', '');
+		
+		if (!yoctoRoot || yoctoRoot.trim() === '') {
+			const errorMsg = 'Yocto 프로젝트 루트가 설정되지 않았습니다.\n\n' +
+				'해결 방법:\n' +
+				'1. Yocto 프로젝트를 먼저 생성하거나\n' +
+				'2. Settings에서 axon.yocto.projectRoot를 설정하세요.';
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			return;
+		}
+		
+		axonLog(`📁 Yocto 프로젝트 루트: ${yoctoRoot}`);
+		
+		// 1. 레시피 선택
+		const recipes = [
+			{ label: 'linux-telechips', description: 'Kernel 레시피' },
+			{ label: 'm7-0', description: 'MCU m7-0 레시피' },
+			{ label: 'm7-1', description: 'MCU m7-1 레시피' },
+			{ label: 'm7-2', description: 'MCU m7-2 레시피' },
+			{ label: 'm7-np', description: 'MCU m7-np 레시피' }
+		];
+		
+		const selected = await vscode.window.showQuickPick(recipes, {
+			placeHolder: 'devtool modify할 레시피를 선택하세요',
+			ignoreFocusOut: true
+		});
+		
+		if (!selected) {
+			axonLog('❌ 사용자가 레시피 선택을 취소했습니다.');
+			return;
+		}
+		
+		const recipeName = selected.label;
+		axonLog(`✅ 선택된 레시피: ${recipeName}`);
+		
+		// 실행 확인 다이얼로그
+		const confirmMessage = `'${recipeName}' 레시피에 대해 DevTool Create & Modify를 실행하시겠습니까?\n\n` +
+			`실행 단계:\n` +
+			`1. devtool create-workspace\n` +
+			`2. devtool modify\n` +
+			`3. bbappend 파일 수정`;
+		
+		const confirm = await vscode.window.showInformationMessage(
+			confirmMessage,
+			{ modal: true },
+			'확인',
+			'취소'
+		);
+		
+		if (confirm !== '확인') {
+			axonLog('❌ 사용자가 실행을 취소했습니다.');
+			return;
+		}
+		
+		// 2. 빌드 환경 결정 (linux-telechips는 AP, 나머지는 MCU)
+		const buildDir = recipeName === 'linux-telechips' ? 'build/tcn1000' : 'build/tcn1000-mcu';
+		axonLog(`📂 빌드 디렉토리: ${buildDir}`);
+		
+		// 3. bbappend 파일 수정을 위한 인라인 bash 스크립트
+		axonLog(`📋 bbappend 수정 스크립트 준비 중...`);
+		
+		const fixBbappendScript = `
+RECIPE_PN="${recipeName}"
+# Yocto root의 local-sources에서 찾기 (절대 경로 사용)
+BBAPPEND_FILE=$(find ${yoctoRoot}/local-sources/\${RECIPE_PN}/appends -name "\${RECIPE_PN}*.bbappend" 2>/dev/null | head -n 1)
+
+if [[ -z "\${BBAPPEND_FILE}" ]]; then
+    echo "❌ ERROR: bbappend 파일을 찾을 수 없습니다: ${yoctoRoot}/local-sources/\${RECIPE_PN}/appends/"
+    echo "현재 디렉토리: \$(pwd)"
+    exit 1
+fi
+
+echo "✅ Found bbappend: \${BBAPPEND_FILE}"
+
+# 백업 생성
+BACKUP_FILE="\${BBAPPEND_FILE}.backup.\$(date +%Y%m%d_%H%M%S)"
+cp "\${BBAPPEND_FILE}" "\${BACKUP_FILE}"
+echo "📋 Backup created: \${BACKUP_FILE}"
+
+# 임시 파일 생성
+TEMP_FILE=\$(mktemp)
+
+# 1단계: 헤더 부분 복사
+while IFS= read -r line; do
+    if [[ "\$line" =~ ^FILESEXTRAPATHS ]] || [[ "\$line" =~ ^FILESPATH ]] || [[ "\$line" =~ ^#.*srctreebase ]]; then
+        echo "\$line" >> "\${TEMP_FILE}"
+    elif [[ "\$line" =~ ^inherit.*externalsrc ]]; then
+        break
+    elif [[ -z "\$line" ]]; then
+        echo "\$line" >> "\${TEMP_FILE}"
+    fi
+done < "\${BBAPPEND_FILE}"
+
+# 2단계: Python 필터 추가
+cat >> "\${TEMP_FILE}" <<'PYEOF'
+
+# externalsrc 사용 시 원격 git 항목은 Fetch 해석에서 제외
+python () {
+    src_uri = (d.getVar('SRC_URI') or '').split()
+    filtered = []
+    for u in src_uri:
+        if u.startswith('git://') or u.startswith('ssh://') or u.startswith('http://') or u.startswith('https://'):
+            continue
+        if ('.git' in u) and (not u.startswith('file://')):
+            continue
+        filtered.append(u)
+    d.setVar('SRC_URI', ' '.join(filtered))
+}
+
+PYEOF
+
+# 3단계: 나머지 부분 (inherit externalsrc 이후) 추가
+COPY_REST=false
+while IFS= read -r line; do
+    if [[ "\$line" =~ ^inherit.*externalsrc ]]; then
+        COPY_REST=true
+    fi
+    if [[ "\${COPY_REST}" == true ]]; then
+        echo "\$line" >> "\${TEMP_FILE}"
+    fi
+done < "\${BBAPPEND_FILE}"
+
+# 파일 교체
+mv "\${TEMP_FILE}" "\${BBAPPEND_FILE}"
+
+echo ""
+echo "✓ bbappend 파일이 성공적으로 수정되었습니다!"
+echo "  수정된 파일: \${BBAPPEND_FILE}"
+echo "  백업 파일: \${BACKUP_FILE}"
+echo ""
+`;
+		
+		// 4. executeShellTask를 사용하여 명령 실행
+		const { executeShellTask } = await import('./projects/common/shell-utils');
+		
+		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		if (!workspaceFolder) {
+			throw new Error('워크스페이스 폴더를 찾을 수 없습니다.');
+		}
+		
+		const yoctoRootUri = vscode.Uri.from({
+			scheme: workspaceFolder.uri.scheme,
+			authority: workspaceFolder.uri.authority,
+			path: yoctoRoot
+		});
+		
+		const fullCommand = `cd "${yoctoRoot}"
+source poky/oe-init-build-env ${buildDir}
+devtool create-workspace ${yoctoRoot}/local-sources/${recipeName}
+devtool modify ${recipeName}
+${fixBbappendScript}`;
+		
+		axonLog(`🔨 실행할 명령 준비 완료`);
+		
+		await executeShellTask({
+			command: fullCommand,
+			cwd: yoctoRoot,
+			taskName: `DevTool: ${recipeName}`,
+			taskId: `devtoolCreateModify_${recipeName}`,
+			showTerminal: true,
+			useScriptFile: true,  // 긴 명령어를 스크립트 파일로 실행
+			cwdUri: yoctoRootUri
+		});
+		
+		axonSuccess(`✅ DevTool Create & Modify가 시작되었습니다!\n레시피: ${recipeName}\n빌드 디렉토리: ${buildDir}`);
+		
+		// 성공적으로 완료되면 레시피를 DevTool 메뉴에 추가
+		if (globalBuildProvider) {
+			globalBuildProvider.addDevtoolRecipe(recipeName);
+			axonLog(`📝 DevTool 메뉴에 ${recipeName} 추가됨`);
+		}
+		
+	} catch (error) {
+		const errorMsg = `DevTool Create & Modify 실행 중 오류 발생: ${error}`;
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
+	}
+}
+
+/**
+ * DevTool Build 실행
+ * 
+ * @param recipeName - 빌드할 레시피 이름
+ */
+async function executeDevtoolBuild(recipeName: string): Promise<void> {
+	axonLog(`🔨 [DevTool Build] 시작: ${recipeName}`);
+
+	try {
+		// 실행 확인 다이얼로그
+		let confirmMessage = `'${recipeName}' 레시피를 빌드하시겠습니까?\n\n실행 명령:\n- devtool build ${recipeName}`;
+		
+		// linux-telechips인 경우 추가 정보 표시
+		if (recipeName === 'linux-telechips') {
+			confirmMessage += `\n- bitbake -f -c make_fai telechips-cgw-image`;
+		}
+		
+		const confirm = await vscode.window.showInformationMessage(
+			confirmMessage,
+			{ modal: true },
+			'확인',
+			'취소'
+		);
+		
+		if (confirm !== '확인') {
+			axonLog('❌ 사용자가 빌드를 취소했습니다.');
+			return;
+		}
+		
+		// Yocto 프로젝트 루트 경로 확인
+		const config = vscode.workspace.getConfiguration('axon');
+		const yoctoRoot = config.get<string>('yocto.projectRoot', '');
+		
+		if (!yoctoRoot || yoctoRoot.trim() === '') {
+			const errorMsg = 'Yocto 프로젝트 루트가 설정되지 않았습니다.';
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			return;
+		}
+		
+		// 빌드 환경 결정 (linux-telechips는 AP, 나머지는 MCU)
+		const buildDir = recipeName === 'linux-telechips' ? 'build/tcn1000' : 'build/tcn1000-mcu';
+		axonLog(`📂 빌드 디렉토리: ${buildDir}`);
+		
+		const { executeShellTask } = await import('./projects/common/shell-utils');
+		
+		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		if (!workspaceFolder) {
+			throw new Error('워크스페이스 폴더를 찾을 수 없습니다.');
+		}
+		
+		const yoctoRootUri = vscode.Uri.from({
+			scheme: workspaceFolder.uri.scheme,
+			authority: workspaceFolder.uri.authority,
+			path: yoctoRoot
+		});
+		
+		// 기본 devtool build 명령어 구성
+		let buildCommand = `cd "${yoctoRoot}"
+source poky/oe-init-build-env ${buildDir}
+devtool build ${recipeName}`;
+		
+		// linux-telechips인 경우 추가 bitbake 명령어 실행
+		if (recipeName === 'linux-telechips') {
+			buildCommand += `\nbitbake -f -c make_fai telechips-cgw-image`;
+			axonLog(`📦 linux-telechips 감지: bitbake make_fai 명령어 추가`);
+		}
+		
+		axonLog(`🔨 실행할 명령 준비 완료`);
+		
+		await executeShellTask({
+			command: buildCommand,
+			cwd: yoctoRoot,
+			taskName: `DevTool Build: ${recipeName}`,
+			taskId: `devtoolBuild_${recipeName}`,
+			showTerminal: true,
+			useScriptFile: false,
+			cwdUri: yoctoRootUri
+		});
+		
+		axonSuccess(`✅ DevTool Build가 시작되었습니다!\n레시피: ${recipeName}`);
+		
+	} catch (error) {
+		const errorMsg = `DevTool Build 실행 중 오류 발생: ${error}`;
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
+	}
+}
+
 // 전역 BuildProvider (executeMcuSelectCore에서 접근하기 위함)
 let globalBuildProvider: BuildProvider | undefined;
 
@@ -440,6 +791,9 @@ export async function activate(context: vscode.ExtensionContext) {
 	const configurationsProvider = new ConfigurationsProvider();
 	const buildProvider = new BuildProvider();
 	globalBuildProvider = buildProvider; // 전역 변수에 저장
+	
+	// DevTool 레시피 목록 로드
+	buildProvider.loadDevtoolRecipes();
 	
 	vscode.window.registerTreeDataProvider('axonCreateProjectsView', createProjectsProvider);
 	vscode.window.registerTreeDataProvider('axonConfigurationsView', configurationsProvider);
@@ -634,6 +988,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
+	// DevTool Create & Modify 명령
+	const devtoolCreateModifyDisposable = vscode.commands.registerCommand(
+		'axon.devtoolCreateModify',
+		async () => executeDevtoolCreateModify(context.extensionPath)
+	);
+
 	// Clean Yocto AP 명령
 	const cleanYoctoApDisposable = vscode.commands.registerCommand(
 		'axon.cleanYoctoAp',
@@ -682,6 +1042,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
+	// DevTool Build 명령
+	const devtoolBuildDisposable = vscode.commands.registerCommand(
+		'axon.devtoolBuild',
+		async (recipeName: string) => executeDevtoolBuild(recipeName)
+	);
+
 	context.subscriptions.push(
 		configureSettingsDisposable, // 상위 설정 메뉴 명령어
 		runFwdnAllDisposable,
@@ -701,6 +1067,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		buildYoctoApDisposable,
 		buildYoctoMcuDisposable,
 		buildYoctoKernelDisposable,
+		// DevTool 명령어들
+		devtoolCreateModifyDisposable,
+		devtoolBuildDisposable,
 		// 클린 명령어들
 		cleanYoctoApDisposable,
 		cleanYoctoMcuDisposable,
