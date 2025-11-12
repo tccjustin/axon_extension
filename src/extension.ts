@@ -230,7 +230,7 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 				),
 				new AxonTreeItem(
 					'buildDevTool',
-					'DevTool',
+					'DevTool (External Src)',
 					vscode.TreeItemCollapsibleState.Collapsed,
 					undefined,
 					'beaker',
@@ -385,7 +385,7 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 			const items: AxonTreeItem[] = [
 				new AxonTreeItem(
 					'devtoolCreateModify',
-					'Create & Modify',
+					'Setup External Source (modify)',
 					vscode.TreeItemCollapsibleState.None,
 					{
 						command: 'axon.devtoolCreateModify',
@@ -400,7 +400,7 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 			for (const recipe of this.devtoolRecipes) {
 				items.push(new AxonTreeItem(
 					`devtoolBuild_${recipe}`,
-					recipe,
+					`${recipe} build`,
 					vscode.TreeItemCollapsibleState.None,
 					{
 						command: 'axon.devtoolBuild',
@@ -648,7 +648,14 @@ echo ""
 source poky/oe-init-build-env ${buildDir}
 devtool create-workspace ${yoctoRoot}/local-sources/${recipeName}
 devtool modify ${recipeName}
-${fixBbappendScript}`;
+${fixBbappendScript}
+echo ""
+echo "=========================================="
+echo "✅ DevTool Setup이 성공적으로 완료되었습니다!"
+echo "   레시피: ${recipeName}"
+echo "   빌드 환경: ${buildDir}"
+echo "=========================================="
+echo ""`;
 		
 		axonLog(`🔨 실행할 명령 준비 완료`);
 		
@@ -745,6 +752,16 @@ devtool build ${recipeName}`;
 			axonLog(`📦 linux-telechips 감지: bitbake make_fai 명령어 추가`);
 		}
 		
+		// 성공 메시지 추가
+		buildCommand += `
+echo ""
+echo "=========================================="
+echo "✅ DevTool Build가 성공적으로 완료되었습니다!"
+echo "   레시피: ${recipeName}"
+echo "   빌드 환경: ${buildDir}"
+echo "=========================================="
+echo ""`;
+		
 		axonLog(`🔨 실행할 명령 준비 완료`);
 		
 		await executeShellTask({
@@ -753,7 +770,7 @@ devtool build ${recipeName}`;
 			taskName: `DevTool Build: ${recipeName}`,
 			taskId: `devtoolBuild_${recipeName}`,
 			showTerminal: true,
-			useScriptFile: false,
+			useScriptFile: true,
 			cwdUri: yoctoRootUri
 		});
 		

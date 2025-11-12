@@ -343,7 +343,8 @@ export class YoctoProjectBuilder {
 			cwd: projectRoot,  // 원격 환경에서는 무시됨 (shell-utils.ts에서 처리)
 			taskName: 'Yocto AP Build',
 			taskId: 'yoctoApBuild',
-			showTerminal: true
+			showTerminal: true,
+			useScriptFile: true
 		});
 		
 		// Build View에 포커스 복원
@@ -563,7 +564,8 @@ export class YoctoProjectBuilder {
 			cwd: projectRoot,  // 원격 환경에서는 무시됨 (shell-utils.ts에서 처리)
 			taskName: 'Yocto MCU Build',
 			taskId: 'yoctoMcuBuild',
-			showTerminal: true
+			showTerminal: true,
+			useScriptFile: true
 		});
 		
 		// Build View에 포커스 복원
@@ -786,7 +788,8 @@ export class YoctoProjectBuilder {
 				cwd: projectRoot,
 				taskName: 'Yocto Kernel Build',
 				taskId: 'yoctoKernelBuild',
-				showTerminal: true
+				showTerminal: true,
+				useScriptFile: true
 			});
 			
 			// Build View에 포커스 복원
@@ -878,7 +881,8 @@ export class YoctoProjectBuilder {
 			cwd: projectRoot,
 			taskName: 'Yocto AP Clean',
 			taskId: 'yoctoApClean',
-			showTerminal: true
+			showTerminal: true,
+			useScriptFile: true
 		});
 		
 		// Build View에 포커스 복원
@@ -970,7 +974,8 @@ export class YoctoProjectBuilder {
 			cwd: projectRoot,
 			taskName: 'Yocto MCU Clean',
 			taskId: 'yoctoMcuClean',
-			showTerminal: true
+			showTerminal: true,
+			useScriptFile: true
 		});
 		
 		// Build View에 포커스 복원
@@ -1093,7 +1098,8 @@ export class YoctoProjectBuilder {
 				cwd: projectRoot,
 				taskName: 'Yocto AP Clean',
 				taskId: 'yoctoApCleanInAll',
-				showTerminal: true
+				showTerminal: true,
+				useScriptFile: true
 			});
 		}
 		
@@ -1109,7 +1115,8 @@ export class YoctoProjectBuilder {
 				cwd: projectRoot,
 				taskName: 'Yocto MCU Clean',
 				taskId: 'yoctoMcuCleanInAll',
-				showTerminal: true
+				showTerminal: true,
+				useScriptFile: true
 			});
 		}
 		
@@ -1121,7 +1128,8 @@ export class YoctoProjectBuilder {
 			cwd: projectRoot,
 			taskName: 'Yocto Clean All - Wait',
 			taskId: 'yoctoCleanAllWait',
-			showTerminal: true
+			showTerminal: true,
+			useScriptFile: true
 		});
 		
 		// Build View에 포커스 복원
