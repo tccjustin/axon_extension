@@ -12,7 +12,7 @@ export interface FwdnConfig {
 }
 
 // FWDN 설정 가져오기
-export async function getFwdnConfig(): Promise<FwdnConfig> {
+export async function getFwdnConfig(extensionPath: string): Promise<FwdnConfig> {
 	const config = vscode.workspace.getConfiguration('axon');
 
 	// Boot Firmware 경로는 매번 새로 검색 (캐시 사용하지 않음) - 빠른 방식 사용
@@ -47,8 +47,25 @@ export async function getFwdnConfig(): Promise<FwdnConfig> {
 
 	axonLog(`✅ Boot Firmware 경로 (FWDN용): ${bootFirmwarePath}`);
 
+	// FWDN 실행 파일 경로 결정
+	// 1. 사용자 설정 경로 확인
+	let fwdnExePath = config.get<string>('fwdn.exePath', '');
+	
+	// 2. 설정이 없거나 파일이 존재하지 않으면 extension 내장 버전 사용
+	if (!fwdnExePath || !fs.existsSync(fwdnExePath)) {
+		const bundledFwdnPath = path.join(extensionPath, 'binaries', 'fwdn.exe');
+		if (fs.existsSync(bundledFwdnPath)) {
+			fwdnExePath = bundledFwdnPath;
+			axonLog(`📦 Extension 내장 FWDN 사용: ${fwdnExePath}`);
+		} else {
+			axonLog(`⚠️ Extension 내장 FWDN을 찾을 수 없습니다: ${bundledFwdnPath}`);
+		}
+	} else {
+		axonLog(`⚙️ 사용자 설정 FWDN 사용: ${fwdnExePath}`);
+	}
+
 	return {
-		fwdnExePath: config.get<string>('fwdn.exePath', 'C:\\Users\\jhlee17\\work\\FWDN\\fwdn.exe'),
+		fwdnExePath: fwdnExePath,
 		bootFirmwarePath: bootFirmwarePath
 	};
 }
@@ -157,6 +174,22 @@ async function executeFwdnWithAutoClose(terminal: vscode.Terminal): Promise<void
 export async function executeFwdnCommand(extensionPath: string): Promise<void> {
 	axonLog(`🚀 FWDN ALL (Step 1-4) 실행 명령 시작`);
 
+	// 사용자 확인 팝업
+	const confirmResult = await vscode.window.showWarningMessage(
+		'FWDN (펌웨어 다운로드)을 실행하시겠습니까?\n\n⚠️ 타겟 보드에 펌웨어가 다운로드됩니다.',
+		{ modal: true },
+		'실행',
+		'취소'
+	);
+
+	if (confirmResult !== '실행') {
+		axonLog('❌ 사용자가 FWDN 실행을 취소했습니다.');
+		vscode.window.showInformationMessage('FWDN이 취소되었습니다.');
+		return;
+	}
+
+	axonLog('✅ 사용자가 FWDN 실행을 확인했습니다.');
+
 	// 환경 정보 로깅 (디버깅용)
 	axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
 
@@ -225,7 +258,7 @@ export async function executeFwdnCommand(extensionPath: string): Promise<void> {
 	// 설정된 폴더로 FWDN 설정 가져오기
 	let config: FwdnConfig;
 	try {
-		config = await getFwdnConfig();
+		config = await getFwdnConfig(extensionPath);
 		axonLog(`📋 설정 - FWDN 경로: ${config.fwdnExePath}, Boot Firmware 경로: ${config.bootFirmwarePath}`);
 	} catch (error) {
 		// 선택한 폴더를 찾을 수 없는 경우

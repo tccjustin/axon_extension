@@ -19,6 +19,7 @@ import {
 import { McuProjectDialog } from './projects/mcu/dialog';
 import { YoctoProjectDialog } from './projects/yocto/dialog';
 import { YoctoProjectBuilder } from './projects/yocto/builder';
+import { executeShellTask } from './projects/common/shell-utils';
 
 // Axon Tree Item
 class AxonTreeItem extends vscode.TreeItem {
@@ -411,6 +412,19 @@ class BuildProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 					`devtool build ${recipe} 실행`
 				));
 			}
+			
+			// FWDN 항목 추가
+			items.push(new AxonTreeItem(
+				'devtoolFwdn',
+				'FWDN',
+				vscode.TreeItemCollapsibleState.None,
+				{
+					command: 'axon.FWDN_ALL',
+					title: 'DevTool FWDN'
+				},
+				'plug',
+				'DevTool 펌웨어 다운로드 실행 (fwdn.exe)'
+			));
 			
 			return Promise.resolve(items);
 		}
@@ -1449,105 +1463,37 @@ async function executeMcuBuildMake(extensionPath: string): Promise<void> {
 			return;
 		}
 
-		// 환경 감지 및 터미널 생성
-		const isRemote = vscode.env.remoteName !== undefined;
-		let terminal: vscode.Terminal;
-
-		if (isRemote) {
-			// 원격 환경: bash를 사용하는 원격 터미널 생성 (기존 bash 터미널 재사용)
-			axonLog(`🔧 원격 환경 감지 - bash 터미널 생성 또는 재사용`);
-
-			// 열려있는 bash 터미널 찾기
-			let bashTerminal = vscode.window.terminals.find(term => {
-				const terminalName = term.name || '';
-				return terminalName.toLowerCase().includes('bash') ||
-					   terminalName.toLowerCase().includes('terminal') ||
-					   terminalName === '';
-			});
-
-			if (bashTerminal) {
-				// 기존 bash 터미널이 있으면 재사용
-				terminal = bashTerminal;
-				axonLog(`✅ 기존 bash 터미널을 재사용합니다: ${bashTerminal.name}`);
-			} else {
-				// bash 터미널이 없으면 새로 생성
-				try {
-					await vscode.commands.executeCommand('workbench.action.terminal.new');
-					const remoteTerminal = vscode.window.activeTerminal;
-					if (remoteTerminal) {
-						terminal = remoteTerminal;
-						axonLog(`✅ 새 bash 터미널을 생성했습니다`);
-					} else {
-						throw new Error('원격 bash 터미널 생성에 실패했습니다.');
-					}
-				} catch {
-					// 폴백: 직접 bash 터미널 생성
-					terminal = vscode.window.createTerminal({
-						name: `MCU Build Make (Bash)`,
-						shellPath: 'bash',
-						shellArgs: ['--login'],
-						isTransient: true
-					});
-					axonLog(`✅ 폴백으로 bash 터미널을 직접 생성했습니다`);
-				}
-			}
-		} else {
-			// 로컬 환경: bash 터미널 생성 또는 재사용
-			axonLog(`🔧 로컬 환경 - bash 터미널 생성 또는 재사용`);
-
-			// 열려있는 bash 터미널 찾기
-			let bashTerminal = vscode.window.terminals.find(term => {
-				const terminalName = term.name || '';
-				return terminalName.toLowerCase().includes('bash') ||
-					   terminalName.toLowerCase().includes('terminal') ||
-					   terminalName === '';
-			});
-
-			if (bashTerminal) {
-				// 기존 bash 터미널이 있으면 재사용
-				terminal = bashTerminal;
-				axonLog(`✅ 기존 bash 터미널을 재사용합니다: ${bashTerminal.name}`);
-			} else {
-				// bash 터미널이 없으면 새로 생성 시도
-				try {
-					await vscode.commands.executeCommand('workbench.action.terminal.new');
-					const basicTerminal = vscode.window.activeTerminal;
-					if (basicTerminal) {
-						// 새로 생성된 터미널을 사용 (VS Code에서 기본적으로 적절한 shell을 선택)
-						terminal = basicTerminal;
-						axonLog(`✅ 새 터미널을 생성했습니다: ${basicTerminal.name}`);
-					} else {
-						throw new Error('기본 터미널 생성에 실패했습니다.');
-					}
-				} catch {
-					// 폴백: 직접 bash 터미널 생성
-					terminal = vscode.window.createTerminal({
-						name: `MCU Build Make (Bash)`,
-						shellPath: 'bash',
-						shellArgs: ['--login'],
-						isTransient: true
-					});
-					axonLog(`✅ 폴백으로 bash 터미널을 직접 생성했습니다`);
-				}
-		}
-	}
-
-	// 터미널 표시 (포커스는 주지 않음)
-	terminal.show(false);
-	axonLog(`📺 터미널을 백그라운드로 표시합니다`);
-
-	// MCU 빌드 디렉토리로 이동 후 make 실행
-	terminal.sendText(`cd "${mcuBuildPath}" && make`, true);
-
-	const successMsg = `MCU Build Make이 실행되었습니다! 경로: ${mcuBuildPath}`;
-	axonSuccess(successMsg);
+	// 선택한 코어 가져오기
+	const selectedCore = globalBuildProvider?.getLastSelectedCore();
 	
-	// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
+	if (!selectedCore) {
+		axonLog('❌ 선택된 코어가 없습니다.');
+		vscode.window.showErrorMessage('먼저 "Select Core" 메뉴에서 빌드할 코어를 선택해주세요.');
+		return;
+	}
+	
+	axonLog(`🎯 선택된 코어: ${selectedCore}`);
+	
+	// 빌드 명령 생성
+	const buildCommand = `cd "${mcuBuildPath}" && make clean_${selectedCore} && make ${selectedCore}`;
+	
+	axonLog(`🔨 실행할 명령 준비 완료`);
+	
+	await executeShellTask({
+		command: buildCommand,
+		cwd: mcuBuildPath,
+		taskName: `MCU Build Make: ${selectedCore}`,
+		taskId: `mcuBuildMake_${selectedCore}`,
+		showTerminal: true,
+		useScriptFile: true
+	});
+	
+	// Build View에 포커스 복원
 	setTimeout(async () => {
 		await vscode.commands.executeCommand('axonBuildView.focus');
 		axonLog(`🔄 Build View에 포커스를 복원했습니다`);
 	}, 100);
-
+	
 	axonLog(`✅ MCU Build Make 실행 완료`);
 
 	} catch (error) {
@@ -1620,104 +1566,19 @@ async function executeMcuBuildAll(extensionPath: string): Promise<void> {
 			return;
 		}
 
-		// 환경 감지 및 터미널 생성
-		const isRemote = vscode.env.remoteName !== undefined;
-		let terminal: vscode.Terminal;
-
-		if (isRemote) {
-			// 원격 환경: bash를 사용하는 원격 터미널 생성
-			axonLog(`🔧 원격 환경 감지 - bash 터미널 생성 또는 재사용`);
-
-			// 열려있는 bash 터미널 찾기
-			let bashTerminal = vscode.window.terminals.find(term => {
-				const terminalName = term.name || '';
-				return terminalName.toLowerCase().includes('bash') ||
-					   terminalName.toLowerCase().includes('terminal') ||
-					   terminalName === '';
-			});
-
-			if (bashTerminal) {
-				terminal = bashTerminal;
-				axonLog(`✅ 기존 bash 터미널을 재사용합니다: ${bashTerminal.name}`);
-			} else {
-				try {
-					await vscode.commands.executeCommand('workbench.action.terminal.new');
-					const remoteTerminal = vscode.window.activeTerminal;
-					if (remoteTerminal) {
-						terminal = remoteTerminal;
-						axonLog(`✅ 새 bash 터미널을 생성했습니다`);
-					} else {
-						throw new Error('원격 bash 터미널 생성에 실패했습니다.');
-					}
-				} catch {
-					terminal = vscode.window.createTerminal({
-						name: `MCU Build All (Bash)`,
-						shellPath: 'bash',
-						shellArgs: ['--login'],
-						isTransient: true
-					});
-					axonLog(`✅ 폴백으로 bash 터미널을 직접 생성했습니다`);
-				}
-			}
-		} else {
-			// 로컬 환경: bash 터미널 생성 또는 재사용
-			axonLog(`🔧 로컬 환경 - bash 터미널 생성 또는 재사용`);
-
-			let bashTerminal = vscode.window.terminals.find(term => {
-				const terminalName = term.name || '';
-				return terminalName.toLowerCase().includes('bash') ||
-					   terminalName.toLowerCase().includes('terminal') ||
-					   terminalName === '';
-			});
-
-			if (bashTerminal) {
-				terminal = bashTerminal;
-				axonLog(`✅ 기존 bash 터미널을 재사용합니다: ${bashTerminal.name}`);
-			} else {
-				try {
-					await vscode.commands.executeCommand('workbench.action.terminal.new');
-					const basicTerminal = vscode.window.activeTerminal;
-					if (basicTerminal) {
-						terminal = basicTerminal;
-						axonLog(`✅ 새 터미널을 생성했습니다: ${basicTerminal.name}`);
-					} else {
-						throw new Error('기본 터미널 생성에 실패했습니다.');
-					}
-				} catch {
-					terminal = vscode.window.createTerminal({
-						name: `MCU Build All (Bash)`,
-						shellPath: 'bash',
-						shellArgs: ['--login'],
-						isTransient: true
-					});
-					axonLog(`✅ 폴백으로 bash 터미널을 직접 생성했습니다`);
-				}
-		}
-	}
-
-	// 터미널 표시 (포커스는 주지 않음)
-	terminal.show(false);
-	axonLog(`📺 터미널을 백그라운드로 표시합니다`);
-
-	// MCU 빌드 디렉토리로 이동
-	terminal.sendText(`cd "${mcuBuildPath}"`, true);
+	// 빌드 명령 생성
+	const buildCommand = `cd "${mcuBuildPath}" && make clean && make all`;
 	
-	// 각 defconfig에 대해 순차적으로 실행
-	axonLog(`🔨 MCU Build All 시작: ${defconfigs.length}개 타겟`);
-		
-		for (const defconfig of defconfigs) {
-			axonLog(`  - ${defconfig}`);
-			terminal.sendText(`make ${defconfig} && make`, true);
-		}
-
-		// 완료 메시지
-		terminal.sendText(`echo ""`, true);
-		terminal.sendText(`echo "✅ MCU Build All 완료!"`, true);
-		terminal.sendText(`echo "빌드된 타겟: ${defconfigs.join(', ')}"`, true);
-		terminal.sendText(`echo ""`, true);
-
-		const successMsg = `MCU Build All이 시작되었습니다!\n경로: ${mcuBuildPath}\n타겟: ${defconfigs.join(', ')}`;
-		axonSuccess(successMsg);
+	axonLog(`🔨 실행할 명령 준비 완료`);
+	
+	await executeShellTask({
+		command: buildCommand,
+		cwd: mcuBuildPath,
+		taskName: 'MCU Build All',
+		taskId: 'mcuBuildAll',
+		showTerminal: true,
+		useScriptFile: true
+	});
 		
 		// TreeView 업데이트 - 마지막으로 빌드된 코어 표시 (m7-1)
 		if (globalBuildProvider) {
@@ -1957,106 +1818,27 @@ async function executeMcuClean(extensionPath: string): Promise<void> {
 			return;
 		}
 
-		// 환경 감지 및 터미널 생성
-		const isRemote = vscode.env.remoteName !== undefined;
-		let terminal: vscode.Terminal;
-
-		if (isRemote) {
-			// 원격 환경: bash를 사용하는 원격 터미널 생성 (기존 bash 터미널 재사용)
-			axonLog(`🔧 원격 환경 감지 - bash 터미널 생성 또는 재사용`);
-
-			// 열려있는 bash 터미널 찾기
-			let bashTerminal = vscode.window.terminals.find(term => {
-				const terminalName = term.name || '';
-				return terminalName.toLowerCase().includes('bash') ||
-					   terminalName.toLowerCase().includes('terminal') ||
-					   terminalName === '';
-			});
-
-			if (bashTerminal) {
-				// 기존 bash 터미널이 있으면 재사용
-				terminal = bashTerminal;
-				axonLog(`✅ 기존 bash 터미널을 재사용합니다: ${bashTerminal.name}`);
-			} else {
-				// bash 터미널이 없으면 새로 생성
-				try {
-					await vscode.commands.executeCommand('workbench.action.terminal.new');
-					const remoteTerminal = vscode.window.activeTerminal;
-					if (remoteTerminal) {
-						terminal = remoteTerminal;
-						axonLog(`✅ 새 bash 터미널을 생성했습니다`);
-					} else {
-						throw new Error('원격 bash 터미널 생성에 실패했습니다.');
-					}
-				} catch {
-					// 폴백: 직접 bash 터미널 생성
-					terminal = vscode.window.createTerminal({
-						name: `MCU Clean (Bash)`,
-						shellPath: 'bash',
-						shellArgs: ['--login'],
-						isTransient: true
-					});
-					axonLog(`✅ 폴백으로 bash 터미널을 직접 생성했습니다`);
-				}
-			}
-		} else {
-			// 로컬 환경: bash 터미널 생성 또는 재사용
-			axonLog(`🔧 로컬 환경 - bash 터미널 생성 또는 재사용`);
-
-			// 열려있는 bash 터미널 찾기
-			let bashTerminal = vscode.window.terminals.find(term => {
-				const terminalName = term.name || '';
-				return terminalName.toLowerCase().includes('bash') ||
-					   terminalName.toLowerCase().includes('terminal') ||
-					   terminalName === '';
-			});
-
-			if (bashTerminal) {
-				// 기존 bash 터미널이 있으면 재사용
-				terminal = bashTerminal;
-				axonLog(`✅ 기존 bash 터미널을 재사용합니다: ${bashTerminal.name}`);
-			} else {
-				// bash 터미널이 없으면 새로 생성 시도
-				try {
-					await vscode.commands.executeCommand('workbench.action.terminal.new');
-					const basicTerminal = vscode.window.activeTerminal;
-					if (basicTerminal) {
-						// 새로 생성된 터미널을 사용 (VS Code에서 기본적으로 적절한 shell을 선택)
-						terminal = basicTerminal;
-						axonLog(`✅ 새 터미널을 생성했습니다: ${basicTerminal.name}`);
-					} else {
-						throw new Error('기본 터미널 생성에 실패했습니다.');
-					}
-				} catch {
-					// 폴백: 직접 bash 터미널 생성
-					terminal = vscode.window.createTerminal({
-						name: `MCU Clean (Bash)`,
-						shellPath: 'bash',
-						shellArgs: ['--login'],
-						isTransient: true
-					});
-					axonLog(`✅ 폴백으로 bash 터미널을 직접 생성했습니다`);
-				}
-			}
-		}
-
-		// 터미널 표시 (포커스는 주지 않음)
-		terminal.show(false);
-		axonLog(`📺 터미널을 백그라운드로 표시합니다`);
-
-		// MCU 빌드 디렉토리로 이동 후 make clean 실행
-		terminal.sendText(`cd "${mcuBuildPath}" && make clean`, true);
-
-		const successMsg = `MCU Clean이 실행되었습니다! 경로: ${mcuBuildPath}`;
-		axonSuccess(successMsg);
-
-		// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
-		setTimeout(async () => {
-			await vscode.commands.executeCommand('axonBuildView.focus');
-			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
-		}, 100);
-
-		axonLog(`✅ MCU Clean 실행 완료`);
+	// Clean 명령 생성
+	const cleanCommand = `cd "${mcuBuildPath}" && make clean`;
+	
+	axonLog(`🔨 실행할 명령 준비 완료`);
+	
+	await executeShellTask({
+		command: cleanCommand,
+		cwd: mcuBuildPath,
+		taskName: 'MCU Clean',
+		taskId: 'mcuClean',
+		showTerminal: true,
+		useScriptFile: true
+	});
+	
+	// Build View에 포커스 복원
+	setTimeout(async () => {
+		await vscode.commands.executeCommand('axonBuildView.focus');
+		axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+	}, 100);
+	
+	axonLog(`✅ MCU Clean 실행 완료`);
 
 	} catch (error) {
 		const errorMsg = `MCU Clean 실행 중 오류가 발생했습니다: ${error}`;

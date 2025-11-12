@@ -189,8 +189,8 @@
       "properties": {
         "axon.fwdn.exePath": {
           "type": "string",
-          "default": "C:\\Users\\jhlee17\\work\\FWDN\\fwdn.exe",
-          "description": "FWDN executable path"
+          "default": "",
+          "description": "FWDN executable path (비어있으면 extension 내장 버전 사용)"
         },
         "axon.projectType": {
           "type": "string",
