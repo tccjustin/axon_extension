@@ -453,104 +453,262 @@ function getWorkspaceFolder(): vscode.WorkspaceFolder | null {
 }
 
 
-// 설정 메뉴를 보여주는 새로운 상위 명령어
-async function showConfigurationMenu() {
-	axonLog('🔍 showConfigurationMenu 함수 시작');
-	
-	// QuickPick에 표시할 항목들 정의
-	const items: (vscode.QuickPickItem & { command: string })[] = [
-		{
-			label: '🔧 FWDN 실행 파일 경로 설정',
-			description: 'fwdn.exe 파일의 위치를 설정합니다.',
-			command: 'axon.configureFwdnExe' // 실행할 명령어 ID
-		},
-		{
-			label: '📁 Build 폴더명 설정',
-			description: '프로젝트의 빌드 폴더 이름(예: build-axon)을 설정합니다.',
-			command: 'axon.configureProjectFolder'
-		},
-		{
-			label: '📂 Boot Firmware 폴더명 설정',
-			description: 'Boot Firmware 폴더 이름(예: boot-firmware_tcn1000)을 설정합니다.',
-			command: 'axon.configureBootFirmwareFolder'
-		}
-	];
-
-	axonLog('📋 QuickPick 메뉴 표시 중...');
-	
-	// QuickPick 메뉴 표시
-	const selected = await vscode.window.showQuickPick(items, {
-		placeHolder: '변경할 설정 항목을 선택하세요',
-		ignoreFocusOut: true  // 포커스를 잃어도 닫히지 않도록 설정
-	});
-
-	// 사용자가 항목을 선택한 경우 해당 명령 실행
-	if (selected) {
-		axonLog(`✅ 선택된 항목: ${selected.label}`);
-		axonLog(`🎯 실행할 명령: ${selected.command}`);
-		await vscode.commands.executeCommand(selected.command);
-		axonLog(`✅ 명령 실행 완료: ${selected.command}`);
-	} else {
-		axonLog('❌ 사용자가 선택을 취소했습니다.');
-	}
-}
-
 /**
  * DevTool Create & Modify 실행
  * 
- * 사용자가 선택한 레시피(linux-telechips, m7-0, m7-1, m7-2, m7-np)에 대해:
- * 1. 드롭박스에서 레시피 선택
- * 2. Yocto 환경 초기화 (source poky/oe-init-build-env)
- * 3. devtool create-workspace 실행
- * 4. devtool modify 실행
- * 5. fix-devtool-bbappend.sh 스크립트 실행
+ * AP 레시피에 대해서만 devtool modify를 지원합니다.
+ * MCU 레시피(m7-0, m7-1, m7-2, m7-np)는 지원하지 않습니다.
+ * 
+ * 실행 단계:
+ * 1. 드롭박스에서 레시피 선택 (또는 직접 입력)
+ * 2. MCU 레시피인 경우 에러 메시지 표시 및 종료
+ * 3. AP 빌드 설정 및 빌드 디렉토리 생성 (build/tcn1000)
+ * 4. Yocto 환경 초기화 (source poky/oe-init-build-env)
+ * 5. devtool create-workspace 실행 (workspace가 없을 때만)
+ * 6. devtool modify 실행
+ * 7. bbappend 파일 수정 스크립트 실행
  */
 async function executeDevtoolCreateModify(extensionPath: string): Promise<void> {
 	axonLog('🔧 [DevTool Create & Modify] 시작');
 
 	try {
-		// Yocto 프로젝트 루트 경로 확인
-		const config = vscode.workspace.getConfiguration('axon');
-		const yoctoRoot = config.get<string>('yocto.projectRoot', '');
+		// Yocto 프로젝트 루트 경로 확인 (build AP와 동일한 방식 사용)
+		const { YoctoProjectBuilder } = await import('./projects/yocto/builder');
 		
-		if (!yoctoRoot || yoctoRoot.trim() === '') {
-			const errorMsg = 'Yocto 프로젝트 루트가 설정되지 않았습니다.\n\n' +
-				'해결 방법:\n' +
-				'1. Yocto 프로젝트를 먼저 생성하거나\n' +
-				'2. Settings에서 axon.yocto.projectRoot를 설정하세요.';
+		// bootFirmwareFolderName 설정 확인 (build AP와 동일)
+		const bootFirmwareFolderName = await YoctoProjectBuilder['ensureBootFirmwareFolderName']();
+		if (!bootFirmwareFolderName) {
+			vscode.window.showInformationMessage('빌드가 취소되었습니다.');
+			return;
+		}
+		
+		// Yocto 프로젝트 루트 자동 탐지 (build AP와 동일)
+		const yoctoRoot = await YoctoProjectBuilder.getYoctoProjectRoot();
+		axonLog(`📁 Yocto 프로젝트 루트: ${yoctoRoot}`);
+		
+		// 1. 레시피 선택 (AP 레시피만 지원, MCU 레시피는 devtool modify를 사용하지 않음)
+		const recipes = [
+			{ label: 'linux-telechips', description: 'Kernel 레시피' }
+		];
+
+		const manualInputItem = { label: '직접 입력...', description: '레시피명을 직접 입력' };
+		const quickPickItems = [...recipes, manualInputItem];
+
+		const selected = await vscode.window.showQuickPick(quickPickItems, {
+			placeHolder: 'devtool modify할 레시피를 선택하거나 "직접 입력..."을 선택하세요',
+			ignoreFocusOut: true
+		});
+
+		if (!selected) {
+			axonLog('❌ 사용자가 레시피 선택을 취소했습니다.');
+			return;
+		}
+
+		let recipeName: string;
+		let isManualInput = false;
+		if (selected.label === manualInputItem.label) {
+			const input = await vscode.window.showInputBox({
+				title: '레시피명 직접 입력',
+				placeHolder: '예: telechips-cgw-app',
+				prompt: 'Yocto devtool modify에 사용할 레시피명을 입력하세요',
+				ignoreFocusOut: true,
+				validateInput: (value: string) => {
+					const trimmed = value.trim();
+					if (!trimmed) return '레시피명을 입력하세요';
+					// 간단 검증: 공백 금지
+					if (/\s/.test(trimmed)) return '공백 없이 입력하세요';
+					return null;
+				}
+			});
+
+			if (!input) {
+				axonLog('❌ 사용자가 레시피 입력을 취소했습니다.');
+				return;
+			}
+
+			recipeName = input.trim();
+			isManualInput = true;
+		} else {
+			recipeName = selected.label;
+		}
+
+		axonLog(`✅ 선택된 레시피: ${recipeName}`);
+		
+		// MCU 레시피는 지원하지 않음
+		const mcuRecipes = ['m7-0', 'm7-1', 'm7-2', 'm7-np'];
+		if (mcuRecipes.includes(recipeName)) {
+			const errorMsg = `MCU 레시피(${recipeName})는 devtool modify를 지원하지 않습니다.\n\nMCU 레시피는 별도의 빌드 방식을 사용합니다.`;
 			axonError(errorMsg);
 			vscode.window.showErrorMessage(errorMsg);
 			return;
 		}
 		
-		axonLog(`📁 Yocto 프로젝트 루트: ${yoctoRoot}`);
+		// 모든 AP 레시피는 build/tcn1000 사용
+		const buildDir = 'build/tcn1000';
+		const workspaceName = 'tcn1000';
 		
-		// 1. 레시피 선택
-		const recipes = [
-			{ label: 'linux-telechips', description: 'Kernel 레시피' },
-			{ label: 'm7-0', description: 'MCU m7-0 레시피' },
-			{ label: 'm7-1', description: 'MCU m7-1 레시피' },
-			{ label: 'm7-2', description: 'MCU m7-2 레시피' },
-			{ label: 'm7-np', description: 'MCU m7-np 레시피' }
-		];
+		// workspaceFolder 가져오기
+		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		if (!workspaceFolder) {
+			throw new Error('워크스페이스 폴더를 찾을 수 없습니다.');
+		}
 		
-		const selected = await vscode.window.showQuickPick(recipes, {
-			placeHolder: 'devtool modify할 레시피를 선택하세요',
-			ignoreFocusOut: true
+		// 2. AP 빌드 설정 및 빌드 디렉토리 생성 (builder.ts 174-260 참고)
+		const projectRootUri = vscode.Uri.from({
+			scheme: workspaceFolder.uri.scheme,
+			authority: workspaceFolder.uri.authority,
+			path: yoctoRoot
 		});
 		
-		if (!selected) {
-			axonLog('❌ 사용자가 레시피 선택을 취소했습니다.');
+		const configUri = vscode.Uri.joinPath(projectRootUri, 'config.json');
+		let apMachine: string | undefined;
+		let cgwVersion: string | undefined;
+		
+		// config.json 읽기 시도
+		try {
+			const configContent = await vscode.workspace.fs.readFile(configUri);
+			const config = JSON.parse(Buffer.from(configContent).toString('utf8'));
+			apMachine = config.machine;
+			cgwVersion = config.version;
+			
+			if (apMachine && cgwVersion) {
+				axonLog(`✅ 설정 로드: MACHINE=${apMachine}, CGW_SDK_VERSION=${cgwVersion}`);
+			}
+		} catch (error) {
+			axonLog(`⚠️ config.json 읽기 실패 또는 없음`);
+		}
+		
+		// machine 또는 version이 없으면 사용자에게 선택받기
+		if (!apMachine || !cgwVersion) {
+			axonLog('📋 빌드 설정을 선택해주세요...');
+			
+			// machine 선택
+			if (!apMachine) {
+				const supportedMachines = ['tcn1000'];
+				apMachine = await vscode.window.showQuickPick(supportedMachines, {
+					placeHolder: 'AP MACHINE을 선택하세요',
+					title: 'Yocto AP Build Configuration'
+				});
+				
+				if (!apMachine) {
+					axonLog('❌ 사용자 취소: MACHINE 선택이 취소되었습니다.');
+					vscode.window.showInformationMessage('빌드가 취소되었습니다.');
+					return;
+				}
+			}
+			
+			// version 선택
+			if (!cgwVersion) {
+				const supportedVersions = ['dev', 'qa', 'release'];
+				cgwVersion = await vscode.window.showQuickPick(supportedVersions, {
+					placeHolder: 'CGW SDK VERSION을 선택하세요',
+					title: 'Yocto AP Build Configuration'
+				});
+				
+				if (!cgwVersion) {
+					axonLog('❌ 사용자 취소: VERSION 선택이 취소되었습니다.');
+					vscode.window.showInformationMessage('빌드가 취소되었습니다.');
+					return;
+				}
+			}
+			
+			// 선택한 설정을 config.json에 저장
+			try {
+				let existingConfig: any = {};
+				try {
+					const configContent = await vscode.workspace.fs.readFile(configUri);
+					existingConfig = JSON.parse(Buffer.from(configContent).toString('utf8'));
+				} catch {
+					// config.json이 없으면 빈 객체 사용
+				}
+				
+				existingConfig.machine = apMachine;
+				existingConfig.version = cgwVersion;
+				
+				const configJson = JSON.stringify(existingConfig, null, 2);
+				await vscode.workspace.fs.writeFile(configUri, Buffer.from(configJson, 'utf8'));
+				axonLog(`💾 빌드 설정을 config.json에 저장했습니다: MACHINE=${apMachine}, VERSION=${cgwVersion}`);
+			} catch (error) {
+				axonLog(`⚠️ config.json 저장 실패 (계속 진행): ${error}`);
+			}
+		}
+		
+		const machine = apMachine!;
+		const version = cgwVersion!;
+		const buildScript = `${yoctoRoot}/poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh`;
+		
+		axonLog(`📂 빌드 디렉토리: ${buildDir}`);
+		axonLog(`📋 빌드 설정: MACHINE=${machine}, VERSION=${version}`);
+		
+		// 3. buildtools 환경 확인 (builder.ts 498-514 또는 276-292 참고)
+		const envPath = `${yoctoRoot}/buildtools/environment-setup-x86_64-pokysdk-linux`;
+		const envUri = vscode.Uri.from({
+			scheme: workspaceFolder.uri.scheme,
+			authority: workspaceFolder.uri.authority,
+			path: envPath
+		});
+		
+		try {
+			await vscode.workspace.fs.stat(envUri);
+			axonLog(`✅ Buildtools 환경 확인: ${envPath}`);
+		} catch {
+			const errorMsg = 'Buildtools 환경이 설정되지 않았습니다. 먼저 "build toolchain"을 실행해야 합니다.';
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
 			return;
 		}
 		
-		const recipeName = selected.label;
-		axonLog(`✅ 선택된 레시피: ${recipeName}`);
+		// 4. 빌드 스크립트 확인 (builder.ts 516-534 또는 294-312 참고)
+		const buildScriptUri = vscode.Uri.from({
+			scheme: workspaceFolder.uri.scheme,
+			authority: workspaceFolder.uri.authority,
+			path: buildScript
+		});
+		
+		try {
+			await vscode.workspace.fs.stat(buildScriptUri);
+			axonLog(`✅ 빌드 스크립트 확인: ${buildScript}`);
+		} catch {
+			const errorMsg = `빌드 스크립트를 찾을 수 없습니다: ${buildScript}`;
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			return;
+		}
+		
+		// 5. 빌드 스크립트 실행하여 빌드 디렉토리 생성 (builder.ts 539-543 또는 317-321 참고)
+		// 빌드 디렉토리와 local.conf 파일을 생성하기 위해 빌드 스크립트만 실행
+		axonLog(`🔨 빌드 디렉토리 생성 중...`);
+		const { executeShellTask } = await import('./projects/common/shell-utils');
+		
+		const yoctoRootUri = vscode.Uri.from({
+			scheme: workspaceFolder.uri.scheme,
+			authority: workspaceFolder.uri.authority,
+			path: yoctoRoot
+		});
+		
+		const setupBuildDirCommand = `cd "${yoctoRoot}"
+source "${envPath}"
+source "${buildScript}" ${machine} ${version}`;
+		
+		await executeShellTask({
+			command: setupBuildDirCommand,
+			cwd: yoctoRoot,
+			taskName: `Setup Build Directory: ${buildDir}`,
+			taskId: `setupBuildDir_${buildDir.replace(/\//g, '_')}`,
+			showTerminal: true,
+			useScriptFile: true,
+			cwdUri: yoctoRootUri
+		});
+		
+		axonLog(`✅ 빌드 디렉토리 생성 완료: ${buildDir}`);
 		
 		// 실행 확인 다이얼로그
 		const confirmMessage = `'${recipeName}' 레시피에 대해 DevTool Create & Modify를 실행하시겠습니까?\n\n` +
+			`빌드 환경: ${buildDir}\n` +
+			`MACHINE: ${machine}, VERSION: ${version}\n` +
+			`DevTool workspace: external-workspace/${workspaceName}\n\n` +
 			`실행 단계:\n` +
-			`1. devtool create-workspace\n` +
+			`1. devtool create-workspace (workspace가 없을 때만)\n` +
 			`2. devtool modify\n` +
 			`3. bbappend 파일 수정`;
 		
@@ -566,21 +724,72 @@ async function executeDevtoolCreateModify(extensionPath: string): Promise<void> 
 			return;
 		}
 		
-		// 2. 빌드 환경 결정 (linux-telechips는 AP, 나머지는 MCU)
-		const buildDir = recipeName === 'linux-telechips' ? 'build/tcn1000' : 'build/tcn1000-mcu';
-		axonLog(`📂 빌드 디렉토리: ${buildDir}`);
+		// 6. DevTool workspace 경로 결정 (빌드 디렉토리 기반)
+		// workspaceName은 이미 위에서 결정됨
+		const workspacePath = `${yoctoRoot}/external-workspace/${workspaceName}`;
+		axonLog(`📁 DevTool workspace: ${workspacePath}`);
+		
+		// 6-1. workspace 존재 여부 확인
+		const workspaceUri = vscode.Uri.from({
+			scheme: workspaceFolder.uri.scheme,
+			authority: workspaceFolder.uri.authority,
+			path: workspacePath
+		});
+		
+		let workspaceExists = false;
+		try {
+			const stat = await vscode.workspace.fs.stat(workspaceUri);
+			workspaceExists = (stat.type & vscode.FileType.Directory) === vscode.FileType.Directory;
+		} catch {
+			workspaceExists = false;
+		}
+		
+		if (workspaceExists) {
+			axonLog(`✅ DevTool workspace가 이미 존재합니다: ${workspacePath}`);
+		} else {
+			axonLog(`📝 새 DevTool workspace를 생성합니다: ${workspacePath}`);
+		}
 		
 		// 3. bbappend 파일 수정을 위한 인라인 bash 스크립트
 		axonLog(`📋 bbappend 수정 스크립트 준비 중...`);
 		
 		const fixBbappendScript = `
 RECIPE_PN="${recipeName}"
-# Yocto root의 local-sources에서 찾기 (절대 경로 사용)
-BBAPPEND_FILE=$(find ${yoctoRoot}/local-sources/\${RECIPE_PN}/appends -name "\${RECIPE_PN}*.bbappend" 2>/dev/null | head -n 1)
+# DevTool workspace에서 bbappend 파일 찾기
+# devtool modify 후 생성되는 bbappend 파일은 external-workspace/${workspaceName}/appends/ 에 있습니다.
+BBAPPEND_FILE=""
+
+# 경로 1: external-workspace의 appends 폴더 (가장 일반적인 경로)
+# external-workspace/tcn1000/appends/ 또는 external-workspace/tcn1000-mcu/appends/
+BBAPPEND_FILE=$(find ${yoctoRoot}/external-workspace/${workspaceName}/appends -name "\${RECIPE_PN}*.bbappend" 2>/dev/null | head -n 1)
+
+# 경로 2: 빌드 환경의 workspace appends 폴더 (백업 경로)
+if [[ -z "\${BBAPPEND_FILE}" ]]; then
+    BBAPPEND_FILE=$(find ${yoctoRoot}/${buildDir}/workspace/appends -name "\${RECIPE_PN}*.bbappend" 2>/dev/null | head -n 1)
+fi
+
+# 경로 3: 빌드 환경의 workspace recipes 폴더 (백업 경로)
+if [[ -z "\${BBAPPEND_FILE}" ]]; then
+    BBAPPEND_FILE=$(find ${yoctoRoot}/${buildDir}/workspace/recipes/\${RECIPE_PN} -name "\${RECIPE_PN}*.bbappend" 2>/dev/null | head -n 1)
+fi
+
+# 경로 4: external-workspace의 recipes 폴더 (백업 경로)
+if [[ -z "\${BBAPPEND_FILE}" ]]; then
+    BBAPPEND_FILE=$(find ${yoctoRoot}/external-workspace/${workspaceName}/recipes/\${RECIPE_PN} -name "\${RECIPE_PN}*.bbappend" 2>/dev/null | head -n 1)
+fi
 
 if [[ -z "\${BBAPPEND_FILE}" ]]; then
-    echo "❌ ERROR: bbappend 파일을 찾을 수 없습니다: ${yoctoRoot}/local-sources/\${RECIPE_PN}/appends/"
+    echo "❌ ERROR: bbappend 파일을 찾을 수 없습니다."
+    echo "다음 경로들을 확인했습니다:"
+    echo "  1. ${yoctoRoot}/external-workspace/${workspaceName}/appends/"
+    echo "  2. ${yoctoRoot}/${buildDir}/workspace/appends/"
+    echo "  3. ${yoctoRoot}/${buildDir}/workspace/recipes/\${RECIPE_PN}/"
+    echo "  4. ${yoctoRoot}/external-workspace/${workspaceName}/recipes/\${RECIPE_PN}/"
     echo "현재 디렉토리: \$(pwd)"
+    echo ""
+    echo "디버깅 정보:"
+    echo "external-workspace/appends 구조:"
+    ls -la ${yoctoRoot}/external-workspace/${workspaceName}/appends/ 2>/dev/null | head -20 || echo "  (디렉토리 없음)"
     exit 1
 fi
 
@@ -644,23 +853,23 @@ echo "  백업 파일: \${BACKUP_FILE}"
 echo ""
 `;
 		
-		// 4. executeShellTask를 사용하여 명령 실행
-		const { executeShellTask } = await import('./projects/common/shell-utils');
+		// 7. executeShellTask를 사용하여 명령 실행
+		const { executeShellTask: devtoolExecuteShellTask } = await import('./projects/common/shell-utils');
 		
-		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-		if (!workspaceFolder) {
-			throw new Error('워크스페이스 폴더를 찾을 수 없습니다.');
-		}
-		
-		const yoctoRootUri = vscode.Uri.from({
+		const devtoolYoctoRootUri = vscode.Uri.from({
 			scheme: workspaceFolder.uri.scheme,
 			authority: workspaceFolder.uri.authority,
 			path: yoctoRoot
 		});
 		
+		// workspace가 없을 때만 create-workspace 실행
+		const createWorkspaceCommand = workspaceExists 
+			? `echo "ℹ️  DevTool workspace가 이미 존재하므로 create-workspace를 건너뜁니다: ${workspacePath}"`
+			: `devtool create-workspace ${workspacePath}`;
+		
 		const fullCommand = `cd "${yoctoRoot}"
 source poky/oe-init-build-env ${buildDir}
-devtool create-workspace ${yoctoRoot}/local-sources/${recipeName}
+${createWorkspaceCommand}
 devtool modify ${recipeName}
 ${fixBbappendScript}
 echo ""
@@ -668,28 +877,31 @@ echo "=========================================="
 echo "✅ DevTool Setup이 성공적으로 완료되었습니다!"
 echo "   레시피: ${recipeName}"
 echo "   빌드 환경: ${buildDir}"
+echo "   DevTool workspace: ${workspacePath}"
 echo "=========================================="
 echo ""`;
 		
 		axonLog(`🔨 실행할 명령 준비 완료`);
 		
-		await executeShellTask({
+		await devtoolExecuteShellTask({
 			command: fullCommand,
 			cwd: yoctoRoot,
 			taskName: `DevTool: ${recipeName}`,
 			taskId: `devtoolCreateModify_${recipeName}`,
 			showTerminal: true,
 			useScriptFile: true,  // 긴 명령어를 스크립트 파일로 실행
-			cwdUri: yoctoRootUri
+			cwdUri: devtoolYoctoRootUri
 		});
 		
-		axonSuccess(`✅ DevTool Create & Modify가 시작되었습니다!\n레시피: ${recipeName}\n빌드 디렉토리: ${buildDir}`);
-		
-		// 성공적으로 완료되면 레시피를 DevTool 메뉴에 추가
+		// 작업 성공적으로 종료됨 (exit code 0) → 메뉴에 동적으로 추가
 		if (globalBuildProvider) {
 			globalBuildProvider.addDevtoolRecipe(recipeName);
-			axonLog(`📝 DevTool 메뉴에 ${recipeName} 추가됨`);
+			try {
+				await vscode.commands.executeCommand('axonBuildView.focus');
+			} catch {}
 		}
+
+		axonSuccess(`✅ DevTool Create & Modify가 완료되었습니다!\n레시피: ${recipeName}\n빌드 디렉토리: ${buildDir}`);
 		
 	} catch (error) {
 		const errorMsg = `DevTool Create & Modify 실행 중 오류 발생: ${error}`;
@@ -738,8 +950,13 @@ async function executeDevtoolBuild(recipeName: string): Promise<void> {
 			return;
 		}
 		
-		// 빌드 환경 결정 (linux-telechips는 AP, 나머지는 MCU)
-		const buildDir = recipeName === 'linux-telechips' ? 'build/tcn1000' : 'build/tcn1000-mcu';
+		// 빌드 환경 결정
+		// MCU 레시피 (m7-0, m7-1, m7-2, m7-np)만 build/tcn1000-mcu 사용
+		// 나머지 모든 레시피는 build/tcn1000 사용
+		const mcuRecipes = ['m7-0', 'm7-1', 'm7-2', 'm7-np'];
+		const buildDir = mcuRecipes.includes(recipeName)
+			? 'build/tcn1000-mcu'
+			: 'build/tcn1000';
 		axonLog(`📂 빌드 디렉토리: ${buildDir}`);
 		
 		const { executeShellTask } = await import('./projects/common/shell-utils');
@@ -836,117 +1053,10 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Yocto Project Dialog Provider 등록
 	const yoctoProjectDialog = new YoctoProjectDialog(context);
 
-	// 설정 메뉴를 보여주는 새로운 상위 명령어
-	const configureSettingsDisposable = vscode.commands.registerCommand(
-		'axon.configureSettings',
-		showConfigurationMenu
-	);
-
 	// FWDN ALL 실행 명령
 	const runFwdnAllDisposable = vscode.commands.registerCommand(
 		'axon.FWDN_ALL',
 		async () => executeFwdnCommand(context.extensionPath)
-	);
-
-	// FWDN 실행 파일 경로 설정 명령
-	const configureFwdnExeDisposable = vscode.commands.registerCommand(
-		'axon.configureFwdnExe',
-		async () => {
-			axonLog('🔧 [configureFwdnExe] 명령 시작');
-			const config = vscode.workspace.getConfiguration('axon');
-
-			axonLog('📂 [configureFwdnExe] 파일 선택 다이얼로그 표시 중...');
-			const selectedFiles = await vscode.window.showOpenDialog({
-				canSelectFiles: true,
-				canSelectFolders: false,
-				canSelectMany: false,
-				openLabel: 'FWDN 실행 파일 선택',
-				title: 'FWDN 실행 파일을 선택하세요',
-				filters: {
-					'Executable': ['exe'],
-					'All Files': ['*']
-				},
-				defaultUri: vscode.Uri.file(config.get<string>('fwdn.exePath', 'C:\\Users\\jhlee17\\work\\FWDN\\fwdn.exe'))
-			});
-
-			if (selectedFiles && selectedFiles.length > 0) {
-				axonLog(`✅ [configureFwdnExe] 파일 선택됨: ${selectedFiles[0].fsPath}`);
-				await updateConfiguration('fwdn.exePath', selectedFiles[0].fsPath, 'FWDN 실행 파일');
-			} else {
-				axonLog('❌ [configureFwdnExe] 파일 선택 취소됨');
-			}
-			axonLog('🏁 [configureFwdnExe] 명령 종료');
-		}
-	);
-
-	// Build 폴더명 설정 명령
-	const configureProjectFolderDisposable = vscode.commands.registerCommand(
-		'axon.configureProjectFolder',
-		async () => {
-			axonLog('📁 [configureProjectFolder] 명령 시작');
-			const config = vscode.workspace.getConfiguration('axon');
-			const currentValue = config.get<string>('buildAxonFolderName', '');
-			axonLog(`📁 [configureProjectFolder] 현재 값: ${currentValue}`);
-
-			axonLog('⌨️ [configureProjectFolder] 입력 박스 표시 중...');
-			const newValue = await vscode.window.showInputBox({
-				prompt: 'Build 폴더명을 입력하세요',
-				value: currentValue,
-				placeHolder: '예: build-axon',
-				ignoreFocusOut: true,  // 포커스를 잃어도 닫히지 않도록 설정
-				validateInput: (value) => {
-					if (!value || value.trim().length === 0) {
-						return '폴더명을 입력해주세요.';
-					}
-					return null;
-				}
-			});
-
-			if (newValue && newValue !== currentValue) {
-				axonLog(`✅ [configureProjectFolder] 새 값 입력됨: ${newValue}`);
-				await updateConfiguration('buildAxonFolderName', newValue.trim(), 'Build 폴더명');
-			} else if (newValue === currentValue) {
-				axonLog('ℹ️ [configureProjectFolder] 값이 변경되지 않음');
-			} else {
-				axonLog('❌ [configureProjectFolder] 입력 취소됨');
-			}
-			axonLog('🏁 [configureProjectFolder] 명령 종료');
-		}
-	);
-
-	// Boot Firmware 폴더명 설정 명령
-	const configureBootFirmwareFolderDisposable = vscode.commands.registerCommand(
-		'axon.configureBootFirmwareFolder',
-		async () => {
-			axonLog('📂 [configureBootFirmwareFolder] 명령 시작');
-			const config = vscode.workspace.getConfiguration('axon');
-			const currentValue = config.get<string>('bootFirmwareFolderName', '');
-			axonLog(`📂 [configureBootFirmwareFolder] 현재 값: ${currentValue}`);
-
-			axonLog('⌨️ [configureBootFirmwareFolder] 입력 박스 표시 중...');
-			const newValue = await vscode.window.showInputBox({
-				prompt: 'Boot Firmware 폴더명을 입력하세요',
-				value: currentValue,
-				placeHolder: '예: boot-firmware_tcn1000',
-				ignoreFocusOut: true,  // 포커스를 잃어도 닫히지 않도록 설정
-				validateInput: (value) => {
-					if (!value || value.trim().length === 0) {
-						return '폴더명을 입력해주세요.';
-					}
-					return null;
-				}
-			});
-
-			if (newValue && newValue !== currentValue) {
-				axonLog(`✅ [configureBootFirmwareFolder] 새 값 입력됨: ${newValue}`);
-				await updateConfiguration('bootFirmwareFolderName', newValue.trim(), 'Boot Firmware 폴더명');
-			} else if (newValue === currentValue) {
-				axonLog('ℹ️ [configureBootFirmwareFolder] 값이 변경되지 않음');
-			} else {
-				axonLog('❌ [configureBootFirmwareFolder] 입력 취소됨');
-			}
-			axonLog('🏁 [configureBootFirmwareFolder] 명령 종료');
-		}
 	);
 
 	// MCU Build Make 실행 명령
@@ -1080,17 +1190,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
-		configureSettingsDisposable, // 상위 설정 메뉴 명령어
 		runFwdnAllDisposable,
 		mcuBuildMakeDisposable,
 		mcuBuildAllDisposable,
 		mcuSelectCoreDisposable,
 		mcuCleanDisposable,
 		buildAndCopyScriptsDisposable,
-		// 하위 명령어들도 프로그램에서 호출할 수 있도록 등록은 유지합니다.
-		configureFwdnExeDisposable,
-		configureProjectFolderDisposable,
-		configureBootFirmwareFolderDisposable,
 		// 새로운 프로젝트 생성 명령어들
 		createMcuStandaloneProjectDisposable,
 		createYoctoProjectDisposable,

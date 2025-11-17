@@ -49,7 +49,7 @@ export class YoctoProjectBuilder {
 	 * 
 	 * @returns Unix 경로 형식 문자열 (/home/..., /mnt/..., 등)
 	 */
-	private static async getYoctoProjectRoot(): Promise<string> {
+	static async getYoctoProjectRoot(): Promise<string> {
 		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
 		if (!workspaceFolder) {
 			throw new Error(

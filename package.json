@@ -3,7 +3,7 @@
   "displayName": "Axon",
   "publisher": "justin-lee",
   "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "icon": "icon.png",
   "extensionKind": ["ui","workspace"],
   "repository": {
@@ -17,15 +17,11 @@
     "Other"
   ],
     "activationEvents": [
-    "onCommand:axon.configureFwdnExe",
-    "onCommand:axon.configureSettings",
     "onCommand:axon.FWDN_ALL",
     "onCommand:axon.mcuBuildMake",
     "onCommand:axon.mcuBuildAll",
     "onCommand:axon.mcuSelectCore",
     "onCommand:axon.mcuClean",
-    "onCommand:axon.configureProjectFolder",
-    "onCommand:axon.configureBootFirmwareFolder",
     "onCommand:axon.buildAndCopyScripts",
     "onCommand:axon.createMcuStandaloneProject",
     "onCommand:axon.createYoctoProject",
@@ -40,11 +36,6 @@
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      {
-        "command": "axon.configureSettings",
-        "title": "Configure Settings",
-        "category": "Axon"
-      },
       {
         "command": "axon.FWDN_ALL",
         "title": "FWDN",
@@ -68,16 +59,6 @@
       {
         "command": "axon.mcuClean",
         "title": "MCU Clean",
-        "category": "Axon"
-      },
-      {
-        "command": "axon.configureProjectFolder",
-        "title": "Configure Project Folder Name",
-        "category": "Axon"
-      },
-      {
-        "command": "axon.configureBootFirmwareFolder",
-        "title": "Configure Boot Firmware Folder Name",
         "category": "Axon"
       },
       {
