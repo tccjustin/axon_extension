@@ -727,6 +727,7 @@ source "${buildScript}" ${machine} ${version}`;
 		// 6. DevTool workspace 경로 결정 (빌드 디렉토리 기반)
 		// workspaceName은 이미 위에서 결정됨
 		const workspacePath = `${yoctoRoot}/external-workspace/${workspaceName}`;
+		const workspaceSourcePath = `${workspacePath}/sources`;
 		axonLog(`📁 DevTool workspace: ${workspacePath}`);
 		
 		// 6-1. workspace 존재 여부 확인
@@ -756,44 +757,37 @@ source "${buildScript}" ${machine} ${version}`;
 		const fixBbappendScript = `
 RECIPE_PN="${recipeName}"
 # DevTool workspace에서 bbappend 파일 찾기
-# devtool modify 후 생성되는 bbappend 파일은 external-workspace/${workspaceName}/appends/ 에 있습니다.
+# devtool modify 후 생성되는 bbappend 파일은 기본적으로 BUILDDIR/workspace/appends/ 에 있습니다.
 BBAPPEND_FILE=""
 
-# 경로 1: external-workspace의 appends 폴더 (가장 일반적인 경로)
-# external-workspace/tcn1000/appends/ 또는 external-workspace/tcn1000-mcu/appends/
-BBAPPEND_FILE=$(find ${yoctoRoot}/external-workspace/${workspaceName}/appends -name "\${RECIPE_PN}*.bbappend" 2>/dev/null | head -n 1)
+# 탐색할 디렉토리 목록 (우선순위 순서)
+# 1. external-workspace의 appends 폴더 (커스텀 workspace 사용 시)
+# 2. external-workspace/recipes/ (커스텀 workspace의 레시피별 폴더)
+search_dirs=(
+  "${yoctoRoot}/external-workspace/${workspaceName}/appends"
+  "${yoctoRoot}/external-workspace/${workspaceName}/recipes/\${RECIPE_PN}"
+)
 
-# 경로 2: 빌드 환경의 workspace appends 폴더 (백업 경로)
-if [[ -z "\${BBAPPEND_FILE}" ]]; then
-    BBAPPEND_FILE=$(find ${yoctoRoot}/${buildDir}/workspace/appends -name "\${RECIPE_PN}*.bbappend" 2>/dev/null | head -n 1)
-fi
+# 각 디렉토리에서 bbappend 파일 찾기
+for dir in "\${search_dirs[@]}"; do
+    [ -d "$dir" ] || continue
+    candidate=$(find "$dir" -maxdepth 1 -name "\${RECIPE_PN}*.bbappend" 2>/dev/null | head -n 1)
+    if [[ -n "$candidate" ]]; then
+        BBAPPEND_FILE="$candidate"
+        break
+    fi
+done
 
-# 경로 3: 빌드 환경의 workspace recipes 폴더 (백업 경로)
-if [[ -z "\${BBAPPEND_FILE}" ]]; then
-    BBAPPEND_FILE=$(find ${yoctoRoot}/${buildDir}/workspace/recipes/\${RECIPE_PN} -name "\${RECIPE_PN}*.bbappend" 2>/dev/null | head -n 1)
-fi
-
-# 경로 4: external-workspace의 recipes 폴더 (백업 경로)
-if [[ -z "\${BBAPPEND_FILE}" ]]; then
-    BBAPPEND_FILE=$(find ${yoctoRoot}/external-workspace/${workspaceName}/recipes/\${RECIPE_PN} -name "\${RECIPE_PN}*.bbappend" 2>/dev/null | head -n 1)
-fi
-
-if [[ -z "\${BBAPPEND_FILE}" ]]; then
+# 파일을 찾지 못한 경우 에러 출력
+if [[ -z "$BBAPPEND_FILE" ]]; then
     echo "❌ ERROR: bbappend 파일을 찾을 수 없습니다."
-    echo "다음 경로들을 확인했습니다:"
-    echo "  1. ${yoctoRoot}/external-workspace/${workspaceName}/appends/"
-    echo "  2. ${yoctoRoot}/${buildDir}/workspace/appends/"
-    echo "  3. ${yoctoRoot}/${buildDir}/workspace/recipes/\${RECIPE_PN}/"
-    echo "  4. ${yoctoRoot}/external-workspace/${workspaceName}/recipes/\${RECIPE_PN}/"
-    echo "현재 디렉토리: \$(pwd)"
-    echo ""
-    echo "디버깅 정보:"
-    echo "external-workspace/appends 구조:"
-    ls -la ${yoctoRoot}/external-workspace/${workspaceName}/appends/ 2>/dev/null | head -20 || echo "  (디렉토리 없음)"
+    echo "확인한 경로:"
+    printf '  - %s\n' "\${search_dirs[@]}"
+    echo "현재 디렉토리: $(pwd)"
     exit 1
 fi
 
-echo "✅ Found bbappend: \${BBAPPEND_FILE}"
+echo "✅ bbappend 파일: \${BBAPPEND_FILE}"
 
 # 백업 생성
 BACKUP_FILE="\${BBAPPEND_FILE}.backup.\$(date +%Y%m%d_%H%M%S)"
@@ -867,10 +861,13 @@ echo ""
 			? `echo "ℹ️  DevTool workspace가 이미 존재하므로 create-workspace를 건너뜁니다: ${workspacePath}"`
 			: `devtool create-workspace ${workspacePath}`;
 		
+		// devtool modify는 항상 external-workspace의 sources 디렉토리를 사용하도록 지정
+		const devtoolModifyCommand = `devtool modify ${recipeName} "${workspaceSourcePath}"`;
+		
 		const fullCommand = `cd "${yoctoRoot}"
 source poky/oe-init-build-env ${buildDir}
 ${createWorkspaceCommand}
-devtool modify ${recipeName}
+${devtoolModifyCommand}
 ${fixBbappendScript}
 echo ""
 echo "=========================================="
@@ -959,51 +956,68 @@ async function executeDevtoolBuild(recipeName: string): Promise<void> {
 			: 'build/tcn1000';
 		axonLog(`📂 빌드 디렉토리: ${buildDir}`);
 		
-		const { executeShellTask } = await import('./projects/common/shell-utils');
-		
 		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
 		if (!workspaceFolder) {
 			throw new Error('워크스페이스 폴더를 찾을 수 없습니다.');
 		}
 		
-		const yoctoRootUri = vscode.Uri.from({
-			scheme: workspaceFolder.uri.scheme,
-			authority: workspaceFolder.uri.authority,
-			path: yoctoRoot
-		});
+		// YoctoProjectBuilder의 공통 함수 사용
+		const { YoctoProjectBuilder } = await import('./projects/yocto/builder');
 		
-		// 기본 devtool build 명령어 구성
-		let buildCommand = `cd "${yoctoRoot}"
-source poky/oe-init-build-env ${buildDir}
-devtool build ${recipeName}`;
+		// buildtools 환경 확인
+		const envPath = await YoctoProjectBuilder.ensureBuildtoolsEnvironment(yoctoRoot, workspaceFolder);
+		if (!envPath) {
+			return;
+		}
+		
+		// 빌드 디렉토리 설정 (oe-init-build-env 실행)
+		const setupSuccess = await YoctoProjectBuilder.setupBuildDirectoryWithOeInit(
+			yoctoRoot,
+			envPath,
+			buildDir,
+			workspaceFolder
+		);
+		if (!setupSuccess) {
+			return;
+		}
+		
+		// local.conf 파일 수정 (캐시 경로 설정)
+		const fullBuildDir = `${yoctoRoot}/${buildDir}`;
+		axonLog('📝 local.conf 파일 수정 중...');
+		await YoctoProjectBuilder.updateLocalConfCachePaths(fullBuildDir, workspaceFolder);
+		
+		// 빌드 명령 구성
+		const buildCommands: string[] = [
+			`devtool build ${recipeName}`
+		];
 		
 		// linux-telechips인 경우 추가 bitbake 명령어 실행
 		if (recipeName === 'linux-telechips') {
-			buildCommand += `\nbitbake -f -c make_fai telechips-cgw-image`;
+			buildCommands.push(`bitbake -f -c make_fai telechips-cgw-image`);
 			axonLog(`📦 linux-telechips 감지: bitbake make_fai 명령어 추가`);
 		}
 		
 		// 성공 메시지 추가
-		buildCommand += `
-echo ""
-echo "=========================================="
-echo "✅ DevTool Build가 성공적으로 완료되었습니다!"
-echo "   레시피: ${recipeName}"
-echo "   빌드 환경: ${buildDir}"
-echo "=========================================="
-echo ""`;
+		buildCommands.push(
+			`echo ""`,
+			`echo "=========================================="`,
+			`echo "✅ DevTool Build가 성공적으로 완료되었습니다!"`,
+			`echo "   레시피: ${recipeName}"`,
+			`echo "   빌드 환경: ${buildDir}"`,
+			`echo "=========================================="`,
+			`echo ""`
+		);
 		
-		axonLog(`🔨 실행할 명령 준비 완료`);
-		
-		await executeShellTask({
-			command: buildCommand,
-			cwd: yoctoRoot,
-			taskName: `DevTool Build: ${recipeName}`,
-			taskId: `devtoolBuild_${recipeName}`,
-			showTerminal: true,
-			useScriptFile: true,
-			cwdUri: yoctoRootUri
-		});
+		// 빌드 명령 실행
+		await YoctoProjectBuilder.executeBuildCommand(
+			yoctoRoot,
+			envPath,
+			buildDir,
+			buildCommands,
+			`DevTool Build: ${recipeName}`,
+			`devtoolBuild_${recipeName}`,
+			workspaceFolder
+		);
 		
 		axonSuccess(`✅ DevTool Build가 시작되었습니다!\n레시피: ${recipeName}`);
 		
