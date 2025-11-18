@@ -303,8 +303,9 @@ export async function executeFwdnCommand(extensionPath: string): Promise<void> {
 		const isUncPath = config.fwdnExePath.startsWith('\\\\tsclient\\');
 		const processedFwdnExePath = isUncPath ? config.fwdnExePath : `"${config.fwdnExePath}"`;
 
-		// CMD를 통해 배치 파일 실행 (ALL 모드로 고정)
-		const psCommand = `cmd /c "${batchFilePath}" all "${config.bootFirmwarePath}" "${config.fwdnExePath}"`;
+		// PowerShell에서 배치 파일 실행 (ALL 모드로 고정)
+		// 현재 터미널은 PowerShell이므로, & 연산자를 사용해 .bat 파일을 직접 호출합니다.
+		const psCommand = `& "${batchFilePath}" all "${config.bootFirmwarePath}" "${config.fwdnExePath}"`;
 
 		axonLog(`📋 실행 명령: ${psCommand}`);
 

@@ -3,7 +3,7 @@
   "displayName": "Axon",
   "publisher": "justin-lee",
   "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "icon": "icon.png",
   "extensionKind": ["ui","workspace"],
   "repository": {
@@ -16,7 +16,7 @@
   "categories": [
     "Other"
   ],
-    "activationEvents": [
+  "activationEvents": [
     "onCommand:axon.FWDN_ALL",
     "onCommand:axon.mcuBuildMake",
     "onCommand:axon.mcuBuildAll",
@@ -29,6 +29,7 @@
     "onCommand:axon.buildYoctoMcu",
     "onCommand:axon.devtoolCreateModify",
     "onCommand:axon.devtoolBuild",
+    "onCommand:axon.vscodeExcludeFolders",
     "onView:axonCreateProjectsView",
     "onView:axonConfigurationsView",
     "onView:axonBuildView"
@@ -130,9 +131,14 @@
         "command": "axon.devtoolBuild",
         "title": "DevTool Build",
         "category": "Axon"
+      },
+      {
+        "command": "axon.vscodeExcludeFolders",
+        "title": "VSCode - Exclude Folders",
+        "category": "Axon"
       }
     ],
-  "views": {
+    "views": {
     "axon": [
       {
         "id": "axonCreateProjectsView",

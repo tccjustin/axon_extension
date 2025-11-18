@@ -152,6 +152,17 @@ class ConfigurationsProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 					},
 					'git-branch',
 					'poky/meta-telechips/meta-dev/telechips-cgw-rev.inc 파일 편집'
+				),
+				new AxonTreeItem(
+					'vscodeExcludeFolders',
+					'vscode - exclude folders',
+					vscode.TreeItemCollapsibleState.None,
+					{
+						command: 'axon.vscodeExcludeFolders',
+						title: 'VSCode - Exclude Folders'
+					},
+					'eye-closed',
+					'Yocto 빌드 관련 폴더를 VS Code files/search/watcher exclude에 추가'
 				)
 			]);
 		}
@@ -452,6 +463,159 @@ function getWorkspaceFolder(): vscode.WorkspaceFolder | null {
 	return workspaceFolder;
 }
 
+
+// VS Code exclude 설정 적용
+async function configureVscodeExcludeFolders(): Promise<void> {
+	try {
+		const workspaceFolder = getWorkspaceFolder();
+		if (!workspaceFolder) {
+			return;
+		}
+
+		const config = vscode.workspace.getConfiguration();
+
+		// files.exclude
+		const filesExcludePatterns: string[] = [
+			// ===== tcn1000 =====
+			"**/build/tcn1000/buildhistory/**",
+			"**/build/tcn1000/cache/**",
+			"**/build/tcn1000/downloads/**",
+			"**/build/tcn1000/sstate-cache/**",
+			"**/build/tcn1000/tmp/**",
+			"**/build/tcn1000/workspace/**",
+			// ===== tcn1000-mcu =====
+			"**/build/tcn1000-mcu/buildhistory/**",
+			"**/build/tcn1000-mcu/cache/**",
+			"**/build/tcn1000-mcu/downloads/**",
+			"**/build/tcn1000-mcu/hashserve.sock",
+			"**/build/tcn1000-mcu/sstate-cache/**",
+			"**/build/tcn1000-mcu/tmp/**",
+			"**/source-mirror/**",
+			"**/.repo/**",
+			"**/boot-firmware_tcn1000/**",
+			"**/buildtools/**",
+			"**/fwdn-v8/**",
+			"**/mktcimg/**"
+		];
+
+		// search.exclude
+		const searchExcludePatterns: string[] = [
+			// ===== tcn1000 =====
+			"**/build/tcn1000/buildhistory/**",
+			"**/build/tcn1000/cache/**",
+			"**/build/tcn1000/downloads/**",
+			"**/build/tcn1000/sstate-cache/**",
+			"**/build/tcn1000/tmp/**",
+			"**/build/tcn1000/workspace/**",
+			// ===== tcn1000-mcu =====
+			"**/build/tcn1000-mcu/bitbake-cookerdaemon.log",
+			"**/build/tcn1000-mcu/bitbake.lock",
+			"**/build/tcn1000-mcu/bitbake.sock",
+			"**/build/tcn1000-mcu/buildhistory/**",
+			"**/build/tcn1000-mcu/cache/**",
+			"**/build/tcn1000-mcu/downloads/**",
+			"**/build/tcn1000-mcu/hashserve.sock",
+			"**/build/tcn1000-mcu/sstate-cache/**",
+			"**/build/tcn1000-mcu/tmp/**",
+			"**/source-mirror/**",
+			"**/.repo/**",
+			"**/boot-firmware_tcn1000/**",
+			"**/buildtools/**",
+			"**/fwdn-v8/**",
+			"**/mktcimg/**"
+		];
+
+		// files.watcherExclude
+		const watcherExcludePatterns: string[] = [
+			// ===== tcn1000 =====
+			"**/build/tcn1000/bitbake-cookerdaemon.log",
+			"**/build/tcn1000/buildhistory/**",
+			"**/build/tcn1000/cache/**",
+			"**/build/tcn1000/downloads/**",
+			"**/build/tcn1000/sstate-cache/**",
+			"**/build/tcn1000/tmp/**",
+			"**/build/tcn1000/workspace/**",
+			// ===== tcn1000-mcu =====
+			"**/build/tcn1000-mcu/bitbake-cookerdaemon.log",
+			"**/build/tcn1000-mcu/bitbake.lock",
+			"**/build/tcn1000-mcu/bitbake.sock",
+			"**/build/tcn1000-mcu/buildhistory/**",
+			"**/build/tcn1000-mcu/cache/**",
+			"**/build/tcn1000-mcu/downloads/**",
+			"**/build/tcn1000-mcu/hashserve.sock",
+			"**/build/tcn1000-mcu/sstate-cache/**",
+			"**/build/tcn1000-mcu/tmp/**",
+			"**/source-mirror/**",
+			"**/.repo/**",
+			"**/boot-firmware_tcn1000/**",
+			"**/buildtools/**",
+			"**/fwdn-v8/**",
+			"**/mktcimg/**"
+		];
+
+		let updated = false;
+
+		// files.exclude 업데이트
+		const currentFilesExclude = config.get<Record<string, boolean>>('files.exclude') ?? {};
+		const newFilesExclude = { ...currentFilesExclude };
+		for (const pattern of filesExcludePatterns) {
+			if (!(pattern in newFilesExclude)) {
+				newFilesExclude[pattern] = true;
+				updated = true;
+			}
+		}
+		if (updated) {
+			await config.update('files.exclude', newFilesExclude, vscode.ConfigurationTarget.Workspace);
+			axonLog('✅ files.exclude 설정에 Yocto 관련 폴더를 추가했습니다.');
+		}
+
+		// search.exclude 업데이트
+		let searchUpdated = false;
+		const currentSearchExclude = config.get<Record<string, boolean>>('search.exclude') ?? {};
+		const newSearchExclude = { ...currentSearchExclude };
+		for (const pattern of searchExcludePatterns) {
+			if (!(pattern in newSearchExclude)) {
+				newSearchExclude[pattern] = true;
+				searchUpdated = true;
+			}
+		}
+		if (searchUpdated) {
+			await config.update('search.exclude', newSearchExclude, vscode.ConfigurationTarget.Workspace);
+			axonLog('✅ search.exclude 설정에 Yocto 관련 폴더를 추가했습니다.');
+			updated = true;
+		}
+
+		// files.watcherExclude 업데이트
+		let watcherUpdated = false;
+		const currentWatcherExclude = config.get<Record<string, boolean>>('files.watcherExclude') ?? {};
+		const newWatcherExclude = { ...currentWatcherExclude };
+		for (const pattern of watcherExcludePatterns) {
+			if (!(pattern in newWatcherExclude)) {
+				newWatcherExclude[pattern] = true;
+				watcherUpdated = true;
+			}
+		}
+		if (watcherUpdated) {
+			await config.update('files.watcherExclude', newWatcherExclude, vscode.ConfigurationTarget.Workspace);
+			axonLog('✅ files.watcherExclude 설정에 Yocto 관련 폴더를 추가했습니다.');
+			updated = true;
+		}
+
+		if (!updated) {
+			const msg = '이미 VS Code exclude 설정이 모두 적용되어 있습니다.';
+			axonLog(`ℹ️ ${msg}`);
+			vscode.window.showInformationMessage(msg);
+		} else {
+			const msg = 'VS Code exclude 설정을 업데이트했습니다. (files.exclude, search.exclude, files.watcherExclude)';
+			axonSuccess(`🎯 ${msg}`);
+			vscode.window.showInformationMessage(msg);
+		}
+	} catch (error) {
+		const errorMsg = `VS Code exclude 설정 적용 중 오류가 발생했습니다: ${error}`;
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
+	}
+}
 
 /**
  * DevTool Create & Modify 실행
@@ -1203,6 +1367,14 @@ export async function activate(context: vscode.ExtensionContext) {
 		async (recipeName: string) => executeDevtoolBuild(recipeName)
 	);
 
+	// VSCode exclude folders 설정 명령
+	const vscodeExcludeFoldersDisposable = vscode.commands.registerCommand(
+		'axon.vscodeExcludeFolders',
+		async () => {
+			await configureVscodeExcludeFolders();
+		}
+	);
+
 	context.subscriptions.push(
 		runFwdnAllDisposable,
 		mcuBuildMakeDisposable,
@@ -1220,6 +1392,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		// DevTool 명령어들
 		devtoolCreateModifyDisposable,
 		devtoolBuildDisposable,
+		vscodeExcludeFoldersDisposable,
 		// 클린 명령어들
 		cleanYoctoApDisposable,
 		cleanYoctoMcuDisposable,
