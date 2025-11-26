@@ -1,0 +1,47 @@
+# ============================================================
+# Git Commit Message 작성 규칙
+# ============================================================
+
+## 1. 기본 원칙
+- 이전 버전과 비교하여 수정된 사항을 명확하게 정리
+- 변경 내용을 구체적으로 작성
+
+## 2. 언어 선택 (Repository URL 기준)
+- github 포함 → 한글 작성
+- telechips 포함 → 영어 작성
+
+## 3. Commit Prefix (첫 줄 제목에 추가)
+- [upg] : Upgrade (업그레이드)
+- [bug] : Bug Fix (버그 수정)
+- [fea] : Feature (기능 개발)
+
+## 4. 추가 규칙
+- telechips 또는 github repository인 경우:
+  마지막 줄에 "Related TCS: <tcs ticket 번호>" 추가해야 함.
+  <tcs ticket 번호>는 현재의 git branch 이름에서 얻어올 수 있음. 
+  아래는 branch 네이밍 룰임.
+
+| Branch Type      | Naming Rule                                    |
+|------------------|------------------------------------------------|
+| Master branch    | master                                         |
+| Develop branch   | dev                                            |
+| Feature branch   | feature/[TCS-ID]-[FeatureName]                 |
+| QA branch        | qa/[TCS-ID]-[SDK_Name]_[Version]_[Date]        |
+  
+
+## 5. 작성 예시
+### GitHub (한글):
+[fea] 사용자 인증 기능 추가
+
+- JWT 토큰 기반 인증 구현
+- 로그인/로그아웃 API 개발
+- 사용자 세션 관리 추가
+
+### Telechips (영어):
+[bug] Fix memory leak in video decoder
+
+- Fixed buffer release issue
+- Added proper cleanup in destructor
+- Updated unit tests
+
+Related TCS:
