@@ -52,8 +52,24 @@ button {
     background-color: var(--button-background);
     color: var(--button-foreground);
     cursor: pointer;
-    border-radius: 2px;
+    border-radius: 6px;
     font-family: inherit;
+}
+
+select {
+    width: 100%;
+    padding: 6px;
+    margin-bottom: 4px;
+    border: 1px solid var(--separator-color);
+    background-color: var(--vscode-dropdown-background);
+    color: var(--vscode-dropdown-foreground);
+    border-radius: 6px;
+    font-family: inherit;
+    outline: none;
+}
+
+select:focus {
+    border-color: var(--vscode-focusBorder);
 }
 
 button:hover {
@@ -130,3 +146,37 @@ details > summary .codicon {
     margin-top: 8px;
 }
 
+/* New Input Group for side-by-side layout */
+.input-group {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.input-group select {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.input-group button {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    margin-bottom: 0;
+    padding: 0;
+    min-width: unset;
+    max-width: unset;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.input-group button .codicon {
+    margin-right: 0;
+    font-size: 16px;
+    font-family: 'codicon';
+}
+
+.hidden {
+    display: none !important;
+}

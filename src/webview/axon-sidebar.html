@@ -13,12 +13,15 @@
             <span class="codicon codicon-new-folder"></span> Create Projects
         </div>
         <div class="section-content">
-            <button id="btn-create-mcu">
-                <span class="icon">🔌</span> MCU Standalone Project
-            </button>
-            <button id="btn-create-yocto">
-                <span class="icon">📦</span> Yocto Project
-            </button>
+            <div class="input-group">
+                <select id="create-project-select">
+                    <option value="mcu">MCU Standalone Project</option>
+                    <option value="yocto">Yocto Project</option>
+                </select>
+                <button id="btn-run-create-project" title="Create Project">
+                    <span class="codicon codicon-play"></span>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -28,7 +31,26 @@
             <span class="codicon codicon-settings-gear"></span> Configurations
         </div>
         <div class="section-content">
-            <details open>
+            <!-- Project Type Selection -->
+            <details open id="group-project-type">
+                <summary><span class="codicon codicon-project"></span> Project Type</summary>
+                <div class="group-content">
+                    <div class="status-row">
+                        <span id="current-project-type">Current: None</span>
+                    </div>
+                    <div class="input-group">
+                        <select id="project-type-select">
+                            <option value="mcu_project">MCU Project</option>
+                            <option value="yocto_project">Yocto Project</option>
+                        </select>
+                        <button id="btn-set-project-type" title="Apply Project Type">
+                            <span class="codicon codicon-check"></span>
+                        </button>
+                    </div>
+                </div>
+            </details>
+
+            <details open id="group-yocto-config">
                 <summary><span class="codicon codicon-package"></span> Yocto</summary>
                 <div class="group-content">
                     <button id="btn-edit-ap-conf">
@@ -56,35 +78,42 @@
         <div class="section-content">
             
             <!-- MCU Group -->
-            <details open>
+            <details open id="group-mcu-build">
                 <summary><span class="codicon codicon-circuit-board"></span> MCU</summary>
                 <div class="group-content">
-                    <div class="status-row">
-                        <span id="current-core-label">Selected Core: None</span>
+                    <div class="input-group">
+                        <select id="mcu-build-select">
+                            <option value="all">Build All</option>
+                            <option value="m7-np">Build m7-np</option>
+                            <option value="m7-0">Build m7-0</option>
+                            <option value="m7-1">Build m7-1</option>
+                            <option value="m7-2">Build m7-2</option>
+                        </select>
+                        <button id="btn-mcu-run-build" title="Run Build">
+                            <span class="codicon codicon-play"></span>
+                        </button>
                     </div>
-                    <button id="btn-mcu-select-core" class="secondary">
-                        <span class="codicon codicon-chip"></span> Select Core
-                    </button>
-                    <div class="separator"></div>
-                    <button id="btn-mcu-build-all">
-                        <span class="codicon codicon-tools"></span> Build All
-                    </button>
-                    <button id="btn-mcu-build-make">
-                        <span class="codicon codicon-wrench"></span> Build Make
-                    </button>
                     <button id="btn-mcu-clean">
                         <span class="codicon codicon-trash"></span> Clean
-                    </button>
-                    <button id="btn-mcu-fwdn">
-                        <span class="codicon codicon-plug"></span> FWDN
                     </button>
                 </div>
             </details>
 
             <!-- Yocto Group -->
-            <details>
+            <details id="group-yocto-build">
                 <summary><span class="codicon codicon-package"></span> Yocto</summary>
                 <div class="group-content">
+                    <div class="input-group">
+                        <select id="yocto-build-select">
+                            <option value="ap">Build AP</option>
+                            <option value="mcu">Build MCU</option>
+                            <option value="kernel">Build Kernel</option>
+                        </select>
+                        <button id="btn-yocto-run-build" title="Run Build">
+                            <span class="codicon codicon-play"></span>
+                        </button>
+                    </div>
+                    <!-- Old buttons removed per requirement
                     <button id="btn-yocto-build-ap">
                         <span class="codicon codicon-tools"></span> Build AP
                     </button>
@@ -94,7 +123,18 @@
                     <button id="btn-yocto-build-kernel">
                         <span class="codicon codicon-file-binary"></span> Build Kernel
                     </button>
-                    <!-- Clean commands implied from context -->
+                    -->
+                    <div class="input-group">
+                        <select id="yocto-clean-select">
+                            <option value="ap">Clean AP</option>
+                            <option value="mcu">Clean MCU</option>
+                            <option value="all">Clean All</option>
+                        </select>
+                        <button id="btn-yocto-run-clean" title="Run Clean">
+                            <span class="codicon codicon-trash"></span>
+                        </button>
+                    </div>
+                    <!-- Old buttons removed per requirement
                     <button id="btn-yocto-clean-ap">
                         <span class="codicon codicon-trash"></span> Clean AP
                     </button>
@@ -104,26 +144,61 @@
                      <button id="btn-yocto-clean-all">
                         <span class="codicon codicon-trash"></span> Clean All
                     </button>
+                    -->
                 </div>
             </details>
 
             <!-- DevTool Group -->
-            <details>
+            <details id="group-devtool">
                 <summary><span class="codicon codicon-beaker"></span> DevTool (External Src)</summary>
                 <div class="group-content">
-                    <button id="btn-devtool-create-modify">
-                        <span class="codicon codicon-add"></span> Create & Modify
-                    </button>
-                    <button id="btn-devtool-build">
-                        <span class="codicon codicon-tools"></span> Build
-                    </button>
-                    <!-- Recipe List Container -->
-                    <div id="devtool-recipes-list" class="list-container">
-                        <!-- Recipes will be injected here -->
+                    <div class="status-row">
+                        devtool Create-workspace & devtool modify &lt;recipe&gt;
+                    </div>
+                    <div class="input-group">
+                        <select id="devtool-recipe-select">
+                            <option value="manual">직접 입력...</option>
+                            <option value="linux-telechips">linux-telechips</option>
+                            <option value="m7-0">m7-0</option>
+                            <option value="m7-1">m7-1</option>
+                            <option value="m7-2">m7-2</option>
+                            <option value="m7-np">m7-np</option>
+                            <option value="tpa-app">tpa-app</option>
+                            <option value="dpi-app">dpi-app</option>
+                            <option value="u-boot-tcc">u-boot-tcc</option>
+                        </select>
+                        <button id="btn-devtool-create-modify" title="Create & Modify">
+                            <span class="codicon codicon-play"></span>
+                        </button>
+                    </div>
+
+                    <div class="status-row">
+                        devtool build &lt;recipe&gt;
+                    </div>
+                    <div class="input-group">
+                        <select id="devtool-build-recipe-select">
+                            <!-- Populated dynamically -->
+                            <option value="" disabled selected>Select recipe...</option>
+                        </select>
+                        <button id="btn-devtool-run-build-recipe" title="Run Build">
+                            <span class="codicon codicon-play"></span>
+                        </button>
                     </div>
                 </div>
             </details>
 
+        </div>
+    </div>
+
+    <!-- Section: FWDN -->
+    <div class="section">
+        <div class="section-header">
+            <span class="codicon codicon-plug"></span> FWDN
+        </div>
+        <div class="section-content">
+            <button id="btn-mcu-fwdn">
+                <span class="codicon codicon-plug"></span> Run FWDN
+            </button>
         </div>
     </div>
 

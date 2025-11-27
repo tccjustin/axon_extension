@@ -3,9 +3,12 @@
   "displayName": "Axon",
   "publisher": "justin-lee",
   "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "icon": "icon.png",
-  "extensionKind": ["ui","workspace"],
+  "extensionKind": [
+    "ui",
+    "workspace"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/tccjustin/axon_extension.git"
@@ -22,7 +25,6 @@
     "onCommand:axon.mcuBuildAll",
     "onCommand:axon.mcuSelectCore",
     "onCommand:axon.mcuClean",
-    "onCommand:axon.buildAndCopyScripts",
     "onCommand:axon.createMcuStandaloneProject",
     "onCommand:axon.createYoctoProject",
     "onCommand:axon.buildYoctoAp",
@@ -58,11 +60,6 @@
       {
         "command": "axon.mcuClean",
         "title": "MCU Clean",
-        "category": "Axon"
-      },
-      {
-        "command": "axon.buildAndCopyScripts",
-        "title": "Build and Copy Scripts",
         "category": "Axon"
       },
       {
@@ -137,16 +134,17 @@
       }
     ],
     "views": {
-    "axon": [
-      {
-        "id": "axonSidebar",
-        "type": "webview",
-        "name": "Control Panel",
-        "icon": "resources/axon-icon.svg",
-        "contextualTitle": "Axon Controls"
-      }
-    ]
-  },
+      "axon": [
+        {
+          "id": "axonSidebar",
+          "type": "webview",
+          "name": "Control Panel",
+          "icon": "resources/axon-icon.svg",
+          "contextualTitle": "Axon Controls",
+          "retainContextWhenHidden": true
+        }
+      ]
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -156,8 +154,7 @@
         }
       ]
     },
-  "menus": {
-  },
+    "menus": {},
     "configuration": {
       "title": "Axon",
       "properties": {
@@ -168,7 +165,10 @@
         },
         "axon.projectType": {
           "type": "string",
-          "enum": ["mcu_project", "yocto_project"],
+          "enum": [
+            "mcu_project",
+            "yocto_project"
+          ],
           "default": "",
           "description": "Project type (automatically sets buildAxonFolderName and bootFirmwareFolderName)"
         },
@@ -252,5 +252,8 @@
     "@vscode/vsce": "^3.6.2",
     "typescript": "^4.9.4",
     "vsce": "^2.12.0"
+  },
+  "dependencies": {
+    "@vscode/codicons": "^0.0.43"
   }
 }
