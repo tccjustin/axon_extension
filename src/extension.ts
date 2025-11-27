@@ -977,40 +977,42 @@ esac
 
 # 3. 파일 수정
 if [ -n "\${TARGET_VAR}" ]; then
-    echo "📝 \${INC_FILE} 업데이트 중..."
+    echo "📝 \${INC_FILE} 업데이트 체크 중..."
     echo "   변수: \${TARGET_VAR}"
-    echo "   값: \${COMMIT_ID}"
     
-    # 백업 생성
-    cp "\${INC_FILE}" "\${INC_FILE}.backup.\$(date +%Y%m%d_%H%M%S)"
+    # 해당 변수의 값이 "\${AUTOREV}" 인지 확인
+    # 정규식: 시작(^) + 공백 + 변수명 + 공백 + [?:]=(할당) + 공백 + "\${AUTOREV}" (이스케이프 주의)
+    # 쉘 변수 확장을 막기 위해 single quote 사용하거나, escape 처리를 확실히 해야 함.
+    # 하지만 여기서는 double quote 안에서 \${TARGET_VAR}는 확장되고, \${AUTOREV}는 문자 그대로 grep 패턴에 들어가야 함.
+    # grep 패턴에서 $는 라인 끝을 의미하므로, 리터럴 $를 찾으려면 \$로 이스케이프해야 함.
+    # 또한 double quote 안에서 backslash 자체도 이스케이프해야 하므로 \\$가 됨.
+    if grep -q "^\\s*\${TARGET_VAR}\\s*[?:]*=\\s*\\\"\\\${AUTOREV}\\\"" "\${INC_FILE}"; then
+        echo "   현재 값이 \"\${AUTOREV}\"입니다. 업데이트를 진행합니다."
+        echo "   새로운 값: \${COMMIT_ID}"
     
-    # sed를 사용하여 변수 값 변경
-    # 큰 따옴표(")를 사용하여 쉘 변수 확장이 되도록 함
-    # sed 패턴: 시작(^) + 변수명 + 공백 + [?:]=(선택적 ? 또는 :) + 공백 + "값"
-    # Yocto 변수는 ?= 또는 := 등을 사용할 수 있으므로 [?:]*= 패턴으로 매칭
-    # 값은 큰 따옴표(")로 감싸야 함 (이스케이프 주의: \" -> " )
-    sed -i "s/^\\s*\${TARGET_VAR}\\s*[?:]*=\\s*\".*\"/\${TARGET_VAR} = \\\"\${COMMIT_ID}\\\"/" "\${INC_FILE}"
-    
-    # 변경 확인
-    # grep 패턴에도 변수가 확장되도록 함
-    if grep -q "\${TARGET_VAR}.*\${COMMIT_ID}" "\${INC_FILE}"; then
-        echo "✅ 업데이트 완료: \${TARGET_VAR} = \${COMMIT_ID}"
+        # 백업 생성
+        cp "\${INC_FILE}" "\${INC_FILE}.backup.\$(date +%Y%m%d_%H%M%S)"
+        
+        # sed를 사용하여 변수 값 변경 (AUTOREV -> COMMIT_ID)
+        # 검색 패턴에서도 동일하게 리터럴 $를 매칭하기 위해 이스케이프 필요
+        sed -i "s/^\\s*\${TARGET_VAR}\\s*[?:]*=\\s*\\\"\\\${AUTOREV}\\\"/\${TARGET_VAR} = \\\"\${COMMIT_ID}\\\"/" "\${INC_FILE}"
+        
+        # 변경 확인
+        if grep -q "\${TARGET_VAR}.*\${COMMIT_ID}" "\${INC_FILE}"; then
+            echo "✅ 업데이트 완료: \${TARGET_VAR} = \${COMMIT_ID}"
+        else
+            echo "❌ 업데이트 실패: sed 치환이 적용되지 않았습니다."
+            
+            echo "--- [Debug Info] ---"
+            grep "\${TARGET_VAR}" "\${INC_FILE}"
+            echo "--------------------"
+            
+            exit 1
+        fi
     else
-        echo "❌ 업데이트 실패: sed 치환이 적용되지 않았습니다."
-        
-        echo "--- [Debug Info] ---"
-        ls -l "\${INC_FILE}"
-        echo "--------------------"
-        
-        echo "--- [File Content Head 20] ---"
-        head -n 20 "\${INC_FILE}"
-        echo "------------------------------"
-        
-        echo "--- [Grep Search Result] ---"
-        grep "\${TARGET_VAR}" "\${INC_FILE}" || echo "⚠️  '\${TARGET_VAR}' not found in file!"
-        echo "----------------------------"
-        
-        exit 1
+        echo "⚠️  업데이트 건너뜀: \${TARGET_VAR}의 값이 \"\${AUTOREV}\"가 아닙니다."
+        echo "   현재 설정값:"
+        grep "\${TARGET_VAR}" "\${INC_FILE}" || echo "   (변수를 찾을 수 없습니다)"
     fi
 fi
 `;
@@ -1035,7 +1037,7 @@ fi
 		const fullCommand = `cd "${yoctoRoot}"
 source poky/oe-init-build-env ${buildDir}
 ${createWorkspaceCommand}
-${devtoolModifyCommand}
+#${devtoolModifyCommand}
 ${updateRevIncScript}
 echo ""
 echo "=========================================="
