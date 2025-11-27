@@ -620,8 +620,7 @@ async function configureVscodeExcludeFolders(): Promise<void> {
 /**
  * DevTool Create & Modify 실행
  * 
- * AP 레시피에 대해서만 devtool modify를 지원합니다.
- * MCU 레시피(m7-0, m7-1, m7-2, m7-np)는 지원하지 않습니다.
+ * AP 및 MCU 레시피 모두 지원합니다.
  * 
  * 실행 단계:
  * 1. 드롭박스에서 레시피 선택 (또는 직접 입력)
@@ -650,9 +649,13 @@ async function executeDevtoolCreateModify(extensionPath: string): Promise<void> 
 		const yoctoRoot = await YoctoProjectBuilder.getYoctoProjectRoot();
 		axonLog(`📁 Yocto 프로젝트 루트: ${yoctoRoot}`);
 		
-		// 1. 레시피 선택 (AP 레시피만 지원, MCU 레시피는 devtool modify를 사용하지 않음)
+		// 1. 레시피 선택
 		const recipes = [
-			{ label: 'linux-telechips', description: 'Kernel 레시피' }
+			{ label: 'linux-telechips', description: 'Kernel 레시피' },
+			{ label: 'm7-0', description: 'MCU Core 0 레시피' },
+			{ label: 'm7-1', description: 'MCU Core 1 레시피' },
+			{ label: 'm7-2', description: 'MCU Core 2 레시피' },
+			{ label: 'm7-np', description: 'MCU Non-Processor 레시피' }
 		];
 
 		const manualInputItem = { label: '직접 입력...', description: '레시피명을 직접 입력' };
@@ -698,18 +701,21 @@ async function executeDevtoolCreateModify(extensionPath: string): Promise<void> 
 
 		axonLog(`✅ 선택된 레시피: ${recipeName}`);
 		
-		// MCU 레시피는 지원하지 않음
-		const mcuRecipes = ['m7-0', 'm7-1', 'm7-2', 'm7-np'];
-		if (mcuRecipes.includes(recipeName)) {
-			const errorMsg = `MCU 레시피(${recipeName})는 devtool modify를 지원하지 않습니다.\n\nMCU 레시피는 별도의 빌드 방식을 사용합니다.`;
-			axonError(errorMsg);
-			vscode.window.showErrorMessage(errorMsg);
-			return;
-		}
+		// MCU 레시피도 지원함 (주석 처리된 부분 제거 또는 수정)
+		// const mcuRecipes = ['m7-0', 'm7-1', 'm7-2', 'm7-np'];
+		// if (mcuRecipes.includes(recipeName)) { ... } -> 삭제됨
 		
-		// 모든 AP 레시피는 build/tcn1000 사용
-		const buildDir = 'build/tcn1000';
-		const workspaceName = 'tcn1000';
+		// 빌드 디렉토리 결정
+		// MCU 레시피의 경우 build/tcn1000-mcu, AP는 build/tcn1000
+		const mcuRecipes = ['m7-0', 'm7-1', 'm7-2', 'm7-np'];
+		let buildDir = 'build/tcn1000';
+		let workspaceName = 'tcn1000';
+		
+		if (mcuRecipes.includes(recipeName)) {
+			buildDir = 'build/tcn1000-mcu';
+			workspaceName = 'tcn1000-mcu';
+			axonLog(`ℹ️ MCU 레시피 감지: 빌드 디렉토리를 ${buildDir}로 설정합니다.`);
+		}
 		
 		// workspaceFolder 가져오기
 		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -797,7 +803,7 @@ async function executeDevtoolCreateModify(extensionPath: string): Promise<void> 
 			}
 		}
 		
-		const machine = apMachine!;
+		const machine = mcuRecipes.includes(recipeName) ? 'tcn1000-mcu' : apMachine!;
 		const version = cgwVersion!;
 		const buildScript = `${yoctoRoot}/poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh`;
 		
@@ -851,6 +857,7 @@ async function executeDevtoolCreateModify(extensionPath: string): Promise<void> 
 		});
 		
 		const setupBuildDirCommand = `cd "${yoctoRoot}"
+#set -x		
 source "${envPath}"
 source "${buildScript}" ${machine} ${version}`;
 		
@@ -874,7 +881,7 @@ source "${buildScript}" ${machine} ${version}`;
 			`실행 단계:\n` +
 			`1. devtool create-workspace (workspace가 없을 때만)\n` +
 			`2. devtool modify\n` +
-			`3. bbappend 파일 수정`;
+			`3. telechips-cgw-rev.inc 파일 수정 (Git HEAD 반영)`;
 		
 		const confirm = await vscode.window.showInformationMessage(
 			confirmMessage,
@@ -892,7 +899,9 @@ source "${buildScript}" ${machine} ${version}`;
 		// workspaceName은 이미 위에서 결정됨
 		const workspacePath = `${yoctoRoot}/external-workspace/${workspaceName}`;
 		const workspaceSourcePath = `${workspacePath}/sources`;
+		const recipeSourcePath = `${workspaceSourcePath}/${recipeName}`;
 		axonLog(`📁 DevTool workspace: ${workspacePath}`);
+		axonLog(`📁 Source path: ${recipeSourcePath}`);
 		
 		// 6-1. workspace 존재 여부 확인
 		const workspaceUri = vscode.Uri.from({
@@ -915,100 +924,95 @@ source "${buildScript}" ${machine} ${version}`;
 			axonLog(`📝 새 DevTool workspace를 생성합니다: ${workspacePath}`);
 		}
 		
-		// 3. bbappend 파일 수정을 위한 인라인 bash 스크립트
-		axonLog(`📋 bbappend 수정 스크립트 준비 중...`);
+		// 3. telechips-cgw-rev.inc 파일 수정을 위한 인라인 bash 스크립트
+		axonLog(`📋 telechips-cgw-rev.inc 업데이트 스크립트 준비 중...`);
 		
-		const fixBbappendScript = `
+		const updateRevIncScript = `
+#set -x # 디버깅을 위해 실행 명령 출력
 RECIPE_PN="${recipeName}"
-# DevTool workspace에서 bbappend 파일 찾기
-# devtool modify 후 생성되는 bbappend 파일은 기본적으로 BUILDDIR/workspace/appends/ 에 있습니다.
-BBAPPEND_FILE=""
+SRC_TREE_PATH="${recipeSourcePath}"
+INC_FILE="${yoctoRoot}/poky/meta-telechips/meta-dev/telechips-cgw-rev.inc"
 
-# 탐색할 디렉토리 목록 (우선순위 순서)
-# 1. external-workspace의 appends 폴더 (커스텀 workspace 사용 시)
-# 2. external-workspace/recipes/ (커스텀 workspace의 레시피별 폴더)
-search_dirs=(
-  "${yoctoRoot}/external-workspace/${workspaceName}/appends"
-  "${yoctoRoot}/external-workspace/${workspaceName}/recipes/\${RECIPE_PN}"
-)
+echo "🔍 Source Tree: \${SRC_TREE_PATH}"
+echo "🔍 Target Inc File: \${INC_FILE}"
 
-# 각 디렉토리에서 bbappend 파일 찾기
-for dir in "\${search_dirs[@]}"; do
-    [ -d "$dir" ] || continue
-    candidate=$(find "$dir" -maxdepth 1 -name "\${RECIPE_PN}*.bbappend" 2>/dev/null | head -n 1)
-    if [[ -n "$candidate" ]]; then
-        BBAPPEND_FILE="$candidate"
-        break
-    fi
-done
-
-# 파일을 찾지 못한 경우 에러 출력
-if [[ -z "$BBAPPEND_FILE" ]]; then
-    echo "❌ ERROR: bbappend 파일을 찾을 수 없습니다."
-    echo "확인한 경로:"
-    printf '  - %s\n' "\${search_dirs[@]}"
-    echo "현재 디렉토리: $(pwd)"
+# 1. Git Commit ID 가져오기
+if [ -d "\${SRC_TREE_PATH}" ]; then
+    cd "\${SRC_TREE_PATH}"
+    COMMIT_ID=$(git rev-parse HEAD)
+    echo "✅ Git Commit ID: \${COMMIT_ID}"
+else
+    echo "❌ ERROR: 소스 디렉토리를 찾을 수 없습니다: \${SRC_TREE_PATH}"
     exit 1
 fi
 
-echo "✅ bbappend 파일: \${BBAPPEND_FILE}"
+if [ ! -f "\${INC_FILE}" ]; then
+    echo "❌ ERROR: telechips-cgw-rev.inc 파일을 찾을 수 없습니다: \${INC_FILE}"
+    exit 1
+fi
 
-# 백업 생성
-BACKUP_FILE="\${BBAPPEND_FILE}.backup.\$(date +%Y%m%d_%H%M%S)"
-cp "\${BBAPPEND_FILE}" "\${BACKUP_FILE}"
-echo "📋 Backup created: \${BACKUP_FILE}"
+# 2. 레시피별 변수명 결정
+TARGET_VAR=""
+case "\${RECIPE_PN}" in
+    "linux-telechips")
+        TARGET_VAR="KERNEL_SRC_DEV"
+        ;;
+    "m7-0"|"m7-1"|"m7-2"|"m7-np")
+        TARGET_VAR="MCU_SRC_DEV"
+        ;;
+    "dpi-app")
+        TARGET_VAR="DPI_APP_SRC_DEV"
+        ;;
+    "tpa-app")
+        TARGET_VAR="TPA_APP_SRC_DEV"
+        ;;
+    "u-boot-tcc")
+        TARGET_VAR="UBOOT_SRC_DEV"
+        ;;
+    *)
+        echo "⚠️ 알림: '\${RECIPE_PN}' 레시피는 telechips-cgw-rev.inc 자동 업데이트 대상이 아닙니다."
+        # 에러는 아님
+        ;;
+esac
 
-# 임시 파일 생성
-TEMP_FILE=\$(mktemp)
-
-# 1단계: 헤더 부분 복사
-while IFS= read -r line; do
-    if [[ "\$line" =~ ^FILESEXTRAPATHS ]] || [[ "\$line" =~ ^FILESPATH ]] || [[ "\$line" =~ ^#.*srctreebase ]]; then
-        echo "\$line" >> "\${TEMP_FILE}"
-    elif [[ "\$line" =~ ^inherit.*externalsrc ]]; then
-        break
-    elif [[ -z "\$line" ]]; then
-        echo "\$line" >> "\${TEMP_FILE}"
+# 3. 파일 수정
+if [ -n "\${TARGET_VAR}" ]; then
+    echo "📝 \${INC_FILE} 업데이트 중..."
+    echo "   변수: \${TARGET_VAR}"
+    echo "   값: \${COMMIT_ID}"
+    
+    # 백업 생성
+    cp "\${INC_FILE}" "\${INC_FILE}.backup.\$(date +%Y%m%d_%H%M%S)"
+    
+    # sed를 사용하여 변수 값 변경
+    # 큰 따옴표(")를 사용하여 쉘 변수 확장이 되도록 함
+    # sed 패턴: 시작(^) + 변수명 + 공백 + [?:]=(선택적 ? 또는 :) + 공백 + "값"
+    # Yocto 변수는 ?= 또는 := 등을 사용할 수 있으므로 [?:]*= 패턴으로 매칭
+    # 값은 큰 따옴표(")로 감싸야 함 (이스케이프 주의: \" -> " )
+    sed -i "s/^\\s*\${TARGET_VAR}\\s*[?:]*=\\s*\".*\"/\${TARGET_VAR} = \\\"\${COMMIT_ID}\\\"/" "\${INC_FILE}"
+    
+    # 변경 확인
+    # grep 패턴에도 변수가 확장되도록 함
+    if grep -q "\${TARGET_VAR}.*\${COMMIT_ID}" "\${INC_FILE}"; then
+        echo "✅ 업데이트 완료: \${TARGET_VAR} = \${COMMIT_ID}"
+    else
+        echo "❌ 업데이트 실패: sed 치환이 적용되지 않았습니다."
+        
+        echo "--- [Debug Info] ---"
+        ls -l "\${INC_FILE}"
+        echo "--------------------"
+        
+        echo "--- [File Content Head 20] ---"
+        head -n 20 "\${INC_FILE}"
+        echo "------------------------------"
+        
+        echo "--- [Grep Search Result] ---"
+        grep "\${TARGET_VAR}" "\${INC_FILE}" || echo "⚠️  '\${TARGET_VAR}' not found in file!"
+        echo "----------------------------"
+        
+        exit 1
     fi
-done < "\${BBAPPEND_FILE}"
-
-# 2단계: Python 필터 추가
-cat >> "\${TEMP_FILE}" <<'PYEOF'
-
-# externalsrc 사용 시 원격 git 항목은 Fetch 해석에서 제외
-python () {
-    src_uri = (d.getVar('SRC_URI') or '').split()
-    filtered = []
-    for u in src_uri:
-        if u.startswith('git://') or u.startswith('ssh://') or u.startswith('http://') or u.startswith('https://'):
-            continue
-        if ('.git' in u) and (not u.startswith('file://')):
-            continue
-        filtered.append(u)
-    d.setVar('SRC_URI', ' '.join(filtered))
-}
-
-PYEOF
-
-# 3단계: 나머지 부분 (inherit externalsrc 이후) 추가
-COPY_REST=false
-while IFS= read -r line; do
-    if [[ "\$line" =~ ^inherit.*externalsrc ]]; then
-        COPY_REST=true
-    fi
-    if [[ "\${COPY_REST}" == true ]]; then
-        echo "\$line" >> "\${TEMP_FILE}"
-    fi
-done < "\${BBAPPEND_FILE}"
-
-# 파일 교체
-mv "\${TEMP_FILE}" "\${BBAPPEND_FILE}"
-
-echo ""
-echo "✓ bbappend 파일이 성공적으로 수정되었습니다!"
-echo "  수정된 파일: \${BBAPPEND_FILE}"
-echo "  백업 파일: \${BACKUP_FILE}"
-echo ""
+fi
 `;
 		
 		// 7. executeShellTask를 사용하여 명령 실행
@@ -1025,14 +1029,14 @@ echo ""
 			? `echo "ℹ️  DevTool workspace가 이미 존재하므로 create-workspace를 건너뜁니다: ${workspacePath}"`
 			: `devtool create-workspace ${workspacePath}`;
 		
-		// devtool modify는 항상 external-workspace의 sources 디렉토리를 사용하도록 지정
-		const devtoolModifyCommand = `devtool modify ${recipeName} "${workspaceSourcePath}"`;
+		// devtool modify는 항상 external-workspace/sources/<레시피명> 에 풀도록 명시적 지정
+		const devtoolModifyCommand = `devtool modify ${recipeName} "${recipeSourcePath}"`;
 		
 		const fullCommand = `cd "${yoctoRoot}"
 source poky/oe-init-build-env ${buildDir}
 ${createWorkspaceCommand}
 ${devtoolModifyCommand}
-${fixBbappendScript}
+${updateRevIncScript}
 echo ""
 echo "=========================================="
 echo "✅ DevTool Setup이 성공적으로 완료되었습니다!"

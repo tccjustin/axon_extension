@@ -910,25 +910,34 @@ echo "✅ 빌드 환경 초기화 완료"`;
 			}
 			const { envPath, buildDir } = envResult;
 			
+			axonLog(`📝 MCU 빌드 환경 정보:`);
+			axonLog(`  - projectRoot: ${projectRoot}`);
+			axonLog(`  - envPath: ${envPath}`);
+			axonLog(`  - buildDir: ${buildDir}`);
+			axonLog(`  - mcuMachine: ${mcuMachine}`);
+			axonLog(`  - mcuVersion: ${mcuVersion}`);
+
 			// 7. 빌드 명령 구성 (원격 환경용 - Unix 경로)
-			const buildCommands = [
-				`cd "${projectRoot}"`,  // 프로젝트 루트로 이동
-				`source "${envPath}"`,
-				`cd "${buildDir}"`,
-				`bitbake m7-0 m7-1 m7-2 m7-np -f -c compile`,
-				`echo ""`,
-				`echo "✅ Yocto MCU 빌드가 완료되었습니다!"`,
-				`echo "MACHINE: ${mcuMachine}"`,
-				`echo "SDK VERSION: ${mcuVersion}"`,
-				`echo ""`,
-				`echo "Press any key to close..."`,
-				`read -n1 -s -r`
-			];
-			
-			const fullCommand = buildCommands.join(' && ');
+			const mcuBuildScript = `${projectRoot}/poky/meta-telechips/meta-dev/meta-mcu-dev/mcu-build.sh`;
+		
+			const fullCommand = `
+set -x
+cd "${projectRoot}"
+source "${envPath}"
+source "${mcuBuildScript}" ${mcuMachine} ${mcuVersion}
+bitbake m7-0 m7-1 m7-2 m7-np -f -c compile
+
+echo ""
+echo "✅ Yocto MCU 빌드가 완료되었습니다!"
+echo "MACHINE: ${mcuMachine}"
+echo "SDK VERSION: ${mcuVersion}"
+echo ""
+echo "Press any key to close..."
+read -n1 -s -r
+`;
 			
 			axonLog('🚀 빌드 명령:');
-			buildCommands.forEach(cmd => axonLog(`  ${cmd}`));
+			axonLog(fullCommand);
 			
 			// 8. 빌드 실행
 			vscode.window.showInformationMessage('Yocto MCU 빌드가 시작되었습니다. 터미널을 확인하세요.');
