@@ -1,0 +1,132 @@
+:root {
+    --container-paddding: 10px;
+    --input-padding-vertical: 6px;
+    --input-padding-horizontal: 6px;
+    --input-margin-vertical: 4px;
+    --foreground: var(--vscode-foreground);
+    --background: var(--vscode-sideBar-background);
+    --button-background: var(--vscode-button-background);
+    --button-foreground: var(--vscode-button-foreground);
+    --button-hover-background: var(--vscode-button-hoverBackground);
+    --button-secondary-background: var(--vscode-button-secondaryBackground);
+    --button-secondary-foreground: var(--vscode-button-secondaryForeground);
+    --button-secondary-hover-background: var(--vscode-button-secondaryHoverBackground);
+    --separator-color: var(--vscode-settings-dropdownBorder);
+}
+
+body {
+    padding: 0;
+    margin: 0;
+    color: var(--foreground);
+    background-color: var(--background);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+}
+
+.section {
+    border-bottom: 1px solid var(--separator-color);
+}
+
+.section-header {
+    padding: 8px 16px;
+    font-weight: bold;
+    background-color: var(--vscode-sideBarSectionHeader-background);
+    color: var(--vscode-sideBarSectionHeader-foreground);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.section-content {
+    padding: 8px;
+}
+
+button {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    padding: 6px 12px;
+    margin-bottom: 4px;
+    border: none;
+    background-color: var(--button-background);
+    color: var(--button-foreground);
+    cursor: pointer;
+    border-radius: 2px;
+    font-family: inherit;
+}
+
+button:hover {
+    background-color: var(--button-hover-background);
+}
+
+button.secondary {
+    background-color: var(--button-secondary-background);
+    color: var(--button-secondary-foreground);
+}
+
+button.secondary:hover {
+    background-color: var(--button-secondary-hover-background);
+}
+
+button .codicon, button .icon {
+    margin-right: 8px;
+    font-size: 16px;
+}
+
+details {
+    margin-bottom: 8px;
+}
+
+details > summary {
+    cursor: pointer;
+    padding: 4px;
+    font-weight: 600;
+    list-style: none;
+    display: flex;
+    align-items: center;
+}
+
+details > summary::-webkit-details-marker {
+    display: none;
+}
+
+details > summary::before {
+    content: "▶";
+    font-size: 10px;
+    margin-right: 6px;
+    transition: transform 0.2s;
+    display: inline-block;
+}
+
+details[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+details > summary .codicon {
+    margin-right: 6px;
+}
+
+.group-content {
+    padding-left: 12px;
+    margin-top: 4px;
+    border-left: 1px solid var(--separator-color);
+}
+
+.status-row {
+    padding: 4px 0;
+    margin-bottom: 4px;
+    font-size: 0.9em;
+    opacity: 0.9;
+}
+
+.separator {
+    height: 1px;
+    background-color: var(--separator-color);
+    margin: 8px 0;
+}
+
+.list-container {
+    margin-top: 8px;
+}
+

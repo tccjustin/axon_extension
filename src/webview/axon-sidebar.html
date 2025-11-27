@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Axon Control Panel</title>
+    <link href="axon-sidebar.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Section: Create Projects -->
+    <div class="section">
+        <div class="section-header">
+            <span class="codicon codicon-new-folder"></span> Create Projects
+        </div>
+        <div class="section-content">
+            <button id="btn-create-mcu">
+                <span class="icon">🔌</span> MCU Standalone Project
+            </button>
+            <button id="btn-create-yocto">
+                <span class="icon">📦</span> Yocto Project
+            </button>
+        </div>
+    </div>
+
+    <!-- Section: Configurations -->
+    <div class="section">
+        <div class="section-header">
+            <span class="codicon codicon-settings-gear"></span> Configurations
+        </div>
+        <div class="section-content">
+            <details open>
+                <summary><span class="codicon codicon-package"></span> Yocto</summary>
+                <div class="group-content">
+                    <button id="btn-edit-ap-conf">
+                        <span class="codicon codicon-edit"></span> AP : conf/local.conf
+                    </button>
+                    <button id="btn-edit-mcu-conf">
+                        <span class="codicon codicon-edit"></span> MCU : conf/local.conf
+                    </button>
+                    <button id="btn-edit-branch-srcrev">
+                        <span class="codicon codicon-git-branch"></span> Modify : branch/srcrev
+                    </button>
+                    <button id="btn-vscode-exclude">
+                        <span class="codicon codicon-eye-closed"></span> vscode - exclude folders
+                    </button>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <!-- Section: Build -->
+    <div class="section">
+        <div class="section-header">
+            <span class="codicon codicon-tools"></span> Build
+        </div>
+        <div class="section-content">
+            
+            <!-- MCU Group -->
+            <details open>
+                <summary><span class="codicon codicon-circuit-board"></span> MCU</summary>
+                <div class="group-content">
+                    <div class="status-row">
+                        <span id="current-core-label">Selected Core: None</span>
+                    </div>
+                    <button id="btn-mcu-select-core" class="secondary">
+                        <span class="codicon codicon-chip"></span> Select Core
+                    </button>
+                    <div class="separator"></div>
+                    <button id="btn-mcu-build-all">
+                        <span class="codicon codicon-tools"></span> Build All
+                    </button>
+                    <button id="btn-mcu-build-make">
+                        <span class="codicon codicon-wrench"></span> Build Make
+                    </button>
+                    <button id="btn-mcu-clean">
+                        <span class="codicon codicon-trash"></span> Clean
+                    </button>
+                    <button id="btn-mcu-fwdn">
+                        <span class="codicon codicon-plug"></span> FWDN
+                    </button>
+                </div>
+            </details>
+
+            <!-- Yocto Group -->
+            <details>
+                <summary><span class="codicon codicon-package"></span> Yocto</summary>
+                <div class="group-content">
+                    <button id="btn-yocto-build-ap">
+                        <span class="codicon codicon-tools"></span> Build AP
+                    </button>
+                    <button id="btn-yocto-build-mcu">
+                        <span class="codicon codicon-chip"></span> Build MCU
+                    </button>
+                    <button id="btn-yocto-build-kernel">
+                        <span class="codicon codicon-file-binary"></span> Build Kernel
+                    </button>
+                    <!-- Clean commands implied from context -->
+                    <button id="btn-yocto-clean-ap">
+                        <span class="codicon codicon-trash"></span> Clean AP
+                    </button>
+                    <button id="btn-yocto-clean-mcu">
+                        <span class="codicon codicon-trash"></span> Clean MCU
+                    </button>
+                     <button id="btn-yocto-clean-all">
+                        <span class="codicon codicon-trash"></span> Clean All
+                    </button>
+                </div>
+            </details>
+
+            <!-- DevTool Group -->
+            <details>
+                <summary><span class="codicon codicon-beaker"></span> DevTool (External Src)</summary>
+                <div class="group-content">
+                    <button id="btn-devtool-create-modify">
+                        <span class="codicon codicon-add"></span> Create & Modify
+                    </button>
+                    <button id="btn-devtool-build">
+                        <span class="codicon codicon-tools"></span> Build
+                    </button>
+                    <!-- Recipe List Container -->
+                    <div id="devtool-recipes-list" class="list-container">
+                        <!-- Recipes will be injected here -->
+                    </div>
+                </div>
+            </details>
+
+        </div>
+    </div>
+
+    <script src="axon-sidebar.js"></script>
+</body>
+</html>

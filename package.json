@@ -30,9 +30,7 @@
     "onCommand:axon.devtoolCreateModify",
     "onCommand:axon.devtoolBuild",
     "onCommand:axon.vscodeExcludeFolders",
-    "onView:axonCreateProjectsView",
-    "onView:axonConfigurationsView",
-    "onView:axonBuildView"
+    "onView:axonSidebar"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -141,22 +139,11 @@
     "views": {
     "axon": [
       {
-        "id": "axonCreateProjectsView",
-        "name": "Create Projects",
-        "icon": "$(new-folder)",
-        "contextualTitle": "Project Creation Tools"
-      },
-      {
-        "id": "axonConfigurationsView",
-        "name": "Configurations",
-        "icon": "$(settings-gear)",
-        "contextualTitle": "Configuration Settings"
-      },
-      {
-        "id": "axonBuildView",
-        "name": "Build",
-        "icon": "$(tools)",
-        "contextualTitle": "Build Tools"
+        "id": "axonSidebar",
+        "type": "webview",
+        "name": "Control Panel",
+        "icon": "resources/axon-icon.svg",
+        "contextualTitle": "Axon Controls"
       }
     ]
   },
