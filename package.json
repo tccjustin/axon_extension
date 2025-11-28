@@ -23,7 +23,6 @@
     "onCommand:axon.FWDN_ALL",
     "onCommand:axon.mcuBuildMake",
     "onCommand:axon.mcuBuildAll",
-    "onCommand:axon.mcuSelectCore",
     "onCommand:axon.mcuClean",
     "onCommand:axon.createMcuStandaloneProject",
     "onCommand:axon.createYoctoProject",
@@ -50,11 +49,6 @@
       {
         "command": "axon.mcuBuildAll",
         "title": "MCU Build All",
-        "category": "Axon"
-      },
-      {
-        "command": "axon.mcuSelectCore",
-        "title": "MCU Select Core",
         "category": "Axon"
       },
       {

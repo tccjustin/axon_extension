@@ -6,7 +6,6 @@ export class AxonSidebarProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'axonSidebar';
 
     private _view?: vscode.WebviewView;
-    private lastSelectedCore: string = '';
     private devtoolRecipes: string[] = [];
     private _rawHtmlContent: string = '';
     private _resolveStartTime: number = 0;
@@ -116,7 +115,6 @@ export class AxonSidebarProvider implements vscode.WebviewViewProvider {
         const msgStartTime = Date.now();
         this._view.webview.postMessage({ 
             type: 'updateState', 
-            core: this.lastSelectedCore,
             projectType: projectType 
         });
         console.log(`⏱️ [PERF-EXT] Send updateState message: ${Date.now() - msgStartTime}ms`);
@@ -134,20 +132,6 @@ export class AxonSidebarProvider implements vscode.WebviewViewProvider {
         console.log(`⏱️ [PERF-EXT] syncAllState total: ${Date.now() - startTime}ms`);
     }
 
-    public updateCoreStatus(core: string) {
-        this.lastSelectedCore = core;
-        if (this._view) {
-            this._view.webview.postMessage({ type: 'updateState', core: core });
-        }
-    }
-
-    public setLastSelectedCore(core: string) {
-        this.updateCoreStatus(core);
-    }
-
-    public getLastSelectedCore(): string {
-        return this.lastSelectedCore;
-    }
 
     public addDevtoolRecipe(recipeName: string) {
         if (!this.devtoolRecipes.includes(recipeName)) {
