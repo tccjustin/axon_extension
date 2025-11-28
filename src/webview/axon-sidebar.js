@@ -202,6 +202,10 @@ document.addEventListener('DOMContentLoaded', () => {
     perf.marks['end-dom-ready'] = performance.now();
     perf.end('dom-ready');
     
+    // 초기 로드 시 projectType 확인 (없으면 섹션 숨기기)
+    // syncAllState에서 메시지가 오기 전까지는 기본적으로 숨김 처리
+    updateProjectTypeUI('');
+    
     // Report after everything is ready
     setTimeout(() => perf.report(), 0);
 });
@@ -251,6 +255,14 @@ function updateProjectTypeUI(projectType) {
         select.value = projectType;
     }
 
+    // projectType이 없으면 Build, FWDN 섹션만 숨기기 (Configuration은 프로젝트 타입 선택을 위해 항상 표시)
+    const hasProjectType = projectType && projectType.trim() !== '';
+    const buildSection = document.getElementById('section-build');
+    const fwdnSection = document.getElementById('section-fwdn');
+    
+    if (buildSection) buildSection.classList.toggle('hidden', !hasProjectType);
+    if (fwdnSection) fwdnSection.classList.toggle('hidden', !hasProjectType);
+
     // Batch DOM reads/writes
     const groups = {
         mcu: document.getElementById('group-mcu-build'),
@@ -259,6 +271,13 @@ function updateProjectTypeUI(projectType) {
         yoctoConfig: document.getElementById('group-yocto-config')
     };
 
+    // projectType이 없으면 Yocto 설정 그룹도 숨기기
+    if (!hasProjectType) {
+        if (groups.yoctoConfig) groups.yoctoConfig.classList.add('hidden');
+        return; // projectType이 없으면 여기서 종료
+    }
+
+    // projectType이 있을 때 그룹별 표시/숨김 처리
     const isYocto = projectType === 'yocto_project';
     const isMcu = projectType === 'mcu_project';
 

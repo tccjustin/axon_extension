@@ -14,7 +14,8 @@ import {
 	uriUpToFolderName,
 	dirToDisplay,
 	convertRemotePathToSamba,
-	searchBootFirmwareInDirectory
+	searchBootFirmwareInDirectory,
+	setProjectType
 } from './utils';
 import { McuProjectDialog } from './projects/mcu/dialog';
 import { McuProjectBuilder } from './projects/mcu/builder';
@@ -950,6 +951,24 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
+	// Set Project Type 명령
+	const setProjectTypeDisposable = vscode.commands.registerCommand(
+		'axon.setProjectType',
+		async (projectType: string) => {
+			if (projectType !== 'mcu_project' && projectType !== 'yocto_project') {
+				vscode.window.showErrorMessage(`잘못된 프로젝트 타입입니다: ${projectType}`);
+				return;
+			}
+			
+			await setProjectType(projectType as 'mcu_project' | 'yocto_project');
+			
+			// webview에 상태 동기화
+			if (globalBuildProvider) {
+				globalBuildProvider.sendProjectType();
+			}
+		}
+	);
+
 	context.subscriptions.push(
 		runFwdnAllDisposable,
 		mcuBuildMakeDisposable,
@@ -973,7 +992,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		// 설정 편집 명령어들
 		editApLocalConfDisposable,
 		editMcuLocalConfDisposable,
-		editBranchSrcrevDisposable
+		editBranchSrcrevDisposable,
+		// 프로젝트 타입 설정 명령어
+		setProjectTypeDisposable
 	);
 }
 

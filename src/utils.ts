@@ -138,6 +138,37 @@ export async function ensureProjectType(): Promise<ProjectType | undefined> {
 }
 
 /**
+ * 프로젝트 타입을 설정하고 관련 폴더명을 자동으로 설정
+ * 
+ * @param projectType - 설정할 프로젝트 타입 ('mcu_project' | 'yocto_project')
+ */
+export async function setProjectType(projectType: 'mcu_project' | 'yocto_project'): Promise<void> {
+	const config = vscode.workspace.getConfiguration('axon');
+	
+	// 프로젝트 타입에 따른 폴더명 가져오기
+	const folders = PROJECT_TYPE_FOLDERS[projectType];
+	
+	// settings.json에 모두 저장
+	await config.update('projectType', projectType, vscode.ConfigurationTarget.Workspace);
+	await config.update('buildAxonFolderName', folders.buildFolder, vscode.ConfigurationTarget.Workspace);
+	await config.update('bootFirmwareFolderName', folders.bootFirmwareFolder, vscode.ConfigurationTarget.Workspace);
+	
+	const displayMap: { [key in 'mcu_project' | 'yocto_project']: string } = { 
+		mcu_project: 'MCU Project', 
+		yocto_project: 'Yocto Project' 
+	};
+	axonLog(`💾 프로젝트 타입 설정 저장: ${projectType}`);
+	axonLog(`  - buildAxonFolderName: ${folders.buildFolder}`);
+	axonLog(`  - bootFirmwareFolderName: ${folders.bootFirmwareFolder}`);
+	
+	vscode.window.showInformationMessage(
+		`프로젝트 타입이 설정되었습니다: ${displayMap[projectType]}\n` +
+		`빌드 폴더: ${folders.buildFolder}\n` +
+		`Boot Firmware 폴더: ${folders.bootFirmwareFolder}`
+	);
+}
+
+/**
  * URI에서 특정 폴더명까지의 상위 폴더 URI를 반환 (스킴 보존)
  */
 export function uriUpToFolderName(uri: vscode.Uri, folderName: string): vscode.Uri {
