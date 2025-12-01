@@ -128,7 +128,6 @@ export class YoctoProjectCreator {
 	await createVscodeSettingsUtil(projectFullUri, {
 		'axon.projectType': 'yocto_project',
 		'axon.buildAxonFolderName': 'build-axon',
-		'axon.bootFirmwareFolderName': 'boot-firmware_tcn1000',
 		'axon.yocto.projectRoot': projectPath  // Yocto 프로젝트 루트 경로 저장
 	});
 	axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);

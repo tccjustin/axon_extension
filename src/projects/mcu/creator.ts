@@ -71,8 +71,7 @@ export class McuProjectCreator {
 		axonLog(`⚙️ 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
 		await createVscodeSettingsUtil(projectFullUri, {
 			'axon.projectType': 'mcu_project',
-			'axon.buildAxonFolderName': 'mcu-tcn100x',
-			'axon.bootFirmwareFolderName': 'boot-firmware-tcn100x'
+			'axon.buildAxonFolderName': 'mcu-tcn100x'
 		});
 		axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 

@@ -184,6 +184,19 @@
                             <span class="codicon codicon-play"></span>
                         </button>
                     </div>
+
+                    <div class="status-row">
+                        devtool finish &lt;recipe&gt; &lt;layer&gt;
+                    </div>
+                    <div class="input-group">
+                        <select id="devtool-finish-recipe-select">
+                            <!-- Populated dynamically -->
+                            <option value="" disabled selected>Select recipe...</option>
+                        </select>
+                        <button id="btn-devtool-run-finish-recipe" title="Run Finish">
+                            <span class="codicon codicon-play"></span>
+                        </button>
+                    </div>
                 </div>
             </details>
 
@@ -196,9 +209,15 @@
             <span class="codicon codicon-plug"></span> FWDN
         </div>
         <div class="section-content">
-            <button id="btn-mcu-fwdn">
-                <span class="codicon codicon-plug"></span> Run FWDN
-            </button>
+            <div class="input-group">
+                <select id="fwdn-mode-select">
+                    <option value="run-fwdn">Run FWDN</option>
+                    <option value="low-format">Low Level Format</option>
+                </select>
+                <button id="btn-run-fwdn" title="Run FWDN">
+                    <span class="codicon codicon-play"></span>
+                </button>
+            </div>
         </div>
     </div>
 

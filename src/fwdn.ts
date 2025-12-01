@@ -3,7 +3,8 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
 import { axonLog, axonError, axonSuccess, getAxonOutputChannel } from './logger';
-import { getAxonConfig, findBootFirmwareFolder, convertRemotePathToSamba } from './utils';
+import { convertRemotePathToSamba } from './utils';
+import { findProjectRootByShell } from './projects/common/shell-utils';
 
 // FWDN 설정 인터페이스
 export interface FwdnConfig {
@@ -11,40 +12,194 @@ export interface FwdnConfig {
 	bootFirmwarePath: string;
 }
 
+/**
+ * settings.json 업데이트 함수
+ */
+async function updateSettingsJson(
+	workspaceFolder: vscode.WorkspaceFolder,
+	settings: Record<string, any>
+): Promise<void> {
+	const vscodeFolder = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode');
+	
+	// .vscode 폴더 생성
+	try {
+		await vscode.workspace.fs.createDirectory(vscodeFolder);
+	} catch {
+		// 이미 존재하는 경우 무시
+	}
+	
+	// settings.json 파일 경로
+	const settingsFile = vscode.Uri.joinPath(vscodeFolder, 'settings.json');
+	
+	// 기존 settings.json 읽기 (있으면)
+	let existingSettings: any = {};
+	try {
+		const existingContent = await vscode.workspace.fs.readFile(settingsFile);
+		let existingText = Buffer.from(existingContent).toString('utf8');
+		
+		if (existingText.trim() === '') {
+			axonLog(`⚠️ settings.json 파일이 비어있습니다.`);
+		} else {
+			// VS Code settings.json은 주석과 trailing comma를 허용하므로 전처리 필요
+			// 1. 줄 단위 주석 제거 (// 로 시작하는 주석)
+			existingText = existingText.replace(/\/\/.*$/gm, '');
+			// 2. 블록 주석 제거 (/* ... */)
+			existingText = existingText.replace(/\/\*[\s\S]*?\*\//g, '');
+			// 3. trailing comma 제거 (객체/배열의 마지막 쉼표)
+			existingText = existingText.replace(/,(\s*[}\]])/g, '$1');
+			
+			existingSettings = JSON.parse(existingText);
+			axonLog(`📖 기존 settings.json 파일을 읽었습니다.`);
+			axonLog(`   기존 설정 키 개수: ${Object.keys(existingSettings).length}`);
+			axonLog(`   기존 설정 키 목록: ${Object.keys(existingSettings).join(', ')}`);
+		}
+	} catch (error) {
+		// 파일이 없거나 파싱 실패한 경우 빈 객체 사용
+		if (error instanceof Error) {
+			axonLog(`⚠️ settings.json 읽기 실패: ${error.message}`);
+		} else {
+			axonLog(`⚠️ settings.json 읽기 실패: ${error}`);
+		}
+		axonLog(`📝 새로운 settings.json 파일을 생성합니다.`);
+	}
+	
+	// 설정 추가 또는 업데이트
+	axonLog(`➕ 추가할 설정: ${JSON.stringify(settings)}`);
+	Object.assign(existingSettings, settings);
+	axonLog(`📋 병합 후 설정 키 개수: ${Object.keys(existingSettings).length}`);
+	axonLog(`📋 병합 후 설정 키 목록: ${Object.keys(existingSettings).join(', ')}`);
+	
+	// JSON 문자열로 변환 (들여쓰기 포함)
+	const settingsContent = JSON.stringify(existingSettings, null, 4);
+	
+	// 파일 쓰기
+	try {
+		await vscode.workspace.fs.writeFile(settingsFile, Buffer.from(settingsContent, 'utf8'));
+		axonLog(`✅ settings.json 파일 저장 완료: ${settingsFile.path}`);
+	} catch (error) {
+		axonLog(`❌ settings.json 파일 쓰기 실패: ${error}`);
+		if (error instanceof Error) {
+			axonLog(`   오류 상세: ${error.message}`);
+		}
+		throw error;
+	}
+}
+
+/**
+ * Boot Firmware 경로 가져오기
+ * settings.json에 저장된 경로가 있으면 사용하고, 없으면 찾아서 저장
+ * 
+ * @returns Unix 경로 형식 문자열 (/home/..., /mnt/..., 등)
+ */
+async function getBootFirmwarePath(): Promise<string> {
+	const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+	if (!workspaceFolder) {
+		throw new Error('워크스페이스 폴더를 찾을 수 없습니다.');
+	}
+	
+	// Unix 경로 사용 (원격 환경 기본)
+	const workspacePath = workspaceFolder.uri.path;
+	axonLog(`🌐 환경: WSL/SSH (scheme: ${workspaceFolder.uri.scheme})`);
+	axonLog(`📁 워크스페이스 경로: ${workspacePath}`);
+	
+	// 1. settings.json 파일 직접 읽기
+	const vscodeFolder = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode');
+	const settingsFile = vscode.Uri.joinPath(vscodeFolder, 'settings.json');
+	
+	let savedBootFirmwarePath: string | undefined;
+	
+	try {
+		const settingsContent = await vscode.workspace.fs.readFile(settingsFile);
+		const settingsText = Buffer.from(settingsContent).toString('utf8');
+		const settings = JSON.parse(settingsText);
+		savedBootFirmwarePath = settings['axon.bootFirmware.path'];
+		
+		if (savedBootFirmwarePath && savedBootFirmwarePath.trim() !== '') {
+			axonLog(`🔍 저장된 Boot Firmware 경로 확인 중: ${savedBootFirmwarePath}`);
+			
+			// 저장된 경로 유효성 검증
+			try {
+				const savedUri = vscode.Uri.from({
+					scheme: workspaceFolder.uri.scheme,
+					authority: workspaceFolder.uri.authority,
+					path: savedBootFirmwarePath
+				});
+				
+				const prebuiltUri = vscode.Uri.joinPath(savedUri, 'prebuilt');
+				const stat = await vscode.workspace.fs.stat(prebuiltUri);
+				
+				if (stat.type === vscode.FileType.Directory) {
+					axonLog(`✅ 저장된 Boot Firmware 경로 사용: ${savedBootFirmwarePath}`);
+					return savedBootFirmwarePath;
+				}
+			} catch {
+				axonLog(`⚠️ 저장된 경로에 prebuilt 디렉토리가 없습니다. 재탐색을 시작합니다.`);
+			}
+		}
+	} catch (error) {
+		// settings.json 파일이 없거나 읽기 실패한 경우 (정상적인 경우)
+		axonLog(`📝 settings.json 파일을 읽을 수 없습니다. 새로 탐색합니다.`);
+	}
+	
+	// 2. root가 없으면 리눅스 shell 스크립트로 찾기
+	axonLog('🔍 prebuilt 디렉토리를 찾아 Boot Firmware 경로 탐지 중...');
+	const bootFirmwareRoot = await findProjectRootByShell({
+		workspaceFolder,
+		findPattern: 'prebuilt',
+		maxDepth: 4,
+		findType: 'd',
+		parentLevels: 1,
+		taskName: 'Find Boot Firmware Folder',
+		taskId: 'find-boot-firmware-folder',
+		resultFilePrefix: 'axon_boot_firmware_folder'
+	});
+	
+	if (bootFirmwareRoot) {
+		axonLog(`✅ Boot Firmware 경로 발견: ${bootFirmwareRoot}`);
+		
+		// 3. settings.json에 저장
+		try {
+			axonLog(`💾 settings.json에 Boot Firmware 경로 저장 시도: ${bootFirmwareRoot}`);
+			await updateSettingsJson(workspaceFolder, { 'axon.bootFirmware.path': bootFirmwareRoot });
+			axonLog(`✅ Boot Firmware 경로를 settings.json에 저장했습니다.`);
+		} catch (error) {
+			axonLog(`⚠️ settings.json 저장 실패: ${error}`);
+			if (error instanceof Error) {
+				axonLog(`   오류 상세: ${error.message}`);
+				axonLog(`   스택: ${error.stack}`);
+			}
+			// 저장 실패해도 경로는 반환
+		}
+		
+		return bootFirmwareRoot;
+	}
+	
+	// 찾지 못한 경우
+	throw new Error(
+		`Boot Firmware 경로를 찾을 수 없습니다.\n\n` +
+		`확인 사항:\n` +
+		`- prebuilt 폴더가 워크스페이스 또는 그 하위 4단계까지 있는지 확인하세요.\n` +
+		`- 워크스페이스: ${workspacePath}`
+	);
+}
+
 // FWDN 설정 가져오기
 export async function getFwdnConfig(extensionPath: string): Promise<FwdnConfig> {
 	const config = vscode.workspace.getConfiguration('axon');
 
-	// Boot Firmware 경로는 매번 새로 검색 (캐시 사용하지 않음) - 빠른 방식 사용
-	axonLog(`🔍 Boot Firmware 경로 자동 검색 시작 (빠른 방식)...`);
-	const bootFirmwarePathOrUri = await findBootFirmwareFolder();
-
-	if (!bootFirmwarePathOrUri) {
-		axonLog(`❌ Boot Firmware 경로를 찾을 수 없습니다.`);
-		throw new Error('Boot Firmware 경로를 찾을 수 없습니다. "Axon: Auto-detect Boot Firmware Path" 명령을 먼저 실행하거나 수동으로 설정해주세요.');
-	}
+	// Boot Firmware 경로 가져오기 (settings.json 확인 후 없으면 찾기)
+	const bootFirmwareRoot = await getBootFirmwarePath();
 
 	// FWDN은 로컬 Windows에서 실행되므로 Windows 경로 필요
-	// URI 문자열(vscode-remote://...)이면 Samba 경로 또는 WSL 경로로 변환
-	let bootFirmwarePath: string;
-	if (bootFirmwarePathOrUri.startsWith('vscode-remote://')) {
-		// URI 파싱하여 Unix 경로 추출
-		const uri = vscode.Uri.parse(bootFirmwarePathOrUri);
-		
-		// 원격 환경 타입 감지 (WSL vs SSH)
-		const remoteName = vscode.env.remoteName || '';
-		const remoteType = remoteName.startsWith('wsl') ? 'wsl' : 'ssh';
-		
-		axonLog(`🌐 [FWDN] 원격 환경 감지: ${remoteName} → 타입: ${remoteType}`);
-		
-		// 환경에 맞는 경로 변환
-		bootFirmwarePath = convertRemotePathToSamba(uri.path, remoteType);
-		axonLog(`🔄 [FWDN] 원격 경로 변환 완료: ${uri.path} → ${bootFirmwarePath}`);
-	} else {
-		// 이미 Windows 경로
-		bootFirmwarePath = bootFirmwarePathOrUri;
-	}
-
+	// Unix 경로를 Samba 경로 또는 WSL 경로로 변환
+	const remoteName = vscode.env.remoteName || '';
+	const remoteType = remoteName.startsWith('wsl') ? 'wsl' : 'ssh';
+	
+	axonLog(`🌐 [FWDN] 원격 환경 감지: ${remoteName} → 타입: ${remoteType}`);
+	
+	// 환경에 맞는 경로 변환
+	const bootFirmwarePath = convertRemotePathToSamba(bootFirmwareRoot, remoteType);
+	axonLog(`🔄 [FWDN] 원격 경로 변환 완료: ${bootFirmwareRoot} → ${bootFirmwarePath}`);
 	axonLog(`✅ Boot Firmware 경로 (FWDN용): ${bootFirmwarePath}`);
 
 	// FWDN 실행 파일 경로 결정
@@ -193,94 +348,23 @@ export async function executeFwdnCommand(extensionPath: string): Promise<void> {
 	// 환경 정보 로깅 (디버깅용)
 	axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
 
-	// 필수 설정 확인 및 사용자 선택
-	const workspaceConfig = vscode.workspace.getConfiguration('axon');
-	
-	// 현재 설정 상태 로깅 (디버깅용)
-	axonLog(`📋 현재 설정 확인:`);
-	axonLog(`  - buildAxonFolderName: ${workspaceConfig.get<string>('buildAxonFolderName') || '(없음)'}`);
-	axonLog(`  - bootFirmwareFolderName: ${workspaceConfig.get<string>('bootFirmwareFolderName') || '(없음)'}`);
-	
-	// buildAxonFolderName 설정 확인
-	let buildAxonFolderName = workspaceConfig.get<string>('buildAxonFolderName');
-	if (!buildAxonFolderName || buildAxonFolderName.trim() === '') {
-		axonLog(`⚠️ buildAxonFolderName이 설정되지 않았습니다. 사용자 선택을 요청합니다.`);
-		
-		const buildFolderOptions = [
-			{ label: 'mcu-tcn100x', description: 'MCU Standalone 프로젝트용 폴더' },
-			{ label: 'build-axon', description: 'Yocto 프로젝트용 폴더' }
-		];
-		
-		const selectedBuildFolder = await vscode.window.showQuickPick(buildFolderOptions, {
-			placeHolder: '빌드 폴더명을 선택하세요',
-			title: 'Build Folder Name 선택',
-			ignoreFocusOut: true
-		});
-		
-		if (!selectedBuildFolder) {
-			axonLog('❌ 사용자가 빌드 폴더 선택을 취소했습니다.');
-			vscode.window.showInformationMessage('FWDN이 취소되었습니다.');
-			return;
-		}
-		
-		buildAxonFolderName = selectedBuildFolder.label;
-		await updateConfiguration('buildAxonFolderName', buildAxonFolderName, 'Build 폴더명');
-		axonLog(`✅ buildAxonFolderName 설정 완료: ${buildAxonFolderName}`);
-	}
-	
-	// bootFirmwareFolderName 설정 확인
-	let bootFirmwareFolderName = workspaceConfig.get<string>('bootFirmwareFolderName');
-	if (!bootFirmwareFolderName || bootFirmwareFolderName.trim() === '') {
-		axonLog(`⚠️ bootFirmwareFolderName이 설정되지 않았습니다. 사용자 선택을 요청합니다.`);
-		
-		const bootFirmwareOptions = [
-			{ label: 'boot-firmware-tcn100x', description: 'MCU standalone project 용 Boot Firmware 폴더명' },
-			{ label: 'boot-firmware_tcn1000', description: 'Yocto project 용 Boot Firmware 폴더명' }
-		];
-		
-		const selectedBootFirmware = await vscode.window.showQuickPick(bootFirmwareOptions, {
-			placeHolder: 'Boot Firmware 폴더명을 선택하세요',
-			title: 'Boot Firmware Folder Name 선택',
-			ignoreFocusOut: true
-		});
-		
-		if (!selectedBootFirmware) {
-			axonLog('❌ 사용자가 Boot Firmware 폴더 선택을 취소했습니다.');
-			vscode.window.showInformationMessage('FWDN이 취소되었습니다.');
-			return;
-		}
-		
-		bootFirmwareFolderName = selectedBootFirmware.label;
-		await updateConfiguration('bootFirmwareFolderName', bootFirmwareFolderName, 'Boot Firmware 폴더명');
-		axonLog(`✅ bootFirmwareFolderName 설정 완료: ${bootFirmwareFolderName}`);
-	}
-
-	// 설정된 폴더로 FWDN 설정 가져오기
+	// FWDN 설정 가져오기
 	let config: FwdnConfig;
 	try {
 		config = await getFwdnConfig(extensionPath);
 		axonLog(`📋 설정 - FWDN 경로: ${config.fwdnExePath}, Boot Firmware 경로: ${config.bootFirmwarePath}`);
 	} catch (error) {
-		// 선택한 폴더를 찾을 수 없는 경우
+		// Boot Firmware 폴더를 찾을 수 없는 경우
 		axonError(`설정 오류: ${error}`);
 		
 		const errorMsg = `Boot Firmware 폴더를 찾을 수 없습니다.\n\n` +
-			`현재 설정:\n` +
-			`- 빌드 폴더: ${buildAxonFolderName}\n` +
-			`- Boot Firmware 폴더: ${bootFirmwareFolderName}\n\n` +
-			`워크스페이스에 해당 폴더가 존재하는지 확인하거나,\n` +
-			`다른 폴더명으로 다시 시도해주세요.`;
+			`prebuilt 폴더가 워크스페이스 또는 그 하위 4단계까지 있는지 확인하세요.\n\n` +
+			`다시 시도하시겠습니까?`;
 		
-		vscode.window.showErrorMessage(errorMsg, '설정 변경', '다시 시도').then(selection => {
-			if (selection === '설정 변경') {
-				vscode.commands.executeCommand('axon.configureSettings');
-			} else if (selection === '다시 시도') {
-				// settings.json의 설정을 초기화하고 다시 시도
-				workspaceConfig.update('buildAxonFolderName', undefined, vscode.ConfigurationTarget.Workspace);
-				workspaceConfig.update('bootFirmwareFolderName', undefined, vscode.ConfigurationTarget.Workspace);
-				vscode.commands.executeCommand('axon.FWDN_ALL');
-			}
-		});
+		const selection = await vscode.window.showErrorMessage(errorMsg, '다시 시도');
+		if (selection === '다시 시도') {
+			vscode.commands.executeCommand('axon.FWDN_ALL');
+		}
 		return;
 	}
 
@@ -364,6 +448,129 @@ export async function executeFwdnCommand(extensionPath: string): Promise<void> {
 
 	} catch (error) {
 		const errorMsg = `FWDN ALL (Step 1-4) 실행 중 오류가 발생했습니다: ${error}`;
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
+	}
+}
+
+// FWDN Low Level Format 실행 함수
+export async function executeFwdnLowFormat(extensionPath: string): Promise<void> {
+	axonLog(`🚀 FWDN Low Level Format 실행 명령 시작`);
+
+	// 사용자 확인 팝업 (데이터 삭제 경고)
+	const confirmResult = await vscode.window.showWarningMessage(
+		'FWDN Low Level Format을 실행하시겠습니까?\n\n⚠️ 경고: 이 작업은 eMMC와 SNOR의 모든 데이터를 영구적으로 삭제합니다!\n\n계속하시겠습니까?',
+		{ modal: true },
+		'실행',
+		'취소'
+	);
+
+	if (confirmResult !== '실행') {
+		axonLog('❌ 사용자가 Low Level Format 실행을 취소했습니다.');
+		vscode.window.showInformationMessage('Low Level Format이 취소되었습니다.');
+		return;
+	}
+
+	axonLog('✅ 사용자가 Low Level Format 실행을 확인했습니다.');
+
+	// 환경 정보 로깅 (디버깅용)
+	axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
+
+	// FWDN 설정 가져오기
+	let config: FwdnConfig;
+	try {
+		config = await getFwdnConfig(extensionPath);
+		axonLog(`📋 설정 - FWDN 경로: ${config.fwdnExePath}, Boot Firmware 경로: ${config.bootFirmwarePath}`);
+	} catch (error) {
+		// Boot Firmware 폴더를 찾을 수 없는 경우
+		axonError(`설정 오류: ${error}`);
+		
+		const errorMsg = `Boot Firmware 폴더를 찾을 수 없습니다.\n\n` +
+			`prebuilt 폴더가 워크스페이스 또는 그 하위 4단계까지 있는지 확인하세요.\n\n` +
+			`다시 시도하시겠습니까?`;
+		
+		const selection = await vscode.window.showErrorMessage(errorMsg, '다시 시도');
+		if (selection === '다시 시도') {
+			vscode.commands.executeCommand('axon.FWDN_LOW_FORMAT');
+		}
+		return;
+	}
+
+	// 설정 검증
+	const validationError = validateConfig(config);
+	if (validationError) {
+		axonError(validationError);
+		vscode.window.showErrorMessage(validationError);
+		return;
+	}
+
+	try {
+		axonLog(`🔧 로컬 PowerShell에서 직접 실행`);
+
+		// 배치 파일 경로 생성 (익스텐션 설치 경로 기준)
+		const batchFilePath = path.join(extensionPath, 'fwdn_all.bat');
+		axonLog(`📝 배치 파일 경로: ${batchFilePath}`);
+
+		// PowerShell에서 배치 파일 실행 (low-format 모드)
+		const psCommand = `& "${batchFilePath}" low-format "${config.bootFirmwarePath}" "${config.fwdnExePath}"`;
+
+		axonLog(`📋 실행 명령: ${psCommand}`);
+
+		// PowerShell 실행 파일 경로 결정 (PowerShell 7 우선)
+		const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+		const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+
+		const psExe = fs.existsSync(ps7) ? ps7 : (fs.existsSync(ps5) ? ps5 : null);
+		if (!psExe) {
+			throw new Error('로컬 PC에서 PowerShell 실행 파일을 찾지 못했습니다.');
+		}
+
+		// 환경 감지 및 터미널 생성
+		const isRemote = vscode.env.remoteName !== undefined;
+		let terminal: vscode.Terminal;
+
+		if (isRemote) {
+			// 원격 환경: 로컬 터미널 생성 명령 사용
+			await vscode.commands.executeCommand('workbench.action.terminal.newLocal');
+			const term = vscode.window.activeTerminal;
+			if (!term) {
+				throw new Error('로컬 터미널 생성에 실패했습니다.');
+			}
+			terminal = term;
+		} else {
+			// 로컬 환경: 기본 터미널 생성 시도
+			try {
+				await vscode.commands.executeCommand('workbench.action.terminal.new');
+				const basicTerminal = vscode.window.activeTerminal;
+				if (basicTerminal) {
+					terminal = basicTerminal;
+				} else {
+					throw new Error('기본 터미널 생성에 실패했습니다.');
+				}
+			} catch {
+				// 폴백: 직접 터미널 생성
+				terminal = vscode.window.createTerminal({
+					name: `FWDN Low Level Format`,
+					isTransient: true
+				});
+			}
+		}
+
+		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
+
+		// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
+
+		// 배치 파일 완료 신호 대기 및 자동 창 닫기
+		await executeFwdnWithAutoClose(terminal);
+
+		axonLog(`✅ FWDN Low Level Format 실행 완료`);
+
+	} catch (error) {
+		const errorMsg = `FWDN Low Level Format 실행 중 오류가 발생했습니다: ${error}`;
 		axonError(errorMsg);
 		vscode.window.showErrorMessage(errorMsg);
 	}

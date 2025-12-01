@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { axonLog, axonError, axonSuccess } from '../../logger';
-import { executeShellTask } from '../common/shell-utils';
-import { getAxonConfig, findBootFirmwareFolder } from '../../utils';
+import { executeShellTask, findProjectRootByShell } from '../common/shell-utils';
 
 /**
  * Yocto 빌드 작업 설정 인터페이스
@@ -45,7 +44,7 @@ export class YoctoProjectBuilder {
 	 * AP 빌드용 MACHINE / VERSION 설정을 로드하거나 사용자에게 선택받고
 	 * config.json에 저장까지 수행하는 공통 헬퍼
 	 */
-	private static async ensureApBuildConfig(
+	static async ensureApBuildConfig(
 		projectRoot: string,
 		workspaceFolder: vscode.WorkspaceFolder
 	): Promise<{ machine: string; cgwVersion: string } | null> {
@@ -222,28 +221,6 @@ export class YoctoProjectBuilder {
 		return { mcuMachine: mcuMachine!, mcuVersion: mcuVersion! };
 	}
 
-	/**
-	 * bootFirmwareFolderName 설정 확인 및 선택
-	 * (프로젝트 타입 기반으로 자동 설정)
-	 */
-	private static async ensureBootFirmwareFolderName(): Promise<string | undefined> {
-		const { ensureProjectType, getAxonConfig } = await import('../../utils');
-		
-		// 프로젝트 타입 선택 (자동으로 bootFirmwareFolderName도 설정됨)
-		const projectType = await ensureProjectType();
-		
-		if (!projectType) {
-			axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
-			return undefined;
-		}
-		
-		// 설정된 bootFirmwareFolderName 반환
-		const config = getAxonConfig();
-		axonLog(`✅ bootFirmwareFolderName: ${config.bootFirmwareFolderName}`);
-		
-		return config.bootFirmwareFolderName;
-	}
-	
 	/**
 	 * buildtools 환경 확인 및 경로 반환
 	 * 
@@ -642,102 +619,17 @@ echo "✅ 빌드 환경 초기화 완료"`;
 	 * @returns 프로젝트 루트의 절대 경로 또는 null
 	 */
 	private static async findYoctoProjectRootByShell(workspaceFolder: vscode.WorkspaceFolder): Promise<string | null> {
-		const workspacePath = workspaceFolder.uri.path;
-		const resultFile = `.axon_project_root_${Date.now()}.txt`;
-		const resultFileUri = vscode.Uri.joinPath(workspaceFolder.uri, resultFile);
-		
-		try {
-			// shell 스크립트: poky 찾기 + 상위 디렉토리 절대 경로 계산 + 워크스페이스 루트에 임시 파일 저장
-			// 스크립트 시작 시 워크스페이스 루트를 저장하고, 마지막에 그 위치로 돌아가서 파일 생성
-			const shellScript = `WORKSPACE_ROOT="$(pwd)"; ` +
-				`POKY_DIR=$(find . -maxdepth 3 -name poky -not -path "*/.repo/*" -type d | head -1); ` +
-				`if [ -n "$POKY_DIR" ]; then ` +
-				`  cd "$(dirname "$POKY_DIR")" && ` +
-				`  PROJECT_ROOT="$(pwd)"; ` +
-				`  cd "$WORKSPACE_ROOT" && ` +
-				`  echo "$PROJECT_ROOT" > "${resultFile}"; ` +
-				`fi`;
-			
-			const task = new vscode.Task(
-				{ type: 'shell', task: 'find-yocto-root' },
-				vscode.TaskScope.Workspace,
-				'Find Yocto Project Root',
-				'Axon',
-				new vscode.ShellExecution(shellScript, { cwd: workspacePath })
-			);
-			
-			task.presentationOptions = {
-				reveal: vscode.TaskRevealKind.Silent,
-				focus: false,
-				panel: vscode.TaskPanelKind.Shared,
-				showReuseMessage: false,
-				clear: false
-			};
-			
-			// 작업 실행 및 완료 대기
-			await new Promise<void>((resolve, reject) => {
-				const disposable = vscode.tasks.onDidEndTaskProcess(e => {
-					if (e.execution.task.name === 'Find Yocto Project Root') {
-						disposable.dispose();
-						if (e.exitCode === 0) {
-							resolve();
-						} else {
-							// exitCode가 0이 아니어도 파일이 생성되었을 수 있으므로 resolve
-							axonLog(`⚠️ shell 스크립트 exitCode: ${e.exitCode}, 하지만 계속 진행합니다.`);
-							resolve();
-						}
-					}
-				});
-				vscode.tasks.executeTask(task).then(undefined, reject);
-			});
-			
-			// 임시 파일 존재 확인 및 읽기
-			let projectRoot: string | null = null;
-			try {
-				const stat = await vscode.workspace.fs.stat(resultFileUri);
-				if (stat.type === vscode.FileType.File) {
-					const resultContent = await vscode.workspace.fs.readFile(resultFileUri);
-					projectRoot = Buffer.from(resultContent).toString('utf8').trim();
-					
-					if (projectRoot) {
-						axonLog(`📄 임시 파일에서 프로젝트 루트 읽기 성공: ${projectRoot}`);
-					} else {
-						axonLog(`⚠️ 임시 파일이 비어있습니다.`);
-					}
-				} else {
-					axonLog(`⚠️ 임시 파일이 디렉토리입니다.`);
-				}
-			} catch (fileError) {
-				axonLog(`⚠️ 임시 파일 읽기 실패: ${fileError}`);
-				// 파일이 없을 수도 있으므로 계속 진행
-			}
-			
-			// 임시 파일 삭제 (읽기 성공 여부와 관계없이)
-			try {
-				await vscode.workspace.fs.delete(resultFileUri);
-				axonLog(`🗑️ 임시 파일 삭제 완료: ${resultFile}`);
-			} catch (deleteError) {
-				axonLog(`⚠️ 임시 파일 삭제 실패 (무시): ${deleteError}`);
-			}
-			
-			return projectRoot;
-		} catch (error) {
-			axonLog(`⚠️ shell 스크립트 실행 중 오류 발생: ${error}`);
-			if (error instanceof Error) {
-				axonLog(`   오류 상세: ${error.message}`);
-				axonLog(`   스택: ${error.stack}`);
-			}
-			
-			// 에러 발생 시에도 임시 파일 삭제 시도
-			try {
-				await vscode.workspace.fs.delete(resultFileUri);
-				axonLog(`🗑️ 임시 파일 삭제 완료 (에러 후): ${resultFile}`);
-			} catch {
-				// 무시
-			}
-		}
-		
-		return null;
+		return await findProjectRootByShell({
+			workspaceFolder,
+			findPattern: 'poky',
+			maxDepth: 3,
+			findType: 'd',
+			parentLevels: 1,
+			excludePattern: '*/.repo/*',
+			taskName: 'Find Yocto Project Root',
+			taskId: 'find-yocto-root',
+			resultFilePrefix: 'axon_project_root'
+		});
 	}
 
 	/**
@@ -824,9 +716,11 @@ echo "✅ 빌드 환경 초기화 완료"`;
 		axonLog(`🔨 ${config.taskName} 시작...`);
 		
 		try {
-			// 0. bootFirmwareFolderName 설정 확인 및 선택
-			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
-			if (!bootFirmwareFolderName) {
+			// 프로젝트 타입 확인
+			const { ensureProjectType } = await import('../../utils');
+			const projectType = await ensureProjectType();
+			if (!projectType) {
+				axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
 				vscode.window.showInformationMessage('빌드가 취소되었습니다.');
 				return;
 			}
@@ -930,9 +824,11 @@ echo "✅ 빌드 환경 초기화 완료"`;
 		axonLog(`🧹 ${config.taskName} 시작...`);
 		
 		try {
-			// 0. bootFirmwareFolderName 설정 확인 및 선택
-			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
-			if (!bootFirmwareFolderName) {
+			// 프로젝트 타입 확인
+			const { ensureProjectType } = await import('../../utils');
+			const projectType = await ensureProjectType();
+			if (!projectType) {
+				axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
 				vscode.window.showInformationMessage('작업이 취소되었습니다.');
 				return;
 			}

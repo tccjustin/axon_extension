@@ -138,9 +138,15 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'btn-mcu-clean':
                 vscode.postMessage({ command: 'execute', action: 'axon.mcuClean' });
                 break;
-            case 'btn-mcu-fwdn':
-                vscode.postMessage({ command: 'execute', action: 'axon.FWDN_ALL' });
+            case 'btn-run-fwdn': {
+                const select = document.getElementById('fwdn-mode-select');
+                const actions = { 
+                    'run-fwdn': 'axon.FWDN_ALL', 
+                    'low-format': 'axon.FWDN_LOW_FORMAT' 
+                };
+                vscode.postMessage({ command: 'execute', action: actions[select.value] });
                 break;
+            }
             // Build Yocto
             case 'btn-yocto-run-build': {
                 const select = document.getElementById('yocto-build-select');
@@ -164,6 +170,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const select = document.getElementById('devtool-build-recipe-select');
                 if (select.value) {
                     vscode.postMessage({ command: 'execute', action: 'axon.devtoolBuild', args: [select.value] });
+                }
+                break;
+            }
+            case 'btn-devtool-run-finish-recipe': {
+                const select = document.getElementById('devtool-finish-recipe-select');
+                if (select.value) {
+                    vscode.postMessage({ command: 'execute', action: 'axon.devtoolFinish', args: [select.value] });
                 }
                 break;
             }
@@ -288,9 +301,9 @@ function updateProjectTypeUI(projectType) {
 }
 
 function updateRecipesList(recipes) {
-    const select = document.getElementById('devtool-build-recipe-select');
-    if (!select) return;
-
+    const buildSelect = document.getElementById('devtool-build-recipe-select');
+    const finishSelect = document.getElementById('devtool-finish-recipe-select');
+    
     // Use DocumentFragment for efficient batch DOM update
     const fragment = document.createDocumentFragment();
     
@@ -310,7 +323,15 @@ function updateRecipesList(recipes) {
         });
     }
     
-    select.innerHTML = '';
-    select.appendChild(fragment);
+    // Update both select elements
+    if (buildSelect) {
+        buildSelect.innerHTML = '';
+        buildSelect.appendChild(fragment.cloneNode(true));
+    }
+    
+    if (finishSelect) {
+        finishSelect.innerHTML = '';
+        finishSelect.appendChild(fragment.cloneNode(true));
+    }
 }
 

@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { axonLog, axonError } from '../../logger';
-import { getAxonConfig, dirToDisplay } from '../../utils';
-import { executeShellTask } from '../common/shell-utils';
+import { executeShellTask, findProjectRootByShell } from '../common/shell-utils';
 
 /**
  * MCU 작업 설정 인터페이스
@@ -21,165 +20,198 @@ interface McuTaskConfig {
  */
 export class McuProjectBuilder {
 	/**
-	 * buildAxonFolderName 설정 확인 및 선택
-	 * (프로젝트 타입 기반으로 자동 설정)
+	 * settings.json 업데이트 함수
 	 */
-	private static async ensureBuildAxonFolderName(): Promise<string | null> {
-		const { ensureProjectType } = await import('../../utils');
+	private static async updateSettingsJson(
+		workspaceFolder: vscode.WorkspaceFolder,
+		settings: Record<string, any>
+	): Promise<void> {
+		const vscodeFolder = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode');
 		
-		// 프로젝트 타입 선택 (자동으로 buildAxonFolderName도 설정됨)
-		const projectType = await ensureProjectType();
-		
-		if (!projectType) {
-			axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
-			return null;
-		}
-		
-		// 설정된 buildAxonFolderName 반환
-		const config = getAxonConfig();
-		axonLog(`✅ buildAxonFolderName: ${config.buildAxonFolderName}`);
-		
-		return config.buildAxonFolderName;
-	}
-
-	/**
-	 * 설정된 빌드 폴더를 찾는 재귀 검색 함수
-	 */
-	private static async searchMcuTcn100xInDirectory(
-		baseUri: vscode.Uri, 
-		currentDepth: number = 0, 
-		maxDepth: number = 4
-	): Promise<string | null> {
-		const config = getAxonConfig();
-		const mcuFolderName = config.buildAxonFolderName || 'mcu-tcn100x';
-
+		// .vscode 폴더 생성
 		try {
-			// baseUri가 이미 mcu-tcn100x 폴더인지 확인
-			const basePath = baseUri.path;
-			if (basePath.endsWith('/' + mcuFolderName) || basePath.endsWith('\\' + mcuFolderName)) {
-				// 로컬은 fsPath, 원격은 Unix 경로 사용 (터미널 명령용)
-				const finalPath = baseUri.scheme === 'file' ? baseUri.fsPath : baseUri.path;
-				axonLog(`✅ depth ${currentDepth}에서 baseUri가 이미 ${mcuFolderName} 폴더입니다: ${finalPath}`);
-				return finalPath;
-			}
-
-			// 현재 디렉토리에서 mcu-tcn100x 폴더 확인
-			const targetPath = baseUri.with({ path: `${baseUri.path.replace(/\/$/, '')}/${mcuFolderName}` });
-
-			try {
-				const stat = await vscode.workspace.fs.stat(targetPath);
-				if (stat.type === vscode.FileType.Directory) {
-					let finalPath: string;
-					if (targetPath.scheme === 'file') {
-						finalPath = targetPath.fsPath;
-					} else {
-						// 원격 경로일 경우, Unix 경로만 반환 (터미널 명령용)
-						finalPath = targetPath.path;
-					}
-
-					axonLog(`✅ depth ${currentDepth}에서 ${mcuFolderName} 폴더를 찾았습니다: ${finalPath}`);
-					return finalPath;
-				}
-			} catch {
-				// 폴더가 없으면 계속 진행
-			}
-
-			// 최대 depth에 도달하지 않았으면 하위 폴더 탐색
-			if (currentDepth < maxDepth) {
-				try {
-					const entries = await vscode.workspace.fs.readDirectory(baseUri);
-
-					// 디렉토리만 필터링
-					const allDirectories = entries.filter(([name, type]) => type === vscode.FileType.Directory);
-					const directories = allDirectories.filter(([name]) => !name.startsWith('.'));
-
-					for (const [dirName] of directories) {
-						const subDirUri = baseUri.with({ path: baseUri.path + '/' + dirName });
-						axonLog(`📁 depth ${currentDepth} - ${dirName} 폴더 탐색 중...`);
-
-						const result = await this.searchMcuTcn100xInDirectory(subDirUri, currentDepth + 1, maxDepth);
-						if (result) {
-							return result; // 찾았으면 즉시 반환
-						}
-					}
-				} catch (error) {
-					axonLog(`⚠️ depth ${currentDepth} 폴더 읽기 실패: ${error}`);
-				}
-			}
-
-			return null;
-		} catch (error) {
-			axonLog(`⚠️ depth ${currentDepth} 검색 중 오류: ${error}`);
-			return null;
-		}
-	}
-
-	/**
-	 * 설정된 빌드 폴더를 찾는 함수 (MCU Standalone 또는 Yocto 프로젝트용)
-	 */
-	private static async findMcuTcn100xFolder(): Promise<string | null> {
-		const config = getAxonConfig();
-		const mcuFolderName = config.buildAxonFolderName || 'mcu-tcn100x';
-		
-		const workspaceFolders = vscode.workspace.workspaceFolders;
-		
-		if (!workspaceFolders || workspaceFolders.length === 0) {
-			axonLog('❌ 워크스페이스 폴더를 찾을 수 없습니다.');
-			return null;
+			await vscode.workspace.fs.createDirectory(vscodeFolder);
+		} catch {
+			// 이미 존재하는 경우 무시
 		}
 		
-		const searchStartTime = Date.now();
-		axonLog(`🔍 ${mcuFolderName} 폴더 검색 시작 (depth 4까지): ${workspaceFolders[0].uri.path}`);
+		// settings.json 파일 경로
+		const settingsFile = vscode.Uri.joinPath(vscodeFolder, 'settings.json');
 		
+		// 기존 settings.json 읽기 (있으면)
+		let existingSettings: any = {};
 		try {
-			let result: string | null = null;
-			const workspacePath = workspaceFolders[0].uri.path;
+			const existingContent = await vscode.workspace.fs.readFile(settingsFile);
+			let existingText = Buffer.from(existingContent).toString('utf8');
 			
-			// 워크스페이스 경로에 mcu-tcn100x 폴더명이 포함되어 있다면 해당 폴더부터 검색
-			if (workspacePath.includes(mcuFolderName)) {
-				axonLog(`✅ 워크스페이스에 ${mcuFolderName}이 포함되어 있습니다: ${workspacePath}`);
+			if (existingText.trim() === '') {
+				axonLog(`⚠️ settings.json 파일이 비어있습니다.`);
+			} else {
+				// VS Code settings.json은 주석과 trailing comma를 허용하므로 전처리 필요
+				// 1. 줄 단위 주석 제거 (// 로 시작하는 주석)
+				existingText = existingText.replace(/\/\/.*$/gm, '');
+				// 2. 블록 주석 제거 (/* ... */)
+				existingText = existingText.replace(/\/\*[\s\S]*?\*\//g, '');
+				// 3. trailing comma 제거 (객체/배열의 마지막 쉼표)
+				existingText = existingText.replace(/,(\s*[}\]])/g, '$1');
 				
-				const folderIndex = workspacePath.indexOf(mcuFolderName);
-				if (folderIndex !== -1) {
-					const folderPath = workspacePath.substring(0, folderIndex + mcuFolderName.length);
-					const folderUri = workspaceFolders[0].uri.with({ path: folderPath });
+				existingSettings = JSON.parse(existingText);
+				axonLog(`📖 기존 settings.json 파일을 읽었습니다.`);
+				axonLog(`   기존 설정 키 개수: ${Object.keys(existingSettings).length}`);
+				axonLog(`   기존 설정 키 목록: ${Object.keys(existingSettings).join(', ')}`);
+			}
+		} catch (error) {
+			// 파일이 없거나 파싱 실패한 경우 빈 객체 사용
+			if (error instanceof Error) {
+				axonLog(`⚠️ settings.json 읽기 실패: ${error.message}`);
+			} else {
+				axonLog(`⚠️ settings.json 읽기 실패: ${error}`);
+			}
+			axonLog(`📝 새로운 settings.json 파일을 생성합니다.`);
+		}
+		
+		// 설정 추가 또는 업데이트
+		axonLog(`➕ 추가할 설정: ${JSON.stringify(settings)}`);
+		Object.assign(existingSettings, settings);
+		axonLog(`📋 병합 후 설정 키 개수: ${Object.keys(existingSettings).length}`);
+		axonLog(`📋 병합 후 설정 키 목록: ${Object.keys(existingSettings).join(', ')}`);
+		
+		// JSON 문자열로 변환 (들여쓰기 포함)
+		const settingsContent = JSON.stringify(existingSettings, null, 4);
+		
+		// 파일 쓰기
+		try {
+			await vscode.workspace.fs.writeFile(settingsFile, Buffer.from(settingsContent, 'utf8'));
+			axonLog(`✅ settings.json 파일 저장 완료: ${settingsFile.path}`);
+		} catch (error) {
+			axonLog(`❌ settings.json 파일 쓰기 실패: ${error}`);
+			if (error instanceof Error) {
+				axonLog(`   오류 상세: ${error.message}`);
+			}
+			throw error;
+		}
+	}
+
+	/**
+	 * 리눅스 shell 스크립트로 MCU 프로젝트 루트 찾기
+	 * tcn100x_defconfig 파일을 찾아서 상위 3단계 디렉토리의 절대 경로를 계산하고 임시 파일에 저장
+	 * 
+	 * 예: ./mcu-tcn100x/build/configs/tcn100x_defconfig → ./mcu-tcn100x
+	 * 
+	 * @param workspaceFolder - 워크스페이스 폴더
+	 * @returns 프로젝트 루트의 절대 경로 또는 null
+	 */
+	private static async findMcuProjectRootByShell(workspaceFolder: vscode.WorkspaceFolder): Promise<string | null> {
+		return await findProjectRootByShell({
+			workspaceFolder,
+			findPattern: 'tcn100x_defconfig',
+			maxDepth: 4,
+			findType: 'f',
+			parentLevels: 3,
+			taskName: 'Find MCU Project Root',
+			taskId: 'find-mcu-root',
+			resultFilePrefix: 'axon_mcu_project_root'
+		});
+	}
+
+	/**
+	 * MCU 프로젝트 루트 경로 찾기
+	 * 
+	 * 전략:
+	 * 1. .vscode/settings.json 파일을 직접 읽어서 axon.mcu.projectRoot 확인
+	 * 2. root가 있으면 반환
+	 * 3. root가 없으면 리눅스 shell 스크립트로 tcn100x_defconfig 찾기 + 절대 경로 계산 + 임시 파일 저장
+	 * 4. 임시 파일 읽어서 settings.json에 저장 후 반환
+	 * 
+	 * @returns Unix 경로 형식 문자열 (/home/..., /mnt/..., 등)
+	 */
+	static async getMcuProjectRoot(): Promise<string> {
+		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		if (!workspaceFolder) {
+			throw new Error(
+				'워크스페이스 폴더를 찾을 수 없습니다.\n\n' +
+				'해결 방법:\n' +
+				'1. VS Code에서 "파일 > 폴더 열기"를 선택하세요.\n' +
+				'2. MCU 프로젝트가 있는 폴더를 선택하세요.\n' +
+				'3. 폴더가 열린 후 다시 빌드를 실행하세요.'
+			);
+		}
+		
+		// Unix 경로 사용 (원격 환경 기본)
+		const workspacePath = workspaceFolder.uri.path;
+		axonLog(`🌐 환경: WSL/SSH (scheme: ${workspaceFolder.uri.scheme})`);
+		axonLog(`📁 워크스페이스 경로: ${workspacePath}`);
+		
+		// 1. settings.json 파일 직접 읽기
+		const vscodeFolder = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode');
+		const settingsFile = vscode.Uri.joinPath(vscodeFolder, 'settings.json');
+		
+		let savedProjectRoot: string | undefined;
+		
+		try {
+			const settingsContent = await vscode.workspace.fs.readFile(settingsFile);
+			const settingsText = Buffer.from(settingsContent).toString('utf8');
+			const settings = JSON.parse(settingsText);
+			savedProjectRoot = settings['axon.mcu.projectRoot'];
+			
+			if (savedProjectRoot && savedProjectRoot.trim() !== '') {
+				axonLog(`🔍 저장된 MCU 프로젝트 루트 확인 중: ${savedProjectRoot}`);
+				
+				// 저장된 경로 유효성 검증
+				try {
+					const savedUri = vscode.Uri.from({
+						scheme: workspaceFolder.uri.scheme,
+						authority: workspaceFolder.uri.authority,
+						path: savedProjectRoot
+					});
 					
-					axonLog(`🔍 워크스페이스 내 ${mcuFolderName} 폴더부터 depth 4까지 검색: ${dirToDisplay(folderUri)}`);
+					const defconfigUri = vscode.Uri.joinPath(savedUri, 'build/configs/tcn100x_defconfig');
+					const stat = await vscode.workspace.fs.stat(defconfigUri);
 					
-					result = await this.searchMcuTcn100xInDirectory(folderUri, 0, 4);
-					
-					if (result) {
-						const searchDuration = Date.now() - searchStartTime;
-						axonLog(`✅ 워크스페이스 내 ${mcuFolderName} 폴더를 찾았습니다: ${result}`);
-						axonLog(`⏱️ ${mcuFolderName} 검색 완료 - 소요시간: ${searchDuration}ms`);
-						return result;
+					if (stat.type === vscode.FileType.File) {
+						axonLog(`✅ 저장된 MCU 프로젝트 루트 사용: ${savedProjectRoot}`);
+						return savedProjectRoot;
 					}
+				} catch {
+					axonLog(`⚠️ 저장된 경로에 tcn100x_defconfig 파일이 없습니다. 재탐색을 시작합니다.`);
 				}
 			}
+		} catch (error) {
+			// settings.json 파일이 없거나 읽기 실패한 경우 (정상적인 경우)
+			axonLog(`📝 settings.json 파일을 읽을 수 없습니다. 새로 탐색합니다.`);
+		}
+		
+		// 2. root가 없으면 리눅스 shell 스크립트로 찾기
+		axonLog('🔍 tcn100x_defconfig 파일을 찾아 MCU 프로젝트 루트 탐지 중...');
+		const projectRoot = await this.findMcuProjectRootByShell(workspaceFolder);
+		
+		if (projectRoot) {
+			axonLog(`✅ MCU 프로젝트 루트 발견: ${projectRoot}`);
 			
-			// 일반적인 경우: 워크스페이스 폴더부터 depth 4까지 검색
-			axonLog(`🔍 워크스페이스 폴더부터 depth 4까지 ${mcuFolderName} 검색: ${dirToDisplay(workspaceFolders[0].uri)}`);
-			
-			result = await this.searchMcuTcn100xInDirectory(workspaceFolders[0].uri, 0, 4);
-			
-			if (result) {
-				const searchDuration = Date.now() - searchStartTime;
-				axonLog(`✅ 워크스페이스에서 ${mcuFolderName} 폴더를 찾았습니다: ${result}`);
-				axonLog(`⏱️ 전체 검색 완료 - 소요시간: ${searchDuration}ms`);
-				return result;
+			// 3. settings.json에 저장
+			try {
+				axonLog(`💾 settings.json에 프로젝트 루트 저장 시도: ${projectRoot}`);
+				await this.updateSettingsJson(workspaceFolder, { 'axon.mcu.projectRoot': projectRoot });
+				axonLog(`✅ MCU 프로젝트 루트를 settings.json에 저장했습니다.`);
+			} catch (error) {
+				axonLog(`⚠️ settings.json 저장 실패: ${error}`);
+				if (error instanceof Error) {
+					axonLog(`   오류 상세: ${error.message}`);
+					axonLog(`   스택: ${error.stack}`);
+				}
+				// 저장 실패해도 경로는 반환
 			}
 			
-			axonLog(`❌ depth 4까지 검색했지만 ${mcuFolderName} 폴더를 찾을 수 없습니다.`);
-			
-			const searchDuration = Date.now() - searchStartTime;
-			axonLog(`⏱️ 전체 검색 완료 (실패) - 소요시간: ${searchDuration}ms`);
-			return null;
-		} catch (error) {
-			const searchDuration = Date.now() - searchStartTime;
-			axonError(`${mcuFolderName} 폴더 검색 중 오류 발생: ${error}`);
-			axonLog(`⏱️ 검색 중단 (오류) - 소요시간: ${searchDuration}ms`);
-			return null;
+			return projectRoot;
 		}
+		
+		// 찾지 못한 경우
+		throw new Error(
+			`MCU 프로젝트 루트를 찾을 수 없습니다.\n\n` +
+			`확인 사항:\n` +
+			`- tcn100x_defconfig 파일이 워크스페이스 또는 그 하위 4단계까지 있는지 확인하세요.\n` +
+			`- 워크스페이스: ${workspacePath}`
+		);
 	}
 
 	/**
@@ -190,33 +222,34 @@ export class McuProjectBuilder {
 		axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
 
 		try {
-			// buildAxonFolderName 설정 확인 및 선택
-			const buildAxonFolderName = await this.ensureBuildAxonFolderName();
-			if (!buildAxonFolderName) {
+			// 프로젝트 타입 확인 (자동으로 buildAxonFolderName도 설정됨)
+			const { ensureProjectType } = await import('../../utils');
+			const projectType = await ensureProjectType();
+			if (!projectType) {
+				axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
 				vscode.window.showInformationMessage(config.cancelMsg);
 				return;
 			}
 			
-			// 빌드 폴더 찾기
-			axonLog(`🔍 ${buildAxonFolderName} 폴더 자동 검색 시작...`);
-			const mcuBuildPath = await this.findMcuTcn100xFolder();
+			// 1. MCU 프로젝트 루트 찾기 (Unix 경로)
+			const projectRoot = await this.getMcuProjectRoot();
+			axonLog(`📁 MCU 프로젝트 루트: ${projectRoot}`);
+			
+			// 워크스페이스 폴더
+			const workspaceFolder = vscode.workspace.workspaceFolders![0];
+			
+			// 2. 빌드 경로 계산 (프로젝트 루트가 빌드 경로)
+			const mcuBuildPath = projectRoot;
+			axonLog(`📁 빌드 경로: ${mcuBuildPath}`);
 
-			if (!mcuBuildPath) {
-				axonLog(`❌ ${buildAxonFolderName} 폴더를 찾을 수 없습니다.`);
-				vscode.window.showErrorMessage(`${buildAxonFolderName} 폴더를 찾을 수 없습니다. 워크스페이스를 확인해주세요.`);
-				return;
-			}
-
-			axonLog(`✅ ${buildAxonFolderName} 폴더를 찾았습니다: ${mcuBuildPath}`);
-
-			// 작업별 명령 및 메시지 생성
+			// 3. 작업별 명령 및 메시지 생성
 			const command = config.getCommand(mcuBuildPath);
 			const configInfo = config.getConfigInfo(mcuBuildPath);
 			const confirmMsg = config.getConfirmMsg(mcuBuildPath);
 			
 			axonLog(configInfo);
 			
-			// 사용자 확인
+			// 4. 사용자 확인
 			const confirm = await vscode.window.showWarningMessage(
 				confirmMsg,
 				{ modal: true },

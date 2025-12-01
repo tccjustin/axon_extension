@@ -137,6 +137,196 @@ export async function executeShellTask(options: ShellTaskOptions): Promise<void>
 }
 
 /**
+ * 리눅스 shell 스크립트로 프로젝트 루트 찾기 (공통 함수)
+ * 
+ * find 명령어를 사용하여 파일/디렉토리를 찾고 상위 디렉토리의 절대 경로를 계산하여 임시 파일에 저장합니다.
+ * 이 함수는 Yocto 프로젝트 루트 찾기와 MCU 프로젝트 루트 찾기에서 공통으로 사용됩니다.
+ * 
+ * @example
+ * // Yocto 프로젝트 루트 찾기 (poky 디렉토리 찾기)
+ * const yoctoRoot = await findProjectRootByShell({
+ *   workspaceFolder,
+ *   findPattern: 'poky',
+ *   maxDepth: 3,
+ *   findType: 'd',
+ *   parentLevels: 1,
+ *   excludePattern: '*\/.repo\/*',
+ *   taskName: 'Find Yocto Project Root',
+ *   taskId: 'find-yocto-root',
+ *   resultFilePrefix: 'axon_project_root'
+ * });
+ * 
+ * @example
+ * // MCU 프로젝트 루트 찾기 (tcn100x_defconfig 파일 찾기)
+ * const mcuRoot = await findProjectRootByShell({
+ *   workspaceFolder,
+ *   findPattern: 'tcn100x_defconfig',
+ *   maxDepth: 4,
+ *   findType: 'f',
+ *   parentLevels: 3,
+ *   taskName: 'Find MCU Project Root',
+ *   taskId: 'find-mcu-root',
+ *   resultFilePrefix: 'axon_mcu_project_root'
+ * });
+ * 
+ * @param options - 찾기 옵션
+ * @param options.workspaceFolder - 워크스페이스 폴더
+ * @param options.findPattern - 찾을 파일/디렉토리 이름 (예: "poky", "tcn100x_defconfig")
+ * @param options.maxDepth - 최대 탐색 깊이 (예: 3, 4)
+ * @param options.findType - 'd': directory, 'f': file
+ * @param options.parentLevels - 상위 몇 단계로 올라갈지 (예: 1, 3)
+ * @param options.excludePattern - 제외할 패턴 (선택적, 예: "*\/.repo\/*")
+ * @param options.taskName - 작업 이름 (예: "Find Yocto Project Root")
+ * @param options.taskId - 작업 ID (예: "find-yocto-root")
+ * @param options.resultFilePrefix - 결과 파일 접두사 (예: "axon_project_root")
+ * @returns 프로젝트 루트의 절대 경로 또는 null
+ * 
+ * @see YoctoProjectBuilder.findYoctoProjectRootByShell - Yocto 프로젝트 루트 찾기 사용 예시
+ * @see McuProjectBuilder.findMcuProjectRootByShell - MCU 프로젝트 루트 찾기 사용 예시
+ */
+export async function findProjectRootByShell(options: {
+	workspaceFolder: vscode.WorkspaceFolder;
+	findPattern: string;        // 찾을 파일/디렉토리 이름 (예: "poky", "tcn100x_defconfig")
+	maxDepth: number;           // 최대 탐색 깊이 (예: 3, 4)
+	findType: 'd' | 'f';        // 'd': directory, 'f': file
+	parentLevels: number;       // 상위 몇 단계로 올라갈지 (예: 1, 3)
+	excludePattern?: string;    // 제외할 패턴 (선택적, 예: "*/.repo/*")
+	taskName: string;           // 작업 이름 (예: "Find Yocto Project Root")
+	taskId: string;             // 작업 ID (예: "find-yocto-root")
+	resultFilePrefix: string;   // 결과 파일 접두사 (예: "axon_project_root")
+}): Promise<string | null> {
+	const {
+		workspaceFolder,
+		findPattern,
+		maxDepth,
+		findType,
+		parentLevels,
+		excludePattern,
+		taskName,
+		taskId,
+		resultFilePrefix
+	} = options;
+
+	const workspacePath = workspaceFolder.uri.path;
+	const resultFile = `.${resultFilePrefix}_${Date.now()}.txt`;
+	const resultFileUri = vscode.Uri.joinPath(workspaceFolder.uri, resultFile);
+	
+	try {
+		// find 명령어 구성
+		let findCommand = `find . -maxdepth ${maxDepth} -name ${findPattern} -type ${findType}`;
+		if (excludePattern) {
+			findCommand += ` -not -path "${excludePattern}"`;
+		}
+		findCommand += ` | head -1`;
+		
+		// 상위 디렉토리로 올라가는 명령어 생성 (dirname 중첩)
+		// 예: parentLevels=1이면 dirname "$FOUND_PATH"
+		//     parentLevels=3이면 dirname "$(dirname "$(dirname "$FOUND_PATH")")"
+		let dirnameCommand = '$FOUND_PATH';
+		for (let i = 0; i < parentLevels; i++) {
+			if (i === 0) {
+				// 첫 번째: dirname "$FOUND_PATH"
+				dirnameCommand = `dirname "${dirnameCommand}"`;
+			} else {
+				// 이후: dirname "$(이전 결과)" - $()로 감싸서 실행 결과를 사용
+				dirnameCommand = `dirname "$(${dirnameCommand})"`;
+			}
+		}
+		
+		// shell 스크립트: 파일/디렉토리 찾기 + 상위 디렉토리 절대 경로 계산 + 워크스페이스 루트에 임시 파일 저장
+		// dirnameCommand는 명령어이므로 $()로 감싸서 실행 결과를 경로로 사용
+		const shellScript = `WORKSPACE_ROOT="$(pwd)"; ` +
+			`FOUND_PATH=$(${findCommand}); ` +
+			`if [ -n "$FOUND_PATH" ]; then ` +
+			`  cd "$(${dirnameCommand})" && ` +
+			`  PROJECT_ROOT="$(pwd)"; ` +
+			`  cd "$WORKSPACE_ROOT" && ` +
+			`  echo "$PROJECT_ROOT" > "${resultFile}"; ` +
+			`fi`;
+		
+		const task = new vscode.Task(
+			{ type: 'shell', task: taskId },
+			vscode.TaskScope.Workspace,
+			taskName,
+			'Axon',
+			new vscode.ShellExecution(shellScript, { cwd: workspacePath })
+		);
+		
+		task.presentationOptions = {
+			reveal: vscode.TaskRevealKind.Silent,
+			focus: false,
+			panel: vscode.TaskPanelKind.Shared,
+			showReuseMessage: false,
+			clear: false
+		};
+		
+		// 작업 실행 및 완료 대기
+		await new Promise<void>((resolve, reject) => {
+			const disposable = vscode.tasks.onDidEndTaskProcess(e => {
+				if (e.execution.task.name === taskName) {
+					disposable.dispose();
+					if (e.exitCode === 0) {
+						resolve();
+					} else {
+						// exitCode가 0이 아니어도 파일이 생성되었을 수 있으므로 resolve
+						axonLog(`⚠️ shell 스크립트 exitCode: ${e.exitCode}, 하지만 계속 진행합니다.`);
+						resolve();
+					}
+				}
+			});
+			vscode.tasks.executeTask(task).then(undefined, reject);
+		});
+		
+		// 임시 파일 존재 확인 및 읽기
+		let projectRoot: string | null = null;
+		try {
+			const stat = await vscode.workspace.fs.stat(resultFileUri);
+			if (stat.type === vscode.FileType.File) {
+				const resultContent = await vscode.workspace.fs.readFile(resultFileUri);
+				projectRoot = Buffer.from(resultContent).toString('utf8').trim();
+				
+				if (projectRoot) {
+					axonLog(`📄 임시 파일에서 프로젝트 루트 읽기 성공: ${projectRoot}`);
+				} else {
+					axonLog(`⚠️ 임시 파일이 비어있습니다.`);
+				}
+			} else {
+				axonLog(`⚠️ 임시 파일이 디렉토리입니다.`);
+			}
+		} catch (fileError) {
+			axonLog(`⚠️ 임시 파일 읽기 실패: ${fileError}`);
+			// 파일이 없을 수도 있으므로 계속 진행
+		}
+		
+		// 임시 파일 삭제 (읽기 성공 여부와 관계없이)
+		try {
+			await vscode.workspace.fs.delete(resultFileUri);
+			axonLog(`🗑️ 임시 파일 삭제 완료: ${resultFile}`);
+		} catch (deleteError) {
+			axonLog(`⚠️ 임시 파일 삭제 실패 (무시): ${deleteError}`);
+		}
+		
+		return projectRoot;
+	} catch (error) {
+		axonLog(`⚠️ shell 스크립트 실행 중 오류 발생: ${error}`);
+		if (error instanceof Error) {
+			axonLog(`   오류 상세: ${error.message}`);
+			axonLog(`   스택: ${error.stack}`);
+		}
+		
+		// 에러 발생 시에도 임시 파일 삭제 시도
+		try {
+			await vscode.workspace.fs.delete(resultFileUri);
+			axonLog(`🗑️ 임시 파일 삭제 완료 (에러 후): ${resultFile}`);
+		} catch {
+			// 무시
+		}
+		
+		return null;
+	}
+}
+
+/**
  * Git 저장소 클론
  */
 export async function cloneGitRepository(gitUrl: string, targetDir: string, taskPrefix: string = ''): Promise<void> {
@@ -165,4 +355,5 @@ export async function createAndPushBranch(branchName: string, projectDir: string
 		showTerminal: true
 	});
 }
+
 
