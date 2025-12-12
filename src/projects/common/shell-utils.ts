@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { axonLog, axonError } from '../../logger';
-import { ShellTaskOptions } from './types';
+import { ShellTaskOptions, PythonScriptOptions } from './types';
 
 /**
  * Shell Task 실행 공통 함수 (Yocto 개선 버전)
@@ -323,6 +323,175 @@ export async function findProjectRootByShell(options: {
 		}
 		
 		return null;
+	}
+}
+
+/**
+ * Python 스크립트 실행 공통 함수
+ * 
+ * 원격 환경에서 Python 코드를 임시 파일로 생성하고 실행한 후 삭제합니다.
+ * 
+ * @example
+ * await executePythonScript({
+ *   pythonCode: `
+ * import json
+ * print("Hello from Python")
+ *   `,
+ *   cwd: '/path/to/project',
+ *   taskName: 'Run Python Script',
+ *   taskId: 'run-python-script',
+ *   showTerminal: false
+ * });
+ * 
+ * @param options - Python 스크립트 실행 옵션
+ * @param options.pythonCode - 실행할 Python 코드
+ * @param options.cwd - 작업 디렉토리
+ * @param options.taskName - 작업 이름
+ * @param options.taskId - 작업 ID (고유해야 함)
+ * @param options.showTerminal - 터미널 표시 여부 (기본값: false)
+ * @param options.pythonCommand - Python 실행 명령어 (기본값: 'python3')
+ * @param options.cwdUri - cwd를 URI로 직접 전달 (원격 환경 지원)
+ */
+export async function executePythonScript(options: PythonScriptOptions): Promise<void> {
+	const {
+		pythonCode,
+		cwd,
+		taskName,
+		taskId,
+		showTerminal = false,
+		pythonCommand = 'python3',
+		cwdUri: providedCwdUri
+	} = options;
+
+	axonLog(`📂 작업 디렉토리: ${cwd}`);
+	axonLog(`🐍 Python 코드 길이: ${pythonCode.length} bytes`);
+
+	const scriptFileName = `.axon_temp_${taskId}.py`;
+	let scriptFileUri: vscode.Uri | null = null;
+
+	// cwd를 URI로 변환
+	let cwdUri: vscode.Uri;
+
+	// providedCwdUri가 제공되면 우선 사용
+	if (providedCwdUri) {
+		cwdUri = providedCwdUri;
+		axonLog(`✅ 제공된 cwdUri 사용: ${cwdUri.toString()}`);
+	} else {
+		// 워크스페이스 폴더 가져오기 (원격 환경 자동 감지)
+		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		if (workspaceFolder) {
+			// 워크스페이스의 scheme을 사용 (file:// 또는 vscode-remote://)
+			const wsScheme = workspaceFolder.uri.scheme;
+			const wsAuthority = workspaceFolder.uri.authority;
+
+			if (wsScheme === 'file') {
+				// 로컬 환경
+				cwdUri = vscode.Uri.file(cwd);
+			} else {
+				// 원격 환경 (vscode-remote://)
+				// cwd가 절대 경로인지 확인
+				const normalizedPath = cwd.startsWith('/') ? cwd : `/${cwd}`;
+				cwdUri = vscode.Uri.from({
+					scheme: wsScheme,
+					authority: wsAuthority,
+					path: normalizedPath
+				});
+			}
+		} else {
+			// 워크스페이스가 없으면 기본 file URI
+			cwdUri = vscode.Uri.file(cwd);
+		}
+	}
+
+	scriptFileUri = vscode.Uri.joinPath(cwdUri, scriptFileName);
+
+	axonLog(`📝 임시 Python 스크립트 파일 생성 시작: ${scriptFileName}`);
+	axonLog(`🔍 cwdUri: ${cwdUri.toString()}`);
+	axonLog(`🔍 scriptFileUri: ${scriptFileUri.toString()}`);
+
+	try {
+		// cwd 폴더가 존재하는지 확인
+		try {
+			await vscode.workspace.fs.stat(cwdUri);
+		} catch (statError) {
+			throw new Error(`작업 디렉토리가 존재하지 않습니다: ${cwd}`);
+		}
+
+		// Python 스크립트 내용 작성
+		await vscode.workspace.fs.writeFile(scriptFileUri, Buffer.from(pythonCode, 'utf8'));
+		axonLog(`✅ Python 파일 쓰기 완료`);
+
+		// 파일 생성 확인
+		const stat = await vscode.workspace.fs.stat(scriptFileUri);
+		axonLog(`✅ 파일 생성 확인: ${stat.size} bytes`);
+
+		// Python 스크립트 실행 명령어
+		// python3 또는 python 명령어 사용 (사용자가 지정한 명령어 우선)
+		const actualCommand = `${pythonCommand} "${scriptFileName}"`;
+		axonLog(`✅ 실행 명령: ${actualCommand}`);
+
+		// Task API 사용 (안정적인 완료 감지)
+		const task = new vscode.Task(
+			{ type: 'shell', task: taskId },
+			vscode.TaskScope.Workspace,
+			taskName,
+			'Axon',
+			new vscode.ShellExecution(actualCommand, { cwd })
+		);
+
+		// 터미널 표시 옵션 설정
+		task.presentationOptions = {
+			reveal: showTerminal ? vscode.TaskRevealKind.Always : vscode.TaskRevealKind.Silent,
+			focus: showTerminal,
+			panel: vscode.TaskPanelKind.Shared,
+			showReuseMessage: false,
+			clear: false  // 터미널 내용을 지우지 않고 누적
+		};
+
+		return new Promise<void>((resolve, reject) => {
+			const disposable = vscode.tasks.onDidEndTaskProcess(async e => {
+				if (e.execution.task.name === taskName) {
+					disposable.dispose();
+
+					// 임시 Python 스크립트 파일 삭제
+					if (scriptFileUri) {
+						try {
+							await vscode.workspace.fs.delete(scriptFileUri);
+							axonLog(`🗑️ 임시 Python 스크립트 파일 삭제 완료`);
+						} catch (error) {
+							axonLog(`⚠️ 임시 Python 스크립트 파일 삭제 실패 (무시): ${error}`);
+						}
+					}
+
+					if (e.exitCode === 0) {
+						resolve();
+					} else {
+						reject(new Error(`${taskName} failed with exit code ${e.exitCode}. Check the terminal for details.`));
+					}
+				}
+			});
+
+			vscode.tasks.executeTask(task).then(undefined, async (error) => {
+				// 작업 시작 실패 시에도 파일 삭제 시도
+				if (scriptFileUri) {
+					try {
+						await vscode.workspace.fs.delete(scriptFileUri);
+					} catch {
+						// 무시
+					}
+				}
+				reject(new Error(`Failed to start ${taskName} task: ${error}`));
+			});
+		});
+	} catch (error) {
+		// 파일 생성 실패 시에도 정리 시도
+		if (scriptFileUri) {
+			try {
+				await vscode.workspace.fs.delete(scriptFileUri);
+			} catch {}
+		}
+		axonError(`❌ 임시 Python 스크립트 파일 생성/실행 실패: ${error}`);
+		throw error;
 	}
 }
 

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { axonLog, axonError } from '../../logger';
-import { executeShellTask, findProjectRootByShell } from '../common/shell-utils';
+import { axonLog, axonError, axonSuccess } from '../../logger';
+import { executeShellTask, findProjectRootByShell, executePythonScript } from '../common/shell-utils';
 
 /**
  * MCU 작업 설정 인터페이스
@@ -436,5 +436,445 @@ echo ""
 			getConfirmMsg: (mcuBuildPath) => 
 				`MCU Clean을 시작하시겠습니까?\n\n경로: ${mcuBuildPath}\n명령: make clean\n\n빌드된 파일들이 삭제됩니다.`
 		});
+	}
+
+	/**
+	 * Bear 설치 확인 및 설치
+	 * @returns Bear가 설치되어 있으면 true, 설치 실패 시 false
+	 */
+	private static async ensureBearInstalled(): Promise<boolean> {
+		axonLog('🔍 Bear 설치 확인 중...');
+		
+		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		if (!workspaceFolder) {
+			throw new Error('워크스페이스 폴더를 찾을 수 없습니다.');
+		}
+
+		// Bear 설치 확인: bear --version 명령어 실행
+		// 성공하면 설치되어 있음, 실패하면 설치되지 않음
+		const checkScript = `#!/bin/bash
+bear --version > /dev/null 2>&1
+exit $?
+`;
+
+		try {
+			await executeShellTask({
+				command: checkScript,
+				cwd: workspaceFolder.uri.path,
+				taskName: 'Check Bear Installation',
+				taskId: 'check-bear',
+				showTerminal: false,
+				useScriptFile: true
+			});
+
+			// executeShellTask가 성공적으로 완료되면 (exit code 0) Bear가 설치되어 있음
+			axonLog('✅ Bear가 이미 설치되어 있습니다.');
+			return true;
+		} catch {
+			// executeShellTask가 실패하면 (exit code != 0) Bear가 설치되어 있지 않음
+			axonLog('⚠️ Bear가 설치되어 있지 않습니다.');
+		}
+
+		// Bear 설치 확인 메시지 표시
+		const installConfirm = await vscode.window.showWarningMessage(
+			'Bear가 설치되어 있지 않습니다.\n\nBear는 compile_commands.json을 생성하기 위한 도구입니다.\n\nBear를 설치하시겠습니까?',
+			{ modal: true },
+			'설치',
+			'취소'
+		);
+
+		if (installConfirm !== '설치') {
+			axonLog('❌ Bear 설치가 취소되었습니다.');
+			return false;
+		}
+
+		// Bear 설치 실행
+		axonLog('📦 Bear 설치 중...');
+		const installScript = `#!/bin/bash
+set -e
+
+echo "=========================================="
+echo "📦 Bear 설치 시작"
+echo "=========================================="
+echo ""
+
+# 패키지 매니저 확인 및 설치
+if command -v apt-get &> /dev/null; then
+    echo "apt-get을 사용하여 Bear 설치 중..."
+    sudo apt-get update
+    sudo apt-get install -y bear
+elif command -v apt &> /dev/null; then
+    echo "apt를 사용하여 Bear 설치 중..."
+    sudo apt update
+    sudo apt install -y bear
+elif command -v yum &> /dev/null; then
+    echo "yum을 사용하여 Bear 설치 중..."
+    sudo yum install -y bear
+elif command -v dnf &> /dev/null; then
+    echo "dnf를 사용하여 Bear 설치 중..."
+    sudo dnf install -y bear
+else
+    echo "❌ 지원되는 패키지 매니저를 찾을 수 없습니다."
+    echo "   수동으로 Bear를 설치해주세요."
+    exit 1
+fi
+
+echo ""
+echo "=========================================="
+echo "✅ Bear 설치 완료"
+echo "=========================================="
+echo ""
+bear --version
+`;
+
+		try {
+			await executeShellTask({
+				command: installScript,
+				cwd: workspaceFolder.uri.path,
+				taskName: 'Install Bear',
+				taskId: 'install-bear',
+				showTerminal: true,
+				useScriptFile: true
+			});
+			axonLog('✅ Bear 설치가 완료되었습니다.');
+			return true;
+		} catch (error) {
+			const errorMsg = `Bear 설치 중 오류가 발생했습니다: ${error}`;
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			return false;
+		}
+	}
+
+	/**
+	 * Build Option Extraction 실행
+	 * MCU 프로젝트 루트에서 bear make를 실행하여 compile_commands.json 생성
+	 */
+	static async buildOptionExtraction(): Promise<void> {
+		axonLog('🔧 Build Option Extraction 시작');
+
+		try {
+			// 프로젝트 타입 확인
+			const { ensureProjectType } = await import('../../utils');
+			const projectType = await ensureProjectType();
+			if (!projectType) {
+				axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
+				vscode.window.showInformationMessage('프로젝트 타입을 선택해야 합니다.');
+				return;
+			}
+
+			if (projectType !== 'mcu_project') {
+				vscode.window.showErrorMessage('Build Option Extraction은 MCU 프로젝트에서만 사용할 수 있습니다.');
+				return;
+			}
+
+			// MCU 프로젝트 루트 찾기
+			const projectRoot = await this.getMcuProjectRoot();
+			axonLog(`📁 MCU 프로젝트 루트: ${projectRoot}`);
+
+			// Bear 설치 확인 및 설치
+			const bearInstalled = await this.ensureBearInstalled();
+			if (!bearInstalled) {
+				vscode.window.showErrorMessage('Bear 설치가 필요합니다. Build Option Extraction을 실행할 수 없습니다.');
+				return;
+			}
+
+			// 사용자 확인
+			const confirm = await vscode.window.showWarningMessage(
+				`Build Option Extraction을 시작하시겠습니까?\n\n경로: ${projectRoot}\n명령: bear make\n\n이 작업은 전체 빌드를 수행하며 시간이 걸릴 수 있습니다.`,
+				{ modal: true },
+				'시작',
+				'취소'
+			);
+
+			if (confirm !== '시작') {
+				axonLog('❌ Build Option Extraction이 취소되었습니다.');
+				vscode.window.showInformationMessage('Build Option Extraction이 취소되었습니다.');
+				return;
+			}
+
+			// bear make 실행
+			const command = `
+#set -x
+cd "${projectRoot}"
+
+echo "=========================================="
+echo "🔧 Build Option Extraction 시작"
+echo "=========================================="
+echo ""
+echo "Bear를 사용하여 compile_commands.json 생성 중..."
+echo ""
+
+bear make
+
+echo ""
+echo "=========================================="
+echo "✅ Build Option Extraction 완료"
+echo "=========================================="
+echo ""
+
+# compile_commands.json 파일 확인
+if [ -f "compile_commands.json" ]; then
+    echo "✅ compile_commands.json 파일이 생성되었습니다!"
+    echo "   위치: ${projectRoot}/compile_commands.json"
+    FILE_SIZE=$(stat -c%s "compile_commands.json" 2>/dev/null || stat -f%z "compile_commands.json" 2>/dev/null || echo "unknown")
+    echo "   파일 크기: \${FILE_SIZE} bytes"
+else
+    echo "⚠️ compile_commands.json 파일이 생성되지 않았습니다."
+    echo "   빌드가 성공적으로 완료되었는지 확인하세요."
+fi
+
+echo ""
+`;
+
+			await executeShellTask({
+				command: command,
+				cwd: projectRoot,
+				taskName: 'Build Option Extraction',
+				taskId: 'buildOptionExtraction',
+				showTerminal: true,
+				useScriptFile: true
+			});
+
+			// compile_commands.json 파일 확인
+			const workspaceFolder = vscode.workspace.workspaceFolders![0];
+			const compileCommandsUri = vscode.Uri.joinPath(
+				vscode.Uri.from({
+					scheme: workspaceFolder.uri.scheme,
+					authority: workspaceFolder.uri.authority,
+					path: projectRoot
+				}),
+				'compile_commands.json'
+			);
+
+			try {
+				const stat = await vscode.workspace.fs.stat(compileCommandsUri);
+				if (stat.type === vscode.FileType.File) {
+					axonLog('✅ compile_commands.json 파일이 생성되었습니다.');
+					
+					// compile_commands.json에서 defines 추출하여 c_cpp_properties.json 업데이트
+					await this.updateCppPropertiesFromCompileCommands(projectRoot, workspaceFolder);
+					
+					axonSuccess(`✅ Build Option Extraction이 완료되었습니다!\ncompile_commands.json 파일이 생성되었습니다.\nc_cpp_properties.json이 업데이트되었습니다.\n위치: ${projectRoot}/compile_commands.json`);
+				} else {
+					axonLog('⚠️ compile_commands.json 파일이 생성되지 않았습니다.');
+					vscode.window.showWarningMessage('compile_commands.json 파일이 생성되지 않았습니다. 빌드가 성공적으로 완료되었는지 확인하세요.');
+				}
+			} catch {
+				axonLog('⚠️ compile_commands.json 파일을 확인할 수 없습니다.');
+				vscode.window.showWarningMessage('compile_commands.json 파일을 확인할 수 없습니다.');
+			}
+
+		} catch (error) {
+			const errorMsg = `Build Option Extraction 실행 중 오류가 발생했습니다: ${error}`;
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+		}
+	}
+
+	/**
+	 * compile_commands.json에서 defines를 추출하여 c_cpp_properties.json 업데이트
+	 * @param projectRoot - MCU 프로젝트 루트 경로 (Makefile이 있는 폴더)
+	 * @param workspaceFolder - 워크스페이스 폴더
+	 */
+	private static async updateCppPropertiesFromCompileCommands(
+		projectRoot: string,
+		workspaceFolder: vscode.WorkspaceFolder
+	): Promise<void> {
+		axonLog('🔧 c_cpp_properties.json 업데이트 시작...');
+		
+		// 워크스페이스 루트 경로
+		const workspaceRoot = workspaceFolder.uri.path;
+		axonLog(`📁 워크스페이스 루트: ${workspaceRoot}`);
+		axonLog(`📁 프로젝트 루트: ${projectRoot}`);
+
+		const pythonCode = `
+import json
+import os
+import re
+
+# 경로 설정
+# compile_commands.json은 프로젝트 루트(현재 작업 디렉토리)에 있음
+compile_commands_path = 'compile_commands.json'
+
+# c_cpp_properties.json은 워크스페이스 루트의 .vscode 폴더에 있어야 함
+workspace_root = '${workspaceRoot}'
+vscode_folder = os.path.join(workspace_root, '.vscode')
+c_cpp_properties_path = os.path.join(vscode_folder, 'c_cpp_properties.json')
+
+print(f"📁 compile_commands.json 경로: {os.path.abspath(compile_commands_path)}")
+print(f"📁 c_cpp_properties.json 경로: {c_cpp_properties_path}")
+
+# compile_commands.json 파일 읽기
+try:
+    with open(compile_commands_path, 'r') as f:
+        compile_commands = json.load(f)
+except FileNotFoundError:
+    print(f"❌ compile_commands.json 파일을 찾을 수 없습니다: {compile_commands_path}")
+    exit(1)
+except json.JSONDecodeError as e:
+    print(f"❌ compile_commands.json 파싱 오류: {e}")
+    exit(1)
+
+# defines 추출 (-D로 시작하는 옵션)
+defines = set()
+# 패턴: -D 뒤에 매크로 이름 (언더스코어, 숫자, 알파벳 포함)
+# 예: -DMACRO, -D MACRO, -DMACRO=value, -D__MACRO__, -D MACRO=VALUE
+define_pattern1 = re.compile(r'-D([A-Za-z_][A-Za-z0-9_]*)')  # -DMACRO 형식 (언더스코어 포함)
+define_pattern2 = re.compile(r'-D\s+([A-Za-z_][A-Za-z0-9_]*)')  # -D MACRO 형식 (공백 포함)
+
+print(f"📋 compile_commands.json 항목 개수: {len(compile_commands)}")
+
+for idx, command in enumerate(compile_commands):
+    arguments = command.get('arguments', [])
+    if not arguments:
+        # arguments가 없으면 command 문자열에서 추출
+        command_str = command.get('command', '')
+        if command_str:
+            arguments = command_str.split()
+            print(f"  [{idx}] command 문자열에서 추출: {len(arguments)}개 인자")
+    else:
+        print(f"  [{idx}] arguments 배열 사용: {len(arguments)}개 인자")
+    
+    if not arguments:
+        print(f"  [{idx}] ⚠️ 인자를 찾을 수 없습니다.")
+        continue
+    
+    # 디버깅: 처음 몇 개 항목만 출력
+    if idx < 3:
+        print(f"  [{idx}] 처음 10개 인자: {arguments[:10]}")
+    
+    for arg_idx, arg in enumerate(arguments):
+        # 패턴 1: -DMACRO 또는 -DMACRO=value 또는 -D__MACRO__
+        match1 = define_pattern1.match(arg)
+        if match1:
+            define_name = match1.group(1)
+            defines.add(define_name)
+            if len(defines) <= 20:  # 처음 20개만 출력
+                print(f"    ✅ 매칭: {arg} -> {define_name}")
+            continue
+        
+        # 패턴 2: -D MACRO (공백 포함) - 다음 인자가 매크로 이름일 수 있음
+        if arg == '-D' and arg_idx + 1 < len(arguments):
+            next_arg = arguments[arg_idx + 1]
+            # 다음 인자가 매크로 이름인지 확인 (언더스코어, 알파벳, 숫자로 시작)
+            if re.match(r'^[A-Za-z_][A-Za-z0-9_]*', next_arg):
+                # = 포함 여부 확인
+                if '=' in next_arg:
+                    define_name = next_arg.split('=', 1)[0]
+                else:
+                    define_name = next_arg
+                defines.add(define_name)
+                if len(defines) <= 20:
+                    print(f"    ✅ 매칭: {arg} {next_arg} -> {define_name}")
+            continue
+        
+        # 패턴 3: -D로 시작하지만 = 포함 (예: -DMACRO=VALUE)
+        if arg.startswith('-D') and '=' in arg:
+            # -DMACRO=VALUE 형식에서 MACRO만 추출
+            # = 앞의 부분에서 매크로 이름 추출
+            value_part = arg[2:]  # -D 제거
+            equal_idx = value_part.find('=')
+            if equal_idx > 0:
+                define_name = value_part[:equal_idx]
+                # 매크로 이름이 유효한지 확인 (언더스코어, 알파벳, 숫자만)
+                if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', define_name):
+                    defines.add(define_name)
+                    if len(defines) <= 20:
+                        print(f"    ✅ 매칭: {arg} -> {define_name}")
+
+# defines를 정렬된 리스트로 변환
+defines_list = sorted(list(defines))
+print(f"✅ 추출된 defines 개수: {len(defines_list)}")
+if defines_list:
+    print(f"   처음 10개: {defines_list[:10]}")
+
+# 워크스페이스 루트의 .vscode 폴더가 없으면 생성
+if not os.path.exists(vscode_folder):
+    os.makedirs(vscode_folder)
+    print(f"✅ 워크스페이스 루트의 .vscode 폴더 생성: {vscode_folder}")
+else:
+    print(f"✅ 워크스페이스 루트의 .vscode 폴더 존재 확인: {vscode_folder}")
+
+# c_cpp_properties.json 파일 읽기 또는 생성
+if os.path.exists(c_cpp_properties_path):
+    try:
+        with open(c_cpp_properties_path, 'r') as f:
+            c_cpp_properties = json.load(f)
+        print(f"✅ 기존 c_cpp_properties.json 파일 읽기 완료")
+    except json.JSONDecodeError as e:
+        print(f"⚠️ 기존 c_cpp_properties.json 파싱 오류: {e}")
+        print("   기본 템플릿으로 재생성합니다.")
+        c_cpp_properties = None
+else:
+    print(f"✅ 새 c_cpp_properties.json 파일 생성")
+    c_cpp_properties = None
+
+# 기본 템플릿 (파일이 없거나 파싱 실패한 경우)
+if c_cpp_properties is None:
+    c_cpp_properties = {
+        "configurations": [
+            {
+                "name": "Linux",
+                "includePath": [
+                    "\${workspaceFolder}/**"
+                ],
+                "defines": [],
+                "compilerPath": "/usr/bin/gcc",
+                "cStandard": "c11",
+                "cppStandard": "c++17",
+                "intelliSenseMode": "linux-gcc-x64"
+            }
+        ],
+        "version": 4
+    }
+
+# configurations가 없으면 기본 구조 생성
+if 'configurations' not in c_cpp_properties:
+    c_cpp_properties['configurations'] = [
+        {
+            "name": "Linux",
+            "includePath": ["\${workspaceFolder}/**"],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ]
+
+# 모든 configuration의 defines를 업데이트 (기존 defines 삭제 후 새로 추가)
+for config in c_cpp_properties.get('configurations', []):
+    # 기존 defines 삭제하고 새로 추가
+    config['defines'] = defines_list
+    print(f"✅ Configuration '{config.get('name', 'Unknown')}'의 defines 업데이트 완료")
+
+# c_cpp_properties.json 파일 쓰기
+try:
+    with open(c_cpp_properties_path, 'w') as f:
+        json.dump(c_cpp_properties, f, indent=4)
+    print(f"✅ c_cpp_properties.json 파일 저장 완료: {c_cpp_properties_path}")
+except Exception as e:
+    print(f"❌ c_cpp_properties.json 파일 쓰기 오류: {e}")
+    exit(1)
+
+print("✅ c_cpp_properties.json 업데이트가 완료되었습니다.")
+`;
+
+		try {
+			await executePythonScript({
+				pythonCode: pythonCode,
+				cwd: projectRoot,
+				taskName: 'Update c_cpp_properties',
+				taskId: 'update-cpp-properties',
+				showTerminal: false
+			});
+			axonLog('✅ c_cpp_properties.json 업데이트 완료');
+		} catch (error) {
+			const errorMsg = `c_cpp_properties.json 업데이트 중 오류가 발생했습니다: ${error}`;
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			throw error;
+		}
 	}
 }

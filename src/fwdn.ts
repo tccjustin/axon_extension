@@ -12,6 +12,14 @@ export interface FwdnConfig {
 	bootFirmwarePath: string;
 }
 
+// 파티션 정보 인터페이스
+export interface PartitionInfo {
+	name: string;        // 예: "bl3_main_a"
+	size: string;        // 예: "2M"
+	filePath: string;    // 예: "/path/to/u-boot-tcn1000.rom"
+	fileName: string;    // 예: "u-boot-tcn1000.rom"
+}
+
 /**
  * settings.json 업데이트 함수
  */
@@ -238,7 +246,7 @@ export function validateConfig(config: FwdnConfig): string | null {
 
 // FWDN 실행 완료 후 자동 창 닫기 함수 (신호 파일 기반)
 async function executeFwdnWithAutoClose(terminal: vscode.Terminal): Promise<void> {
-	return new Promise((resolve) => {
+	return new Promise(async (resolve) => {
 		let isCompleted = false;
 
 		try {
@@ -248,7 +256,7 @@ async function executeFwdnWithAutoClose(terminal: vscode.Terminal): Promise<void
 			const signalFile = path.join(os.tmpdir(), 'axon_fwdn_completed.txt');
 
 			// 주기적으로 신호 파일 확인
-			const checkSignalFile = () => {
+			const checkSignalFile = async () => {
 				try {
 					if (fs.existsSync(signalFile)) {
 						// 신호 파일 내용 확인
@@ -264,18 +272,29 @@ async function executeFwdnWithAutoClose(terminal: vscode.Terminal): Promise<void
 								axonLog(`⚠️ 신호 파일 삭제 실패: ${deleteError}`);
 							}
 
-							const successMsg = '✅ FWDN 실행 완료! 창을 자동으로 닫습니다.';
+							const successMsg = '✅ FWDN 실행 완료!';
 							axonSuccess(successMsg);
-							vscode.window.showInformationMessage(successMsg);
-
-							setTimeout(() => {
+							
+							// 터미널 닫기 확인 팝업
+							const result = await vscode.window.showInformationMessage(
+								`FWDN이 완료되었습니다.\n터미널을 닫겠습니까?`,
+								{ modal: false },
+								'Yes',
+								'No'
+							);
+							
+							if (result === 'Yes') {
 								try {
 									terminal.dispose();
+									axonLog(`✅ 사용자가 터미널 닫기를 선택했습니다. 터미널을 닫습니다.`);
 								} catch (disposeError) {
 									axonLog(`⚠️ 터미널 종료 중 오류: ${disposeError}`);
 								}
-								resolve();
-							}, 1000);
+							} else {
+								axonLog(`ℹ️ 사용자가 터미널을 열어둡니다.`);
+							}
+							
+							resolve();
 						}
 					}
 				} catch (error) {
@@ -284,10 +303,18 @@ async function executeFwdnWithAutoClose(terminal: vscode.Terminal): Promise<void
 			};
 
 			// 0.5초마다 신호 파일 확인
-			const checkInterval = setInterval(checkSignalFile, 500);
+			const checkInterval = setInterval(() => {
+				checkSignalFile().catch(error => {
+					axonLog(`⚠️ 신호 파일 확인 중 오류: ${error}`);
+				});
+			}, 500);
 
 			// 초기 확인 (즉시 실행)
-			setTimeout(checkSignalFile, 200);
+			setTimeout(() => {
+				checkSignalFile().catch(error => {
+					axonLog(`⚠️ 신호 파일 확인 중 오류: ${error}`);
+				});
+			}, 200);
 
 			// 안전장치: 10분 후 강제 종료
 			setTimeout(() => {
@@ -594,5 +621,258 @@ export async function updateConfiguration(
 	axonLog(`✅ ${label} 경로가 설정되었습니다: ${value}`);
 	vscode.window.showInformationMessage(`${label} 경로가 설정되었습니다: ${value}`);
 	axonLog(`🏁 [updateConfiguration] 종료`);
+}
+
+/**
+ * partition.list 파일 파싱
+ * 형식: partition_name:size@file_path
+ */
+function parsePartitionList(content: string): PartitionInfo[] {
+	const lines = content.split('\n');
+	const partitions: PartitionInfo[] = [];
+	const excludeList = ['misc', 'data'];
+	
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (!trimmed || trimmed.startsWith('#')) continue;
+		
+		// 형식: partition_name:size@file_path
+		const match = trimmed.match(/^([^:]+):([^@]+)@(.+)$/);
+		if (!match) continue;
+		
+		const [, name, size, filePath] = match;
+		
+		// misc, data 제외
+		if (excludeList.includes(name.trim())) continue;
+		
+		// 파일명 추출
+		const fileName = path.basename(filePath.trim());
+		
+		partitions.push({
+			name: name.trim(),
+			size: size.trim(),
+			filePath: filePath.trim(),
+			fileName: fileName
+		});
+	}
+	
+	return partitions;
+}
+
+/**
+ * 선택한 파티션을 FWDN으로 다운로드
+ */
+async function executeFwdnDownloadPartition(
+	extensionPath: string,
+	partition: PartitionInfo,
+	imagesDir: string
+): Promise<void> {
+	axonLog(`🚀 FWDN 파티션 다운로드 시작: ${partition.name}`);
+	
+	// FWDN 설정 가져오기
+	let config: FwdnConfig;
+	try {
+		config = await getFwdnConfig(extensionPath);
+		axonLog(`📋 설정 - FWDN 경로: ${config.fwdnExePath}, Boot Firmware 경로: ${config.bootFirmwarePath}`);
+	} catch (error) {
+		axonError(`설정 오류: ${error}`);
+		const errorMsg = `Boot Firmware 폴더를 찾을 수 없습니다.\n\n` +
+			`prebuilt 폴더가 워크스페이스 또는 그 하위 4단계까지 있는지 확인하세요.`;
+		vscode.window.showErrorMessage(errorMsg);
+		return;
+	}
+	
+	// 설정 검증
+	const validationError = validateConfig(config);
+	if (validationError) {
+		axonError(validationError);
+		vscode.window.showErrorMessage(validationError);
+		return;
+	}
+	
+	// 경로 변환 (리눅스 → Windows/Samba)
+	const remoteName = vscode.env.remoteName || '';
+	const remoteType = remoteName.startsWith('wsl') ? 'wsl' : 'ssh';
+	const windowsFilePath = convertRemotePathToSamba(partition.filePath, remoteType);
+	
+	axonLog(`🔄 경로 변환: ${partition.filePath} → ${windowsFilePath}`);
+	
+	try {
+		axonLog(`🔧 로컬 PowerShell에서 직접 실행`);
+		
+		// 배치 파일 경로 생성 (익스텐션 설치 경로 기준)
+		const batchFilePath = path.join(extensionPath, 'fwdn_download_partition.bat');
+		axonLog(`📝 배치 파일 경로: ${batchFilePath}`);
+		
+		// PowerShell에서 배치 파일 실행
+		const psCommand = `& "${batchFilePath}" "${config.bootFirmwarePath}" "${config.fwdnExePath}" "${windowsFilePath}" "${partition.name}"`;
+		
+		axonLog(`📋 실행 명령: ${psCommand}`);
+		
+		// PowerShell 실행 파일 경로 결정 (PowerShell 7 우선)
+		const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+		const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+		
+		const psExe = fs.existsSync(ps7) ? ps7 : (fs.existsSync(ps5) ? ps5 : null);
+		if (!psExe) {
+			throw new Error('로컬 PC에서 PowerShell 실행 파일을 찾지 못했습니다.');
+		}
+		
+		// 환경 감지 및 터미널 생성
+		const isRemote = vscode.env.remoteName !== undefined;
+		let terminal: vscode.Terminal;
+		
+		if (isRemote) {
+			// 원격 환경: 로컬 터미널 생성 명령 사용
+			await vscode.commands.executeCommand('workbench.action.terminal.newLocal');
+			const term = vscode.window.activeTerminal;
+			if (!term) {
+				throw new Error('로컬 터미널 생성에 실패했습니다.');
+			}
+			terminal = term;
+		} else {
+			// 로컬 환경: 기본 터미널 생성 시도
+			try {
+				await vscode.commands.executeCommand('workbench.action.terminal.new');
+				const basicTerminal = vscode.window.activeTerminal;
+				if (basicTerminal) {
+					terminal = basicTerminal;
+				} else {
+					throw new Error('기본 터미널 생성에 실패했습니다.');
+				}
+			} catch {
+				// 폴백: 직접 터미널 생성
+				terminal = vscode.window.createTerminal({
+					name: `FWDN Download Partition: ${partition.name}`,
+					isTransient: true
+				});
+			}
+		}
+		
+		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
+		
+		// Build View에 포커스 복원
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
+		
+		// 배치 파일 완료 신호 대기 및 자동 창 닫기
+		await executeFwdnWithAutoClose(terminal);
+		
+		axonLog(`✅ FWDN 파티션 다운로드 완료: ${partition.name}`);
+		
+	} catch (error) {
+		const errorMsg = `FWDN 파티션 다운로드 중 오류가 발생했습니다: ${error}`;
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
+	}
+}
+
+/**
+ * FWDN Specific Image File 실행 함수
+ * partition.list 파일을 읽어서 파티션 목록을 표시하고 선택한 파티션을 다운로드
+ */
+export async function executeFwdnAvailableImage(extensionPath: string): Promise<void> {
+	axonLog(`🚀 FWDN Specific Image File 실행 명령 시작`);
+	
+	try {
+		// 프로젝트 타입 확인
+		const { ensureProjectType } = await import('./utils');
+		const projectType = await ensureProjectType();
+		if (!projectType) {
+			axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
+			vscode.window.showInformationMessage('작업이 취소되었습니다.');
+			return;
+		}
+		
+		// Yocto 프로젝트 루트 찾기
+		const { YoctoProjectBuilder } = await import('./projects/yocto/builder');
+		const projectRoot = await YoctoProjectBuilder.getYoctoProjectRoot();
+		axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
+		
+		// 워크스페이스 폴더
+		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		if (!workspaceFolder) {
+			throw new Error('워크스페이스 폴더를 찾을 수 없습니다.');
+		}
+		
+		// AP 빌드 설정 로드
+		const apConfig = await YoctoProjectBuilder.ensureApBuildConfig(projectRoot, workspaceFolder);
+		if (!apConfig) {
+			axonLog('❌ AP 빌드 설정 선택이 취소되었습니다.');
+			return;
+		}
+		
+		const { machine } = apConfig;
+		axonLog(`📋 MACHINE: ${machine}`);
+		
+		// partition.list 경로 구성
+		const imagesDir = `${projectRoot}/build/${machine}/tmp/deploy/images/${machine}`;
+		const partitionListPath = `${imagesDir}/partition.list`;
+		axonLog(`📁 partition.list 경로: ${partitionListPath}`);
+		
+		// partition.list 파일 읽기
+		const partitionListUri = vscode.Uri.from({
+			scheme: workspaceFolder.uri.scheme,
+			authority: workspaceFolder.uri.authority,
+			path: partitionListPath
+		});
+		
+		let partitionListContent: string;
+		try {
+			const content = await vscode.workspace.fs.readFile(partitionListUri);
+			partitionListContent = Buffer.from(content).toString('utf8');
+			axonLog(`✅ partition.list 파일 읽기 성공`);
+		} catch (error) {
+			const errorMsg = `partition.list 파일을 찾을 수 없습니다.\n\n` +
+				`경로: ${partitionListPath}\n\n` +
+				`Yocto AP 빌드를 먼저 실행하여 이미지 파일을 생성해주세요.`;
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			return;
+		}
+		
+		// 파티션 목록 파싱
+		const partitions = parsePartitionList(partitionListContent);
+		axonLog(`📋 파싱된 파티션 개수: ${partitions.length}`);
+		
+		if (partitions.length === 0) {
+			const errorMsg = `사용 가능한 파티션이 없습니다.\n\n` +
+				`partition.list 파일에 유효한 파티션 정보가 없거나, 모든 파티션이 필터링되었습니다.`;
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			return;
+		}
+		
+		// 파티션 선택 메뉴 생성
+		const items = partitions.map(p => ({
+			label: `${p.name}`,
+			description: `${p.fileName}`,
+			detail: `${p.size} - ${p.filePath}`,
+			partition: p
+		}));
+		
+		const selected = await vscode.window.showQuickPick(items, {
+			placeHolder: '다운로드할 파티션을 선택하세요...',
+			canPickMany: false
+		});
+		
+		if (!selected) {
+			axonLog('❌ 사용자가 파티션 선택을 취소했습니다.');
+			vscode.window.showInformationMessage('파티션 다운로드가 취소되었습니다.');
+			return;
+		}
+		
+		axonLog(`✅ 선택된 파티션: ${selected.partition.name}`);
+		
+		// 선택한 파티션 다운로드 실행
+		await executeFwdnDownloadPartition(extensionPath, selected.partition, imagesDir);
+		
+	} catch (error) {
+		const errorMsg = `FWDN Specific Image File 실행 중 오류가 발생했습니다: ${error}`;
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
+	}
 }
 

@@ -3,7 +3,7 @@
   "displayName": "Axon",
   "publisher": "justin-lee",
   "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.4.4",
+  "version": "0.4.6",
   "icon": "icon.png",
   "extensionKind": [
     "ui",
@@ -21,6 +21,8 @@
   ],
   "activationEvents": [
     "onCommand:axon.FWDN_ALL",
+    "onCommand:axon.FWDN_LOW_FORMAT",
+    "onCommand:axon.FWDN_AVAILABLE_IMAGE",
     "onCommand:axon.mcuBuildMake",
     "onCommand:axon.mcuBuildAll",
     "onCommand:axon.mcuClean",
@@ -42,6 +44,16 @@
         "category": "Axon"
       },
       {
+        "command": "axon.FWDN_LOW_FORMAT",
+        "title": "FWDN Low Level Format",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.FWDN_AVAILABLE_IMAGE",
+        "title": "FWDN Specific Image File",
+        "category": "Axon"
+      },
+      {
         "command": "axon.mcuBuildMake",
         "title": "MCU Build Make",
         "category": "Axon"
@@ -54,6 +66,11 @@
       {
         "command": "axon.mcuClean",
         "title": "MCU Clean",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.buildOptionExtraction",
+        "title": "Build Option Extraction",
         "category": "Axon"
       },
       {

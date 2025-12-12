@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
 import { initializeLogger, axonLog, axonError, axonSuccess } from './logger';
-import { executeFwdnCommand, executeFwdnLowFormat } from './fwdn';
+import { executeFwdnCommand, executeFwdnLowFormat, executeFwdnAvailableImage } from './fwdn';
 import { 
 	getAxonConfig, 
 	EXCLUDE_FOLDERS, 
@@ -209,12 +209,16 @@ async function executeDevtoolCreateModify(extensionPath: string, recipeName?: st
 		axonLog(`📋 레시피가 전달되지 않았습니다. 선택 다이얼로그를 표시합니다.`);
 	}
 	const { DevToolManager } = await import('./projects/yocto/devtool');
-	await DevToolManager.createAndModify((recipeName: string) => {
-		if (globalBuildProvider) {
-			globalBuildProvider.addDevtoolRecipe(recipeName);
-			vscode.commands.executeCommand('axonBuildView.focus').then(() => {}, () => {});
-		}
-	}, recipeName);
+	await DevToolManager.createAndModify(
+		extensionPath,
+		(recipeName: string) => {
+			if (globalBuildProvider) {
+				globalBuildProvider.addDevtoolRecipe(recipeName);
+				vscode.commands.executeCommand('axonBuildView.focus').then(() => {}, () => {});
+			}
+		},
+		recipeName
+	);
 }
 
 /**
@@ -282,6 +286,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		async () => executeFwdnLowFormat(context.extensionPath)
 	);
 
+	// FWDN Specific Image File 실행 명령
+	const runFwdnAvailableImageDisposable = vscode.commands.registerCommand(
+		'axon.FWDN_AVAILABLE_IMAGE',
+		async () => executeFwdnAvailableImage(context.extensionPath)
+	);
+
 	// MCU Build Make 실행 명령
 	const mcuBuildMakeDisposable = vscode.commands.registerCommand(
 		'axon.mcuBuildMake',
@@ -305,6 +315,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	const mcuCleanDisposable = vscode.commands.registerCommand(
 		'axon.mcuClean',
 		async () => await McuProjectBuilder.cleanBuild()
+	);
+
+	// Build Option Extraction 실행 명령
+	const buildOptionExtractionDisposable = vscode.commands.registerCommand(
+		'axon.buildOptionExtraction',
+		async () => await McuProjectBuilder.buildOptionExtraction()
 	);
 
 	// Create MCU Standalone Project 명령
@@ -442,9 +458,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		runFwdnAllDisposable,
 		runFwdnLowFormatDisposable,
+		runFwdnAvailableImageDisposable,
 		mcuBuildMakeDisposable,
 		mcuBuildAllDisposable,
 		mcuCleanDisposable,
+		buildOptionExtractionDisposable,
 		// 새로운 프로젝트 생성 명령어들
 		createMcuStandaloneProjectDisposable,
 		createYoctoProjectDisposable,

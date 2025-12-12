@@ -41,6 +41,30 @@ export class YoctoProjectBuilder {
 	private static readonly DEFAULT_VERSION = 'dev';
 
 	/**
+	 * 작업 완료 후 터미널 닫기 확인 팝업
+	 */
+	private static async askToCloseTerminal(taskName: string): Promise<void> {
+		const result = await vscode.window.showInformationMessage(
+			`${taskName}가 완료되었습니다.\n터미널을 닫겠습니까?`,
+			{ modal: false },
+			'Yes',
+			'No'
+		);
+		
+		if (result === 'Yes') {
+			const activeTerminal = vscode.window.activeTerminal;
+			if (activeTerminal) {
+				axonLog(`✅ 사용자가 터미널 닫기를 선택했습니다. 터미널을 닫습니다.`);
+				activeTerminal.dispose();
+			} else {
+				axonLog(`⚠️ 활성 터미널이 없습니다.`);
+			}
+		} else {
+			axonLog(`ℹ️ 사용자가 터미널을 열어둡니다.`);
+		}
+	}
+
+	/**
 	 * AP 빌드용 MACHINE / VERSION 설정을 로드하거나 사용자에게 선택받고
 	 * config.json에 저장까지 수행하는 공통 헬퍼
 	 */
@@ -809,6 +833,9 @@ echo "✅ 빌드 환경 초기화 완료"`;
 			axonSuccess(successMsg);
 			vscode.window.showInformationMessage(`${config.taskName}가 완료되었습니다!`);
 			
+			// 터미널 닫기 확인 팝업
+			await this.askToCloseTerminal(config.taskName);
+			
 		} catch (error) {
 			const errorMsg = `${config.taskName} 중 오류가 발생했습니다: ${error}`;
 			axonError(errorMsg);
@@ -913,6 +940,9 @@ echo "✅ 빌드 환경 초기화 완료"`;
 			axonSuccess(successMsg);
 			vscode.window.showInformationMessage(`${config.taskName}가 완료되었습니다!`);
 			
+			// 터미널 닫기 확인 팝업
+			await this.askToCloseTerminal(config.taskName);
+			
 		} catch (error) {
 			const errorMsg = `${config.taskName} 중 오류가 발생했습니다: ${error}`;
 			axonError(errorMsg);
@@ -942,11 +972,13 @@ echo "✅ 빌드 환경 초기화 완료"`;
 			].join('\n'),
 			getConfirmMsg: (machine, version) => 
 				`Yocto AP 빌드를 시작하시겠습니까?\n\nMACHINE: ${machine}\nSDK VERSION: ${version}\n\n이 작업은 시간이 오래 걸릴 수 있습니다.`,
-			getBuildCommands: (machine, version, projectRoot, envPath, buildDir) => `
+			getBuildCommands: (machine, version, projectRoot, envPath) => {
+			const apBuildScript = `${projectRoot}/poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh`;
+			return `
 #set -x
 cd "${projectRoot}"
 source "${envPath}"
-source poky/oe-init-build-env ${buildDir.replace(`${projectRoot}/`, '')}
+source "${apBuildScript}" ${machine} ${version}
 bitbake telechips-cgw-image
 bitbake -f -c make_fai telechips-cgw-image
 
@@ -957,7 +989,8 @@ echo "SDK VERSION: ${version}"
 echo ""
 echo "Press any key to close..."
 read -n1 -s -r
-`
+`;
+		}
 		});
 	}
 
@@ -1024,14 +1057,17 @@ read -n1 -s -r
 			].join('\n'),
 			getConfirmMsg: (machine, version) => 
 				`Yocto Kernel 빌드를 시작하시겠습니까?\n\nMACHINE: ${machine}\nSDK VERSION: ${version}\n\n⚠️ Kernel 컴파일 후 이미지를 생성합니다.\n이 작업은 시간이 오래 걸릴 수 있습니다.`,
-			getBuildCommands: (machine, version, projectRoot, envPath, buildDir) => `
+			getBuildCommands: (machine, version, projectRoot, envPath) => {
+			const apBuildScript = `${projectRoot}/poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh`;
+			return `
 #set -x
 cd "${projectRoot}"
 source "${envPath}"
-source poky/oe-init-build-env ${buildDir.replace(`${projectRoot}/`, '')}
+source "${apBuildScript}" ${machine} ${version}
 bitbake linux-telechips -f -c compile
-bitbake telechips-cgw-image
-bitbake -f -c make_fai telechips-cgw-image
+bitbake linux-telechips -c deploy
+#bitbake telechips-cgw-image
+#bitbake -f -c make_fai telechips-cgw-image
 
 echo ""
 echo "✅ Yocto Kernel 빌드가 완료되었습니다!"
@@ -1040,7 +1076,8 @@ echo "SDK VERSION: ${version}"
 echo ""
 echo "Press any key to close..."
 read -n1 -s -r
-`
+`;
+		}
 		});
 	}
 

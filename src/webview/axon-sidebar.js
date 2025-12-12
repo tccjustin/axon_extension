@@ -124,6 +124,9 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'btn-vscode-exclude':
                 vscode.postMessage({ command: 'execute', action: 'axon.vscodeExcludeFolders' });
                 break;
+            case 'btn-build-option-extraction':
+                vscode.postMessage({ command: 'execute', action: 'axon.buildOptionExtraction' });
+                break;
             // Build MCU
             case 'btn-mcu-run-build': {
                 const select = document.getElementById('mcu-build-select');
@@ -147,6 +150,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 vscode.postMessage({ command: 'execute', action: actions[select.value] });
                 break;
             }
+            case 'btn-fwdn-available-image':
+                vscode.postMessage({ command: 'execute', action: 'axon.FWDN_AVAILABLE_IMAGE' });
+                break;
             // Build Yocto
             case 'btn-yocto-run-build': {
                 const select = document.getElementById('yocto-build-select');
@@ -281,7 +287,8 @@ function updateProjectTypeUI(projectType) {
         mcu: document.getElementById('group-mcu-build'),
         yocto: document.getElementById('group-yocto-build'),
         devtool: document.getElementById('group-devtool'),
-        yoctoConfig: document.getElementById('group-yocto-config')
+        yoctoConfig: document.getElementById('group-yocto-config'),
+        buildOptionExtraction: document.getElementById('group-build-option-extraction')
     };
 
     // projectType이 없으면 Yocto 설정 그룹도 숨기기
@@ -298,6 +305,7 @@ function updateProjectTypeUI(projectType) {
     if (groups.yocto) groups.yocto.classList.toggle('hidden', isMcu);
     if (groups.devtool) groups.devtool.classList.toggle('hidden', isMcu);
     if (groups.yoctoConfig) groups.yoctoConfig.classList.toggle('hidden', isMcu);
+    if (groups.buildOptionExtraction) groups.buildOptionExtraction.classList.toggle('hidden', !isMcu);
 }
 
 function updateRecipesList(recipes) {

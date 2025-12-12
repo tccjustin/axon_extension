@@ -5,6 +5,13 @@ import { YoctoProjectBuilder } from './builder';
 
 /**
  * DevTool 관련 기능
+ * 
+ * ⚠️ Python 코드 작성 시 주의사항:
+ * - 모든 Python 코드는 Python 3.6 호환성을 유지해야 합니다
+ * - subprocess.run()에서 capture_output 사용 금지 (Python 3.7+)
+ *   → 대신 stdout=subprocess.PIPE, stderr=subprocess.PIPE 사용
+ * - text=True 대신 universal_newlines=True 사용
+ * - f-string은 Python 3.6부터 지원되므로 사용 가능
  */
 export class DevToolManager {
 	/**
@@ -143,94 +150,6 @@ source "${buildScript}" ${machine} ${version}`;
 		return true;
 	}
 
-	/**
-	 * telechips-cgw-rev.inc 파일 업데이트 스크립트 생성
-	 */
-	private static createUpdateRevIncScript(
-		recipeName: string,
-		recipeSourcePath: string,
-		yoctoRoot: string
-	): string {
-		return `
-#set -x # 디버깅을 위해 실행 명령 출력
-RECIPE_PN="${recipeName}"
-SRC_TREE_PATH="${recipeSourcePath}"
-INC_FILE="${yoctoRoot}/poky/meta-telechips/meta-dev/telechips-cgw-rev.inc"
-
-echo "🔍 Source Tree: \${SRC_TREE_PATH}"
-echo "🔍 Target Inc File: \${INC_FILE}"
-
-# 1. Git Commit ID 가져오기
-if [ -d "\${SRC_TREE_PATH}" ]; then
-    cd "\${SRC_TREE_PATH}"
-    COMMIT_ID=$(git rev-parse HEAD)
-    echo "✅ Git Commit ID: \${COMMIT_ID}"
-else
-    echo "❌ ERROR: 소스 디렉토리를 찾을 수 없습니다: \${SRC_TREE_PATH}"
-    exit 1
-fi
-
-if [ ! -f "\${INC_FILE}" ]; then
-    echo "❌ ERROR: telechips-cgw-rev.inc 파일을 찾을 수 없습니다: \${INC_FILE}"
-    exit 1
-fi
-
-# 2. 레시피별 변수명 결정
-TARGET_VAR=""
-case "\${RECIPE_PN}" in
-    "linux-telechips")
-        TARGET_VAR="KERNEL_SRC_DEV"
-        ;;
-    "m7-0"|"m7-1"|"m7-2"|"m7-np")
-        TARGET_VAR="MCU_SRC_DEV"
-        ;;
-    "dpi-app")
-        TARGET_VAR="DPI_APP_SRC_DEV"
-        ;;
-    "tpa-app")
-        TARGET_VAR="TPA_APP_SRC_DEV"
-        ;;
-    "u-boot-tcc")
-        TARGET_VAR="UBOOT_SRC_DEV"
-        ;;
-    *)
-        echo "⚠️ 알림: '\${RECIPE_PN}' 레시피는 telechips-cgw-rev.inc 자동 업데이트 대상이 아닙니다."
-        ;;
-esac
-
-# 3. 파일 수정
-if [ -n "\${TARGET_VAR}" ]; then
-    echo "📝 \${INC_FILE} 업데이트 체크 중..."
-    echo "   변수: \${TARGET_VAR}"
-    
-    if grep -q "^\\s*\${TARGET_VAR}\\s*[?:]*=\\s*\\\"\\\${AUTOREV}\\\"" "\${INC_FILE}"; then
-        echo "   현재 값이 \"\${AUTOREV}\"입니다. 업데이트를 진행합니다."
-        echo "   새로운 값: \${COMMIT_ID}"
-    
-        # 백업 생성
-        cp "\${INC_FILE}" "\${INC_FILE}.backup.\$(date +%Y%m%d_%H%M%S)"
-        
-        # sed를 사용하여 변수 값 변경 (AUTOREV -> COMMIT_ID)
-        sed -i "s/^\\s*\${TARGET_VAR}\\s*[?:]*=\\s*\\\"\\\${AUTOREV}\\\"/\${TARGET_VAR} = \\\"\${COMMIT_ID}\\\"/" "\${INC_FILE}"
-        
-        # 변경 확인
-        if grep -q "\${TARGET_VAR}.*\${COMMIT_ID}" "\${INC_FILE}"; then
-            echo "✅ 업데이트 완료: \${TARGET_VAR} = \${COMMIT_ID}"
-        else
-            echo "❌ 업데이트 실패: sed 치환이 적용되지 않았습니다."
-            echo "--- [Debug Info] ---"
-            grep "\${TARGET_VAR}" "\${INC_FILE}"
-            echo "--------------------"
-            exit 1
-        fi
-    else
-        echo "⚠️  업데이트 건너뜀: \${TARGET_VAR}의 값이 \"\${AUTOREV}\"가 아닙니다."
-        echo "   현재 설정값:"
-        grep "\${TARGET_VAR}" "\${INC_FILE}" || echo "   (변수를 찾을 수 없습니다)"
-    fi
-fi
-`;
-	}
 
 	/**
 	 * DevTool Create & Modify 실행
@@ -244,10 +163,11 @@ fi
 	 * 4. devtool modify 실행
 	 * 5. telechips-cgw-rev.inc 파일 수정
 	 * 
+	 * @param extensionPath - Extension 경로 (Python 스크립트 접근용)
 	 * @param onRecipeAdded - 레시피 추가 콜백
 	 * @param selectedRecipeName - 선택적 레시피 이름 (webview에서 선택한 경우)
 	 */
-	static async createAndModify(onRecipeAdded?: (recipeName: string) => void, selectedRecipeName?: string): Promise<void> {
+	static async createAndModify(extensionPath: string, onRecipeAdded?: (recipeName: string) => void, selectedRecipeName?: string): Promise<void> {
 		axonLog('🔧 [DevTool Create & Modify] 시작');
 
 		try {
@@ -383,32 +303,23 @@ fi
 				return;
 			}
 
-			// telechips-cgw-rev.inc 업데이트 스크립트 생성
-			const updateRevIncScript = this.createUpdateRevIncScript(recipeName, recipeSourcePath, yoctoRoot);
-
 			// workspace가 없을 때만 create-workspace 실행
 			const createWorkspaceCommand = workspaceExists
 				? `echo "ℹ️  DevTool workspace가 이미 존재하므로 create-workspace를 건너뜁니다: ${workspacePath}"`
 				: `devtool create-workspace ${workspacePath}`;
 
-			// devtool modify는 주석 처리됨 (실제로는 수동 실행)
+			// devtool modify 명령
 			const devtoolModifyCommand = `devtool modify ${recipeName} "${recipeSourcePath}"`;
 
 			const fullCommand = `cd "${yoctoRoot}"
 source poky/oe-init-build-env ${buildDir}
 ${createWorkspaceCommand}
 ${devtoolModifyCommand}
-${updateRevIncScript}
 echo ""
-echo "=========================================="
-echo "✅ DevTool Setup이 성공적으로 완료되었습니다!"
-echo "   레시피: ${recipeName}"
-echo "   빌드 환경: ${buildDir}"
-echo "   DevTool workspace: ${workspacePath}"
-echo "=========================================="
+echo "✅ devtool modify 완료"
 echo ""`;
 
-			axonLog(`🔨 실행할 명령 준비 완료`);
+			axonLog(`🔨 devtool 명령 실행 준비 완료`);
 
 			const yoctoRootUri = vscode.Uri.from({
 				scheme: workspaceFolder.uri.scheme,
@@ -416,6 +327,7 @@ echo ""`;
 				path: yoctoRoot
 			});
 
+			// 1. devtool create-workspace & modify 실행
 			await executeShellTask({
 				command: fullCommand,
 				cwd: yoctoRoot,
@@ -426,12 +338,70 @@ echo ""`;
 				cwdUri: yoctoRootUri
 			});
 
+			// 2. telechips-cgw-rev.inc 파일 업데이트 (Python 스크립트 실행)
+			axonLog(`🐍 telechips-cgw-rev.inc 파일 업데이트 시작...`);
+			
+			// Extension path에서 Python 스크립트 읽기
+			const localScriptPath = `${extensionPath}/scripts/update_telechips_cgw_rev.py`;
+			const localScriptUri = vscode.Uri.file(localScriptPath);
+			axonLog(`📂 로컬 스크립트 경로: ${localScriptPath}`);
+			
+			// 원격 환경의 임시 경로
+			const tempScriptName = `.axon_update_rev_${recipeName}.py`;
+			const tempScriptPath = `${yoctoRoot}/${tempScriptName}`;
+			const tempScriptUri = vscode.Uri.from({
+				scheme: workspaceFolder.uri.scheme,
+				authority: workspaceFolder.uri.authority,
+				path: tempScriptPath
+			});
+			
+			const incFilePath = `${yoctoRoot}/poky/meta-telechips/meta-dev/telechips-cgw-rev.inc`;
+			
+			try {
+				// 로컬 Python 스크립트 파일 읽기
+				const scriptContent = await vscode.workspace.fs.readFile(localScriptUri);
+				axonLog(`✅ 로컬 Python 스크립트 읽기: ${localScriptPath}`);
+				
+				// 원격 환경에 Python 스크립트 파일 복사
+				await vscode.workspace.fs.writeFile(tempScriptUri, scriptContent);
+				axonLog(`✅ 원격 환경에 Python 스크립트 복사: ${tempScriptPath}`);
+				
+				// Python 스크립트 실행
+				const updateCommand = `python3 "${tempScriptName}" "${recipeName}" "${recipeSourcePath}" "${incFilePath}"`;
+				
+				await executeShellTask({
+					command: updateCommand,
+					cwd: yoctoRoot,
+					taskName: `Update telechips-cgw-rev.inc: ${recipeName}`,
+					taskId: `updateRevInc_${recipeName}`,
+					showTerminal: true,
+					useScriptFile: false,
+					cwdUri: yoctoRootUri
+				});
+				
+			} finally {
+				// 임시 파일 삭제
+				try {
+					await vscode.workspace.fs.delete(tempScriptUri);
+					axonLog(`🗑️ 임시 Python 스크립트 삭제: ${tempScriptPath}`);
+				} catch (deleteError) {
+					axonLog(`⚠️ 임시 파일 삭제 실패 (무시): ${deleteError}`);
+				}
+			}
+
 			// 레시피 추가 콜백 호출
 			if (onRecipeAdded) {
 				onRecipeAdded(recipeName);
 			}
 
-			axonSuccess(`✅ DevTool Create & Modify가 완료되었습니다!\n레시피: ${recipeName}\n빌드 디렉토리: ${buildDir}`);
+			const successMsg = `✅ DevTool Setup이 성공적으로 완료되었습니다!\n\n` +
+				`레시피: ${recipeName}\n` +
+				`빌드 환경: ${buildDir}\n` +
+				`DevTool workspace: ${workspacePath}\n` +
+				`소스 경로: ${recipeSourcePath}`;
+			
+			axonSuccess(successMsg);
+			vscode.window.showInformationMessage(`DevTool Setup 완료: ${recipeName}`);
 
 		} catch (error) {
 			const errorMsg = `DevTool Create & Modify 실행 중 오류 발생: ${error}`;

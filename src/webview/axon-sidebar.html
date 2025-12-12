@@ -50,6 +50,16 @@
                 </div>
             </details>
 
+            <!-- Build Option Extraction (MCU Project Only) -->
+            <details id="group-build-option-extraction">
+                <summary><span class="codicon codicon-code"></span> Build Option Extraction</summary>
+                <div class="group-content">
+                    <button id="btn-build-option-extraction" title="Extract Build Options">
+                        <span class="codicon codicon-play"></span> Extract Build Options
+                    </button>
+                </div>
+            </details>
+
             <details open id="group-yocto-config">
                 <summary><span class="codicon codicon-package"></span> Yocto</summary>
                 <div class="group-content">
@@ -216,6 +226,12 @@
                 </select>
                 <button id="btn-run-fwdn" title="Run FWDN">
                     <span class="codicon codicon-play"></span>
+                </button>
+            </div>
+            <div class="input-group" style="margin-top: 8px;">
+                <button id="btn-fwdn-available-image" title="FWDN Specific Image File" style="width: 100%;">
+                    <span class="codicon codicon-file"></span>
+                    FWDN Specific Image File
                 </button>
             </div>
         </div>

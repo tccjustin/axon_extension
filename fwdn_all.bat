@@ -147,7 +147,7 @@ echo.
 
 :: Low Level Format - SNOR
 echo Low Level Format: SNOR
-::"%FWDN_EXE%" --low-format --storage snor
+"%FWDN_EXE%" --low-format --storage snor
 if %errorlevel% neq 0 (
     echo ERROR: Low level format (SNOR) failed with error code %errorlevel%
     pause

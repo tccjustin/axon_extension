@@ -91,3 +91,167 @@ Related TCS:
 ## 참고 파일
 - `src/utils.ts`: 경로 처리 유틸리티 함수 및 상세 주석
 - `src/projects/yocto/devtool.ts`: 리눅스 경로 처리 예시
+
+# ============================================================
+# Python 스크립트 실행 공통 함수 사용 지침
+# ============================================================
+
+## 개요
+원격 환경에서 Python 코드를 임시 파일로 생성하고 실행한 후 자동으로 삭제하는 공통 함수입니다.
+`executeShellTask`와 유사한 구조로, Python 스크립트 전용으로 최적화되었습니다.
+
+## 함수 위치
+- 파일: `src/projects/common/shell-utils.ts`
+- 함수: `executePythonScript(options: PythonScriptOptions): Promise<void>`
+
+## 기본 사용법
+
+### 1. 기본 예시
+```typescript
+import { executePythonScript } from '../common/shell-utils';
+
+await executePythonScript({
+    pythonCode: `
+import json
+import os
+
+# Python 코드 작성
+data = {"key": "value"}
+print(json.dumps(data))
+    `,
+    cwd: '/path/to/project',
+    taskName: 'Run Python Script',
+    taskId: 'run-python-script',
+    showTerminal: false
+});
+```
+
+### 2. 옵션 설명
+
+| 옵션 | 타입 | 필수 | 기본값 | 설명 |
+|------|------|------|--------|------|
+| `pythonCode` | `string` | ✅ | - | 실행할 Python 코드 |
+| `cwd` | `string` | ✅ | - | 작업 디렉토리 (리눅스 경로 형식) |
+| `taskName` | `string` | ✅ | - | 작업 이름 (VS Code Task에 표시) |
+| `taskId` | `string` | ✅ | - | 작업 ID (고유해야 함, 임시 파일명에 사용) |
+| `showTerminal` | `boolean` | ❌ | `false` | `true`: 터미널 표시 및 포커스, `false`: 숨김 |
+| `pythonCommand` | `string` | ❌ | `'python3'` | Python 실행 명령어 (`python3`, `python`, `python2` 등) |
+| `cwdUri` | `vscode.Uri` | ❌ | - | cwd를 URI로 직접 전달 (원격 환경 지원, 고급 옵션) |
+
+### 3. 실제 사용 예시
+
+#### 예시 1: JSON 파일 읽기/쓰기
+```typescript
+await executePythonScript({
+    pythonCode: `
+import json
+import os
+
+# compile_commands.json 읽기
+with open('compile_commands.json', 'r') as f:
+    compile_commands = json.load(f)
+
+# 처리 로직
+defines = set()
+for command in compile_commands:
+    arguments = command.get('arguments', [])
+    for arg in arguments:
+        if arg.startswith('-D'):
+            defines.add(arg[2:])
+
+# c_cpp_properties.json 업데이트
+c_cpp_properties_path = os.path.join('.vscode', 'c_cpp_properties.json')
+with open(c_cpp_properties_path, 'r') as f:
+    c_cpp_properties = json.load(f)
+
+for config in c_cpp_properties.get('configurations', []):
+    config['defines'] = sorted(list(defines))
+
+with open(c_cpp_properties_path, 'w') as f:
+    json.dump(c_cpp_properties, f, indent=4)
+
+print("✅ c_cpp_properties.json 업데이트 완료")
+    `,
+    cwd: projectRoot,
+    taskName: 'Update c_cpp_properties',
+    taskId: 'update-cpp-properties',
+    showTerminal: false
+});
+```
+
+#### 예시 2: 터미널에 출력 표시
+```typescript
+await executePythonScript({
+    pythonCode: `
+import sys
+print("Processing...")
+for i in range(1, 6):
+    print(f"Step {i}/5")
+    sys.stdout.flush()
+print("✅ 완료")
+    `,
+    cwd: '/path/to/project',
+    taskName: 'Process Data',
+    taskId: 'process-data',
+    showTerminal: true  // 터미널에 출력 표시
+});
+```
+
+#### 예시 3: Python 버전 지정
+```typescript
+await executePythonScript({
+    pythonCode: `
+import sys
+print(f"Python version: {sys.version}")
+    `,
+    cwd: '/path/to/project',
+    taskName: 'Check Python Version',
+    taskId: 'check-python-version',
+    pythonCommand: 'python',  // python3 대신 python 사용
+    showTerminal: false
+});
+```
+
+## 주요 특징
+
+### ✅ 자동 처리 기능
+1. **임시 파일 생성**: `.axon_temp_{taskId}.py` 형식으로 자동 생성
+2. **원격 환경 지원**: vscode-remote:// scheme 자동 감지 및 처리
+3. **자동 파일 삭제**: 실행 완료 후 (성공/실패 관계없이) 임시 파일 자동 삭제
+4. **에러 처리**: 에러 발생 시에도 임시 파일 정리 보장
+
+### ✅ 원격 환경 지원
+- 로컬 환경 (`file://`)과 원격 환경 (`vscode-remote://`) 자동 감지
+- 워크스페이스의 scheme을 사용하여 올바른 URI 생성
+- `cwdUri` 옵션으로 직접 URI 지정 가능 (고급 사용)
+
+### ✅ 에러 처리
+- 작업 디렉토리 존재 여부 확인
+- Python 실행 실패 시 명확한 에러 메시지
+- 파일 생성 실패 시에도 정리 로직 실행
+
+## 주의사항
+
+### ⚠️ 경로 형식
+- `cwd`는 **리눅스 경로 형식**을 사용해야 합니다 (슬래시 `/` 사용)
+- 예: `/home/user/project` ✅
+- 예: `C:\Users\project` ❌ (Windows 경로 사용 금지)
+
+### ⚠️ taskId 고유성
+- `taskId`는 고유해야 합니다 (임시 파일명에 사용됨)
+- 동시에 같은 `taskId`를 사용하면 파일 충돌 가능
+- 예: `'update-cpp-properties'`, `'process-data-123'` 등
+
+### ⚠️ Python 코드 작성
+- Python 코드는 문자열로 작성하므로 따옴표 이스케이프 주의
+- 멀티라인 문자열 사용 시 백틱(`) 또는 템플릿 리터럴 사용 권장
+- Python 코드 내에서 상대 경로는 `cwd` 기준으로 해석됨
+
+## 관련 함수
+- `executeShellTask()`: Bash 스크립트 실행용 공통 함수 (동일 파일)
+- `findProjectRootByShell()`: 프로젝트 루트 찾기 공통 함수 (동일 파일)
+
+## 참고 파일
+- `src/projects/common/shell-utils.ts`: 구현 파일
+- `src/projects/common/types.ts`: `PythonScriptOptions` 타입 정의
+- `src/projects/mcu/builder.ts`: 실제 사용 예시 (예정)
