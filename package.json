@@ -3,9 +3,12 @@
   "displayName": "Axon",
   "publisher": "justin-lee",
   "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.4.3",
+  "version": "0.4.8",
   "icon": "icon.png",
-  "extensionKind": ["ui","workspace"],
+  "extensionKind": [
+    "ui",
+    "workspace"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/tccjustin/axon_extension.git"
@@ -18,11 +21,11 @@
   ],
   "activationEvents": [
     "onCommand:axon.FWDN_ALL",
+    "onCommand:axon.FWDN_LOW_FORMAT",
+    "onCommand:axon.FWDN_AVAILABLE_IMAGE",
     "onCommand:axon.mcuBuildMake",
     "onCommand:axon.mcuBuildAll",
-    "onCommand:axon.mcuSelectCore",
     "onCommand:axon.mcuClean",
-    "onCommand:axon.buildAndCopyScripts",
     "onCommand:axon.createMcuStandaloneProject",
     "onCommand:axon.createYoctoProject",
     "onCommand:axon.buildYoctoAp",
@@ -30,9 +33,7 @@
     "onCommand:axon.devtoolCreateModify",
     "onCommand:axon.devtoolBuild",
     "onCommand:axon.vscodeExcludeFolders",
-    "onView:axonCreateProjectsView",
-    "onView:axonConfigurationsView",
-    "onView:axonBuildView"
+    "onView:axonSidebar"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -40,6 +41,16 @@
       {
         "command": "axon.FWDN_ALL",
         "title": "FWDN",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.FWDN_LOW_FORMAT",
+        "title": "FWDN Low Level Format",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.FWDN_AVAILABLE_IMAGE",
+        "title": "FWDN Specific Image File",
         "category": "Axon"
       },
       {
@@ -53,18 +64,13 @@
         "category": "Axon"
       },
       {
-        "command": "axon.mcuSelectCore",
-        "title": "MCU Select Core",
-        "category": "Axon"
-      },
-      {
         "command": "axon.mcuClean",
         "title": "MCU Clean",
         "category": "Axon"
       },
       {
-        "command": "axon.buildAndCopyScripts",
-        "title": "Build and Copy Scripts",
+        "command": "axon.buildOptionExtraction",
+        "title": "Build Option Extraction",
         "category": "Axon"
       },
       {
@@ -139,27 +145,17 @@
       }
     ],
     "views": {
-    "axon": [
-      {
-        "id": "axonCreateProjectsView",
-        "name": "Create Projects",
-        "icon": "$(new-folder)",
-        "contextualTitle": "Project Creation Tools"
-      },
-      {
-        "id": "axonConfigurationsView",
-        "name": "Configurations",
-        "icon": "$(settings-gear)",
-        "contextualTitle": "Configuration Settings"
-      },
-      {
-        "id": "axonBuildView",
-        "name": "Build",
-        "icon": "$(tools)",
-        "contextualTitle": "Build Tools"
-      }
-    ]
-  },
+      "axon": [
+        {
+          "id": "axonSidebar",
+          "type": "webview",
+          "name": "Control Panel",
+          "icon": "resources/axon-icon.svg",
+          "contextualTitle": "Axon Controls",
+          "retainContextWhenHidden": true
+        }
+      ]
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -169,8 +165,7 @@
         }
       ]
     },
-  "menus": {
-  },
+    "menus": {},
     "configuration": {
       "title": "Axon",
       "properties": {
@@ -181,24 +176,37 @@
         },
         "axon.projectType": {
           "type": "string",
-          "enum": ["mcu_project", "yocto_project"],
+          "enum": [
+            "mcu_project",
+            "yocto_project"
+          ],
           "default": "",
-          "description": "Project type (automatically sets buildAxonFolderName and bootFirmwareFolderName)"
+          "description": "Project type (automatically sets buildAxonFolderName)"
         },
         "axon.buildAxonFolderName": {
           "type": "string",
           "default": "",
           "description": "[Auto-set by projectType] Project folder name to search for (mcu-tcn100x or build-axon)"
         },
-        "axon.bootFirmwareFolderName": {
-          "type": "string",
-          "default": "",
-          "description": "[Auto-set by projectType] Boot firmware folder name to search for (boot-firmware-tcn100x or boot-firmware_tcn1000)"
-        },
         "axon.yocto.projectRoot": {
           "type": "string",
           "default": "",
           "description": "Yocto project root directory path (automatically set when creating a project)"
+        },
+        "axon.yocto.imagesDir": {
+          "type": "string",
+          "default": "",
+          "description": "Yocto images directory path where SD_Data.gpt is located (automatically set when found)"
+        },
+        "axon.mcu.projectRoot": {
+          "type": "string",
+          "default": "",
+          "description": "MCU project root directory path (automatically set when detecting tcn100x_defconfig)"
+        },
+        "axon.bootFirmware.path": {
+          "type": "string",
+          "default": "",
+          "description": "Boot Firmware directory path (automatically set when detecting prebuilt folder)"
         },
         "axon.wsl.distroName": {
           "type": "string",
@@ -265,5 +273,8 @@
     "@vscode/vsce": "^3.6.2",
     "typescript": "^4.9.4",
     "vsce": "^2.12.0"
+  },
+  "dependencies": {
+    "@vscode/codicons": "^0.0.43"
   }
 }

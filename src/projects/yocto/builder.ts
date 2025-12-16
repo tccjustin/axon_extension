@@ -1,7 +1,30 @@
 import * as vscode from 'vscode';
 import { axonLog, axonError, axonSuccess } from '../../logger';
-import { executeShellTask } from '../common/shell-utils';
-import { getAxonConfig, findBootFirmwareFolder } from '../../utils';
+import { executeShellTask, findProjectRootByShell } from '../common/shell-utils';
+
+/**
+ * Yocto 빌드 작업 설정 인터페이스
+ */
+interface YoctoBuildTaskConfig {
+	taskName: string;
+	taskId: string;
+	buildType: 'ap' | 'mcu' | 'kernel';
+	getConfigInfo: (machine: string, version: string) => string;
+	getConfirmMsg: (machine: string, version: string) => string;
+	getBuildCommands: (machine: string, version: string, projectRoot: string, envPath: string, buildDir: string) => string;
+}
+
+/**
+ * Yocto 클린 작업 설정 인터페이스
+ */
+interface YoctoCleanTaskConfig {
+	taskName: string;
+	taskId: string;
+	cleanType: 'ap' | 'mcu' | 'all';
+	getBuildDir: (projectRoot: string) => string | string[];
+	getConfirmMsg: (buildDir: string | string[]) => string;
+	getCleanCommand: (buildDir: string) => string;
+}
 
 /**
  * Yocto 프로젝트 빌드 관련 기능
@@ -18,10 +41,34 @@ export class YoctoProjectBuilder {
 	private static readonly DEFAULT_VERSION = 'dev';
 
 	/**
+	 * 작업 완료 후 터미널 닫기 확인 팝업
+	 */
+	private static async askToCloseTerminal(taskName: string): Promise<void> {
+		const result = await vscode.window.showInformationMessage(
+			`${taskName}가 완료되었습니다.\n터미널을 닫겠습니까?`,
+			{ modal: true },
+			'Yes',
+			'No'
+		);
+		
+		if (result === 'Yes') {
+			const activeTerminal = vscode.window.activeTerminal;
+			if (activeTerminal) {
+				axonLog(`✅ 사용자가 터미널 닫기를 선택했습니다. 터미널을 닫습니다.`);
+				activeTerminal.dispose();
+			} else {
+				axonLog(`⚠️ 활성 터미널이 없습니다.`);
+			}
+		} else {
+			axonLog(`ℹ️ 사용자가 터미널을 열어둡니다.`);
+		}
+	}
+
+	/**
 	 * AP 빌드용 MACHINE / VERSION 설정을 로드하거나 사용자에게 선택받고
 	 * config.json에 저장까지 수행하는 공통 헬퍼
 	 */
-	private static async ensureApBuildConfig(
+	static async ensureApBuildConfig(
 		projectRoot: string,
 		workspaceFolder: vscode.WorkspaceFolder
 	): Promise<{ machine: string; cgwVersion: string } | null> {
@@ -106,48 +153,6 @@ export class YoctoProjectBuilder {
 		}
 
 		return { machine: machine!, cgwVersion: cgwVersion! };
-	}
-
-	/**
-	 * AP 빌드 환경(oe-init-build-env + local.conf 캐시 경로)만 설정하는 헬퍼
-	 * - bitbake 빌드는 실행하지 않음
-	 */
-	private static async setupApEnvironmentOnly(
-		projectRoot: string,
-		workspaceFolder: vscode.WorkspaceFolder,
-		machine: string,
-		cgwVersion: string
-	): Promise<{ envPath: string; buildDir: string } | null> {
-		// buildtools 환경 확인
-		const envPath = await this.ensureBuildtoolsEnvironment(projectRoot, workspaceFolder);
-		if (!envPath) {
-			return null;
-		}
-
-		// 빌드 디렉토리 설정 (cgw-build.sh 실행)
-		const buildDir = `${projectRoot}/build/${machine}`;
-		axonLog(`📁 빌드 디렉토리: ${buildDir}`);
-
-		const setupSuccess = await this.setupBuildDirectoryWithCgwScript(
-			projectRoot,
-			envPath,
-			machine,
-			cgwVersion,
-			workspaceFolder
-		);
-		if (!setupSuccess) {
-			return null;
-		}
-
-		// local.conf 파일 수정 (캐시 경로 설정)
-		axonLog('📝 local.conf 파일 수정 중...');
-		const updated = await this.updateLocalConfCachePaths(buildDir, workspaceFolder);
-		if (!updated) {
-			axonLog('⚠️ local.conf 캐시 경로 업데이트에 실패했습니다.');
-			// 환경 초기화 자체는 완료되었을 수 있으므로, 여기서는 치명적 에러로 보지 않고 계속 진행
-		}
-
-		return { envPath, buildDir };
 	}
 
 	/**
@@ -240,109 +245,6 @@ export class YoctoProjectBuilder {
 		return { mcuMachine: mcuMachine!, mcuVersion: mcuVersion! };
 	}
 
-	/**
-	 * MCU 빌드 환경(mcu-build.sh + local.conf 캐시 경로)만 설정하는 헬퍼
-	 * - bitbake 빌드는 실행하지 않음
-	 */
-	private static async setupMcuEnvironmentOnly(
-		projectRoot: string,
-		workspaceFolder: vscode.WorkspaceFolder,
-		mcuMachine: string,
-		mcuVersion: string
-	): Promise<{ envPath: string; buildDir: string } | null> {
-		// buildtools 환경 확인 (Unix 경로)
-		const envPath = `${projectRoot}/buildtools/environment-setup-x86_64-pokysdk-linux`;
-		const envUri = vscode.Uri.from({
-			scheme: workspaceFolder.uri.scheme,
-			authority: workspaceFolder.uri.authority,
-			path: envPath
-		});
-
-		try {
-			await vscode.workspace.fs.stat(envUri);
-			axonLog(`✅ Buildtools 환경 확인: ${envPath}`);
-		} catch {
-			const errorMsg = 'Buildtools 환경이 설정되지 않았습니다. 먼저 "build toolchain"을 실행해야 합니다.';
-			axonError(errorMsg);
-			vscode.window.showErrorMessage(errorMsg);
-			return null;
-		}
-
-		// 빌드 스크립트 및 디렉토리 경로 설정 (Unix 경로)
-		const mcuBuildScript = `${projectRoot}/poky/meta-telechips/meta-dev/meta-mcu-dev/mcu-build.sh`;
-		const mcuBuildScriptUri = vscode.Uri.from({
-			scheme: workspaceFolder.uri.scheme,
-			authority: workspaceFolder.uri.authority,
-			path: mcuBuildScript
-		});
-
-		const buildDir = `${projectRoot}/build/${mcuMachine}`;
-
-		try {
-			await vscode.workspace.fs.stat(mcuBuildScriptUri);
-			axonLog(`✅ MCU 빌드 스크립트 확인: ${mcuBuildScript}`);
-		} catch {
-			const errorMsg = `MCU 빌드 스크립트를 찾을 수 없습니다: ${mcuBuildScript}`;
-			axonError(errorMsg);
-			vscode.window.showErrorMessage(errorMsg);
-			return null;
-		}
-
-		axonLog(`📁 빌드 디렉토리: ${buildDir}`);
-
-		// 환경만 설정 (bitbake 실행 없음)
-		const commands = [
-			`cd "${projectRoot}"`,
-			`source "${envPath}"`,
-			`source "${mcuBuildScript}" ${mcuMachine} ${mcuVersion}`,
-			`echo "✅ MCU 빌드 환경 설정 완료"`
-		];
-
-		const fullCommand = commands.join(' && ');
-
-		axonLog('🚀 MCU 빌드 환경 설정 명령:');
-		commands.forEach(cmd => axonLog(`  ${cmd}`));
-
-		await executeShellTask({
-			command: fullCommand,
-			cwd: projectRoot,
-			taskName: 'Yocto MCU Build Setup',
-			taskId: 'yoctoMcuBuildSetup',
-			showTerminal: true,
-			useScriptFile: true
-		});
-
-		// MCU local.conf에도 캐시 경로 설정 시도
-		const updated = await this.updateLocalConfCachePaths(buildDir, workspaceFolder);
-		if (!updated) {
-			axonLog('⚠️ MCU local.conf 캐시 경로 업데이트에 실패했습니다.');
-		}
-
-		return { envPath, buildDir };
-	}
-
-	/**
-	 * bootFirmwareFolderName 설정 확인 및 선택
-	 * (프로젝트 타입 기반으로 자동 설정)
-	 */
-	private static async ensureBootFirmwareFolderName(): Promise<string | undefined> {
-		const { ensureProjectType, getAxonConfig } = await import('../../utils');
-		
-		// 프로젝트 타입 선택 (자동으로 bootFirmwareFolderName도 설정됨)
-		const projectType = await ensureProjectType();
-		
-		if (!projectType) {
-			axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
-			return undefined;
-		}
-		
-		// 설정된 bootFirmwareFolderName 반환
-		const config = getAxonConfig();
-		axonLog(`✅ bootFirmwareFolderName: ${config.bootFirmwareFolderName}`);
-		
-		return config.bootFirmwareFolderName;
-	}
-	
 	/**
 	 * buildtools 환경 확인 및 경로 반환
 	 * 
@@ -636,9 +538,10 @@ echo "✅ 빌드 환경 초기화 완료"`;
 	 * Yocto 프로젝트 루트 경로 찾기
 	 * 
 	 * 전략:
-	 * 1. settings.json에 저장된 경로 확인 (빠름)
-	 * 2. boot-firmware 폴더를 찾아서 그 부모 폴더 반환 (자동 탐지)
-	 * 3. 찾은 경로를 settings.json에 저장 (다음번에 빠르게 사용)
+	 * 1. .vscode/settings.json 파일을 직접 읽어서 axon.yocto.projectRoot 확인
+	 * 2. root가 있으면 반환
+	 * 3. root가 없으면 리눅스 shell 스크립트로 poky 찾기 + 절대 경로 계산 + 임시 파일 저장
+	 * 4. 임시 파일 읽어서 settings.json에 저장 후 반환
 	 * 
 	 * @returns Unix 경로 형식 문자열 (/home/..., /mnt/..., 등)
 	 */
@@ -659,95 +562,189 @@ echo "✅ 빌드 환경 초기화 완료"`;
 		axonLog(`🌐 환경: WSL/SSH (scheme: ${workspaceFolder.uri.scheme})`);
 		axonLog(`📁 워크스페이스 경로: ${workspacePath}`);
 		
-		const config = vscode.workspace.getConfiguration('axon');
+		// 1. settings.json 파일 직접 읽기
+		const vscodeFolder = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode');
+		const settingsFile = vscode.Uri.joinPath(vscodeFolder, 'settings.json');
 		
-		// 1. settings.json에서 저장된 경로 확인
-		const savedProjectRoot = config.get<string>('yocto.projectRoot');
+		let savedProjectRoot: string | undefined;
 		
-		if (savedProjectRoot && savedProjectRoot.trim() !== '') {
-			axonLog(`🔍 저장된 Yocto 프로젝트 루트 확인 중: ${savedProjectRoot}`);
+		try {
+			const settingsContent = await vscode.workspace.fs.readFile(settingsFile);
+			const settingsText = Buffer.from(settingsContent).toString('utf8');
+			const settings = JSON.parse(settingsText);
+			savedProjectRoot = settings['axon.yocto.projectRoot'];
 			
-			try {
-				const savedUri = vscode.Uri.from({
-					scheme: workspaceFolder.uri.scheme,
-					authority: workspaceFolder.uri.authority,
-					path: savedProjectRoot
-				});
+			if (savedProjectRoot && savedProjectRoot.trim() !== '') {
+				axonLog(`🔍 저장된 Yocto 프로젝트 루트 확인 중: ${savedProjectRoot}`);
 				
-				const pokyUri = vscode.Uri.joinPath(savedUri, 'poky');
-				const axonConfig = getAxonConfig();
-				const bootFirmwareUri = vscode.Uri.joinPath(savedUri, axonConfig.bootFirmwareFolderName);
-				
-				// 파일 존재 확인
+				// 저장된 경로 유효성 검증
 				try {
-					await vscode.workspace.fs.stat(pokyUri);
-					axonLog(`✅ 저장된 Yocto 프로젝트 루트 사용: ${savedProjectRoot}`);
-					return savedProjectRoot;
-				} catch {
-					try {
-						await vscode.workspace.fs.stat(bootFirmwareUri);
+					const savedUri = vscode.Uri.from({
+						scheme: workspaceFolder.uri.scheme,
+						authority: workspaceFolder.uri.authority,
+						path: savedProjectRoot
+					});
+					
+					const pokyUri = vscode.Uri.joinPath(savedUri, 'poky');
+					const stat = await vscode.workspace.fs.stat(pokyUri);
+					
+					if (stat.type === vscode.FileType.Directory) {
 						axonLog(`✅ 저장된 Yocto 프로젝트 루트 사용: ${savedProjectRoot}`);
 						return savedProjectRoot;
-					} catch {
-						axonLog(`⚠️ 저장된 경로가 유효하지 않습니다. 재탐색을 시작합니다.`);
 					}
+				} catch {
+					axonLog(`⚠️ 저장된 경로에 poky 디렉토리가 없습니다. 재탐색을 시작합니다.`);
 				}
-			} catch (error) {
-				axonLog(`⚠️ 저장된 경로 검증 실패. 재탐색을 시작합니다: ${error}`);
 			}
+		} catch (error) {
+			// settings.json 파일이 없거나 읽기 실패한 경우 (정상적인 경우)
+			axonLog(`📝 settings.json 파일을 읽을 수 없습니다. 새로 탐색합니다.`);
 		}
 		
-		// 2. boot-firmware 폴더 찾기 (자동 탐지)
-		axonLog('🔍 boot-firmware 폴더를 찾아 Yocto 프로젝트 루트 탐지 중...');
-		const bootFirmwarePath = await findBootFirmwareFolder();
+		// 2. root가 없으면 리눅스 shell 스크립트로 찾기
+		axonLog('🔍 poky 디렉토리를 찾아 Yocto 프로젝트 루트 탐지 중...');
+		const projectRoot = await this.findYoctoProjectRootByShell(workspaceFolder);
 		
-		if (bootFirmwarePath) {
-			let projectRoot: string;
+		if (projectRoot) {
+			axonLog(`✅ Yocto 프로젝트 루트 발견: ${projectRoot}`);
 			
-			// URI 문자열인지 확인 (원격 환경)
-			if (bootFirmwarePath.startsWith('vscode-remote://')) {
-				// URI를 파싱하여 부모 경로 가져오기
-				const bootFirmwareUri = vscode.Uri.parse(bootFirmwarePath);
-				const projectRootUri = vscode.Uri.joinPath(bootFirmwareUri, '..');
-				projectRoot = projectRootUri.path; // Unix 경로 반환
-				axonLog(`✅ Yocto 프로젝트 루트 발견: ${projectRoot}`);
-			} else {
-				// 일반 경로 - Unix 경로로 간주
-				projectRoot = bootFirmwarePath.substring(0, bootFirmwarePath.lastIndexOf('/'));
-				axonLog(`✅ Yocto 프로젝트 루트 발견: ${projectRoot}`);
-			}
-			
-			// 3. settings.json에 저장 (다음번에 빠르게 사용)
+			// 3. settings.json에 저장
 			try {
-				await config.update('yocto.projectRoot', projectRoot, vscode.ConfigurationTarget.Workspace);
-				axonLog(`💾 Yocto 프로젝트 루트를 settings.json에 저장했습니다.`);
+				axonLog(`💾 settings.json에 프로젝트 루트 저장 시도: ${projectRoot}`);
+				await this.updateSettingsJson(workspaceFolder, { 'axon.yocto.projectRoot': projectRoot });
+				axonLog(`✅ Yocto 프로젝트 루트를 settings.json에 저장했습니다.`);
 			} catch (error) {
-				axonLog(`⚠️ settings.json 저장 실패 (무시): ${error}`);
+				axonLog(`⚠️ settings.json 저장 실패: ${error}`);
+				if (error instanceof Error) {
+					axonLog(`   오류 상세: ${error.message}`);
+					axonLog(`   스택: ${error.stack}`);
+				}
+				// 저장 실패해도 경로는 반환
 			}
 			
 			return projectRoot;
 		}
 		
-		// 3. 찾지 못한 경우
+		// 찾지 못한 경우
 		throw new Error(
 			`Yocto 프로젝트 루트를 찾을 수 없습니다.\n\n` +
 			`확인 사항:\n` +
-			`- boot-firmware_tcn1000 폴더가 있는지 확인하세요.\n` +
+			`- poky 디렉토리가 워크스페이스 또는 그 하위 2단계까지 있는지 확인하세요.\n` +
+			`- .repo 폴더 내부의 poky는 제외됩니다.\n` +
 			`- 워크스페이스: ${workspacePath}`
 		);
 	}
-	
+
 	/**
-	 * Yocto AP 빌드 실행
-	 * build-axon.py의 action_choice==2 (build ap) 로직 구현
+	 * 리눅스 shell 스크립트로 Yocto 프로젝트 루트 찾기
+	 * poky 디렉토리를 찾아서 상위 디렉토리의 절대 경로를 계산하고 임시 파일에 저장
+	 * 
+	 * @param workspaceFolder - 워크스페이스 폴더
+	 * @returns 프로젝트 루트의 절대 경로 또는 null
 	 */
-	static async buildAp(): Promise<void> {
-		axonLog('🔨 Yocto AP 빌드 시작...');
+	private static async findYoctoProjectRootByShell(workspaceFolder: vscode.WorkspaceFolder): Promise<string | null> {
+		return await findProjectRootByShell({
+			workspaceFolder,
+			findPattern: 'poky',
+			maxDepth: 3,
+			findType: 'd',
+			parentLevels: 1,
+			excludePattern: '*/.repo/*',
+			taskName: 'Find Yocto Project Root',
+			taskId: 'find-yocto-root',
+			resultFilePrefix: 'axon_project_root'
+		});
+	}
+
+	/**
+	 * settings.json 파일 업데이트
+	 * 기존 설정을 보존하면서 새로운 설정을 추가/업데이트
+	 * 
+	 * @param workspaceFolder - 워크스페이스 폴더
+	 * @param settings - 추가/업데이트할 설정 객체
+	 */
+	private static async updateSettingsJson(
+		workspaceFolder: vscode.WorkspaceFolder,
+		settings: Record<string, any>
+	): Promise<void> {
+		const vscodeFolder = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode');
+		
+		// .vscode 폴더 생성
+		try {
+			await vscode.workspace.fs.createDirectory(vscodeFolder);
+		} catch {
+			// 이미 존재하는 경우 무시
+		}
+		
+		// settings.json 파일 경로
+		const settingsFile = vscode.Uri.joinPath(vscodeFolder, 'settings.json');
+		
+		// 기존 settings.json 읽기 (있으면)
+		let existingSettings: any = {};
+		try {
+			const existingContent = await vscode.workspace.fs.readFile(settingsFile);
+			let existingText = Buffer.from(existingContent).toString('utf8');
+			
+			if (existingText.trim() === '') {
+				axonLog(`⚠️ settings.json 파일이 비어있습니다.`);
+			} else {
+				// VS Code settings.json은 주석과 trailing comma를 허용하므로 전처리 필요
+				// 1. 줄 단위 주석 제거 (// 로 시작하는 주석)
+				existingText = existingText.replace(/\/\/.*$/gm, '');
+				// 2. 블록 주석 제거 (/* ... */)
+				existingText = existingText.replace(/\/\*[\s\S]*?\*\//g, '');
+				// 3. trailing comma 제거 (객체/배열의 마지막 쉼표)
+				existingText = existingText.replace(/,(\s*[}\]])/g, '$1');
+				
+				existingSettings = JSON.parse(existingText);
+				axonLog(`📖 기존 settings.json 파일을 읽었습니다.`);
+				axonLog(`   기존 설정 키 개수: ${Object.keys(existingSettings).length}`);
+				axonLog(`   기존 설정 키 목록: ${Object.keys(existingSettings).join(', ')}`);
+			}
+		} catch (error) {
+			// 파일이 없거나 파싱 실패한 경우 빈 객체 사용
+			if (error instanceof Error) {
+				axonLog(`⚠️ settings.json 읽기 실패: ${error.message}`);
+			} else {
+				axonLog(`⚠️ settings.json 읽기 실패: ${error}`);
+			}
+			axonLog(`📝 새로운 settings.json 파일을 생성합니다.`);
+		}
+		
+		// 설정 추가 또는 업데이트
+		axonLog(`➕ 추가할 설정: ${JSON.stringify(settings)}`);
+		Object.assign(existingSettings, settings);
+		axonLog(`📋 병합 후 설정 키 개수: ${Object.keys(existingSettings).length}`);
+		axonLog(`📋 병합 후 설정 키 목록: ${Object.keys(existingSettings).join(', ')}`);
+		
+		// JSON 문자열로 변환 (들여쓰기 포함)
+		const settingsContent = JSON.stringify(existingSettings, null, 4);
+		
+		// 파일 쓰기
+		try {
+			await vscode.workspace.fs.writeFile(settingsFile, Buffer.from(settingsContent, 'utf8'));
+			axonLog(`✅ settings.json 파일 저장 완료: ${settingsFile.path}`);
+		} catch (error) {
+			axonLog(`❌ settings.json 파일 쓰기 실패: ${error}`);
+			if (error instanceof Error) {
+				axonLog(`   오류 상세: ${error.message}`);
+			}
+			throw error;
+		}
+	}
+
+	/**
+	 * Yocto 빌드 작업 공통 실행 함수
+	 */
+	private static async executeYoctoBuildTask(config: YoctoBuildTaskConfig): Promise<void> {
+		axonLog(`🔨 ${config.taskName} 시작...`);
 		
 		try {
-			// 0. bootFirmwareFolderName 설정 확인 및 선택
-			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
-			if (!bootFirmwareFolderName) {
+			// 프로젝트 타입 확인
+			const { ensureProjectType } = await import('../../utils');
+			const projectType = await ensureProjectType();
+			if (!projectType) {
+				axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
 				vscode.window.showInformationMessage('빌드가 취소되었습니다.');
 				return;
 			}
@@ -760,503 +757,94 @@ echo "✅ 빌드 환경 초기화 완료"`;
 			const workspaceFolder = vscode.workspace.workspaceFolders![0];
 			
 			// 2. 빌드 설정 로드 또는 선택 (config.json)
-			const apConfig = await this.ensureApBuildConfig(projectRoot, workspaceFolder);
-			if (!apConfig) {
-				return;
-			}
-			const { machine, cgwVersion } = apConfig;
+			let machine: string, version: string, envPath: string, buildDir: string;
 			
-			// 3. 빌드 설정 확인 표시
-			const configInfo = [
-				'',
-				'==================================================',
-				'           AP Build Configuration',
-				'==================================================',
-				`  AP MACHINE         : ${machine}`,
-				`  AP SDK VERSION     : ${cgwVersion}`,
-				'==================================================',
-				''
-			].join('\n');
-			
-			axonLog(configInfo);
-			
-			// 4. 사용자 확인
-			const confirm = await vscode.window.showWarningMessage(
-				`Yocto AP 빌드를 시작하시겠습니까?\n\nMACHINE: ${machine}\nSDK VERSION: ${cgwVersion}\n\n이 작업은 시간이 오래 걸릴 수 있습니다.`,
-				{ modal: true },
-				'빌드 시작',
-				'취소'
-			);
-			
-			if (confirm !== '빌드 시작') {
-				axonLog('❌ 사용자 취소: 빌드가 취소되었습니다.');
-				vscode.window.showInformationMessage('빌드가 취소되었습니다.');
-				return;
-			}
-
-			// 5~7. AP 빌드 환경만 초기화 (buildDir/local.conf 포함)
-			const envResult = await this.setupApEnvironmentOnly(projectRoot, workspaceFolder, machine, cgwVersion);
-			if (!envResult) {
-				return;
-			}
-			const { envPath, buildDir } = envResult;
-			
-			// 8. 빌드 명령 구성 및 실행
-			const buildDirRelative = `build/${machine}`;
-			const buildCommands = [
-				`bitbake telechips-cgw-image`,
-				`bitbake -f -c make_fai telechips-cgw-image`,
-				`echo ""`,
-				`echo "✅ Yocto AP 빌드가 완료되었습니다!"`,
-				`echo "MACHINE: ${machine}"`,
-				`echo "SDK VERSION: ${cgwVersion}"`,
-				`echo ""`,
-				`echo "Press any key to close..."`,
-				`read -n1 -s -r`
-			];
-			
-			vscode.window.showInformationMessage('Yocto AP 빌드가 시작되었습니다. 터미널을 확인하세요.');
-			
-			await this.executeBuildCommand(
-				projectRoot,
-				envPath,
-				buildDirRelative,
-				buildCommands,
-				'Yocto AP Build',
-				'yoctoApBuild',
-				workspaceFolder
-			);
-		
-		// Build View에 포커스 복원
-		setTimeout(async () => {
-			await vscode.commands.executeCommand('axonBuildView.focus');
-			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
-		}, 100);
-		
-		// 9. 빌드 완료
-		const successMsg = `✅ Yocto AP 빌드가 완료되었습니다!\n\nMACHINE: ${machine}\nSDK VERSION: ${cgwVersion}\n빌드 디렉토리: ${buildDir}`;
-		axonSuccess(successMsg);
-		vscode.window.showInformationMessage('Yocto AP 빌드가 완료되었습니다!');
-			
-		} catch (error) {
-			const errorMsg = `Yocto AP 빌드 중 오류가 발생했습니다: ${error}`;
-			axonError(errorMsg);
-			vscode.window.showErrorMessage(errorMsg);
-			throw error;
-		}
-	}
-
-	/**
-	 * Yocto MCU 빌드 실행
-	 * build-axon.py의 action_choice==3 (build mcu) 로직 구현
-	 */
-	static async buildMcu(): Promise<void> {
-		axonLog('🔨 Yocto MCU 빌드 시작...');
-		
-		try {
-			// 0. bootFirmwareFolderName 설정 확인 및 선택
-			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
-			if (!bootFirmwareFolderName) {
-				vscode.window.showInformationMessage('빌드가 취소되었습니다.');
-				return;
-			}
-			
-			// 1. Yocto 프로젝트 루트 찾기 (Unix 경로)
-			const projectRoot = await this.getYoctoProjectRoot();
-			axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
-			
-			// 워크스페이스 폴더
-			const workspaceFolder = vscode.workspace.workspaceFolders![0];
-			
-			// 2. 빌드 설정 로드 또는 선택 (config.json)
-			const mcuConfig = await this.ensureMcuBuildConfig(projectRoot, workspaceFolder);
-			if (!mcuConfig) {
-				return;
-			}
-			const { mcuMachine, mcuVersion } = mcuConfig;
-			
-			// 3. 빌드 설정 확인 표시
-			const configInfo = [
-				'',
-				'==================================================',
-				'           MCU Build Configuration',
-				'==================================================',
-				`  MCU MACHINE        : ${mcuMachine}`,
-				`  MCU SDK VERSION    : ${mcuVersion}`,
-				'==================================================',
-				''
-			].join('\n');
-			
-			axonLog(configInfo);
-			
-			// 4. 사용자 확인
-			const confirm = await vscode.window.showWarningMessage(
-				`Yocto MCU 빌드를 시작하시겠습니까?\n\nMACHINE: ${mcuMachine}\nSDK VERSION: ${mcuVersion}\n\n이 작업은 시간이 오래 걸릴 수 있습니다.`,
-				{ modal: true },
-				'빌드 시작',
-				'취소'
-			);
-			
-			if (confirm !== '빌드 시작') {
-				axonLog('❌ 사용자 취소: 빌드가 취소되었습니다.');
-				vscode.window.showInformationMessage('빌드가 취소되었습니다.');
-				return;
-			}
-			
-			// 5~7. MCU 빌드 환경만 초기화 (buildDir/local.conf 포함)
-			const envResult = await this.setupMcuEnvironmentOnly(projectRoot, workspaceFolder, mcuMachine, mcuVersion);
-			if (!envResult) {
-				return;
-			}
-			const { envPath, buildDir } = envResult;
-			
-			// 7. 빌드 명령 구성 (원격 환경용 - Unix 경로)
-			const buildCommands = [
-				`cd "${projectRoot}"`,  // 프로젝트 루트로 이동
-				`source "${envPath}"`,
-				`cd "${buildDir}"`,
-				`bitbake m7-0 m7-1 m7-2 m7-np -f -c compile`,
-				`echo ""`,
-				`echo "✅ Yocto MCU 빌드가 완료되었습니다!"`,
-				`echo "MACHINE: ${mcuMachine}"`,
-				`echo "SDK VERSION: ${mcuVersion}"`,
-				`echo ""`,
-				`echo "Press any key to close..."`,
-				`read -n1 -s -r`
-			];
-			
-			const fullCommand = buildCommands.join(' && ');
-			
-			axonLog('🚀 빌드 명령:');
-			buildCommands.forEach(cmd => axonLog(`  ${cmd}`));
-			
-			// 8. 빌드 실행
-			vscode.window.showInformationMessage('Yocto MCU 빌드가 시작되었습니다. 터미널을 확인하세요.');
-			
-			await executeShellTask({
-				command: fullCommand,
-				cwd: projectRoot,  // 원격 환경에서는 무시됨 (shell-utils.ts에서 처리)
-				taskName: 'Yocto MCU Build',
-				taskId: 'yoctoMcuBuild',
-				showTerminal: true,
-				useScriptFile: true
-			});
-		
-		// Build View에 포커스 복원
-		setTimeout(async () => {
-			await vscode.commands.executeCommand('axonBuildView.focus');
-			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
-		}, 100);
-		
-		// 9. 빌드 완료
-		const successMsg = `✅ Yocto MCU 빌드가 완료되었습니다!\n\nMACHINE: ${mcuMachine}\nSDK VERSION: ${mcuVersion}\n빌드 디렉토리: ${buildDir}`;
-		axonSuccess(successMsg);
-		vscode.window.showInformationMessage('Yocto MCU 빌드가 완료되었습니다!');
-			
-		} catch (error) {
-			const errorMsg = `Yocto MCU 빌드 중 오류가 발생했습니다: ${error}`;
-			axonError(errorMsg);
-			vscode.window.showErrorMessage(errorMsg);
-			throw error;
-		}
-	}
-
-	/**
-	 * Yocto Kernel 빌드 (AP Kernel + SD_fai.rom 생성)
-	 * build-axon.py의 action_choice==8 (build kernel) 로직 구현
-	 */
-	static async buildKernel(): Promise<void> {
-		axonLog('🔨 Yocto Kernel 빌드 시작...');
-		
-		try {
-			// 0. bootFirmwareFolderName 설정 확인 및 선택
-			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
-			if (!bootFirmwareFolderName) {
-				vscode.window.showInformationMessage('빌드가 취소되었습니다.');
-				return;
-			}
-			
-			// 1. Yocto 프로젝트 루트 찾기 (Unix 경로)
-			const projectRoot = await this.getYoctoProjectRoot();
-			axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
-			
-			// 워크스페이스 폴더로 URI 구성
-			const workspaceFolder = vscode.workspace.workspaceFolders![0];
-			const projectRootUri = vscode.Uri.from({
-				scheme: workspaceFolder.uri.scheme,
-				authority: workspaceFolder.uri.authority,
-				path: projectRoot
-			});
-			
-			// 2. 빌드 설정 로드 또는 선택 (config.json)
-			const configUri = vscode.Uri.joinPath(projectRootUri, 'config.json');
-			let machine: string | undefined;
-			let cgwVersion: string | undefined;
-			
-			// config.json 읽기 시도
-			try {
-				const configContent = await vscode.workspace.fs.readFile(configUri);
-				const config = JSON.parse(Buffer.from(configContent).toString('utf8'));
-				machine = config.machine;
-				cgwVersion = config.version;
+			if (config.buildType === 'mcu') {
+				const mcuConfig = await this.ensureMcuBuildConfig(projectRoot, workspaceFolder);
+				if (!mcuConfig) return;
 				
-				if (machine && cgwVersion) {
-					axonLog(`✅ 설정 로드: MACHINE=${machine}, CGW_SDK_VERSION=${cgwVersion}`);
-				}
-			} catch (error) {
-				axonLog(`⚠️ config.json 읽기 실패 또는 없음`);
-			}
-			
-			// machine 또는 version이 없으면 사용자에게 선택받기
-			if (!machine || !cgwVersion) {
-				axonLog('📋 빌드 설정을 선택해주세요...');
+				const { mcuMachine, mcuVersion } = mcuConfig;
+				machine = mcuMachine;
+				version = mcuVersion;
+			} else {
+				// AP or Kernel (동일한 설정 사용)
+				const apConfig = await this.ensureApBuildConfig(projectRoot, workspaceFolder);
+				if (!apConfig) return;
 				
-				// machine 선택
-				if (!machine) {
-					const supportedMachines = ['tcn1000'];
-					machine = await vscode.window.showQuickPick(supportedMachines, {
-						placeHolder: 'AP MACHINE을 선택하세요',
-						title: 'Yocto Kernel Build Configuration'
-					});
-					
-					if (!machine) {
-						axonLog('❌ 사용자 취소: MACHINE 선택이 취소되었습니다.');
-						vscode.window.showInformationMessage('빌드가 취소되었습니다.');
-						return;
-					}
-				}
-				
-				// version 선택
-				if (!cgwVersion) {
-					const supportedVersions = ['dev', 'qa', 'release'];
-					cgwVersion = await vscode.window.showQuickPick(supportedVersions, {
-						placeHolder: 'CGW SDK VERSION을 선택하세요',
-						title: 'Yocto Kernel Build Configuration'
-					});
-					
-					if (!cgwVersion) {
-						axonLog('❌ 사용자 취소: VERSION 선택이 취소되었습니다.');
-						vscode.window.showInformationMessage('빌드가 취소되었습니다.');
-						return;
-					}
-				}
-				
-				// 선택한 설정을 config.json에 저장
-				try {
-					let existingConfig: any = {};
-					try {
-						const configContent = await vscode.workspace.fs.readFile(configUri);
-						existingConfig = JSON.parse(Buffer.from(configContent).toString('utf8'));
-					} catch {
-						// config.json이 없으면 빈 객체 사용
-					}
-					
-					existingConfig.machine = machine;
-					existingConfig.version = cgwVersion;
-					
-					const configJson = JSON.stringify(existingConfig, null, 2);
-					await vscode.workspace.fs.writeFile(configUri, Buffer.from(configJson, 'utf8'));
-					axonLog(`💾 빌드 설정을 config.json에 저장했습니다: MACHINE=${machine}, VERSION=${cgwVersion}`);
-				} catch (error) {
-					axonLog(`⚠️ config.json 저장 실패 (계속 진행): ${error}`);
-				}
+				const { machine: apMachine, cgwVersion } = apConfig;
+				machine = apMachine;
+				version = cgwVersion;
 			}
 			
-			// 3. 빌드 설정 확인 표시
-			const configInfo = [
-				'',
-				'==================================================',
-				'      Kernel Build + make SD_fai.rom',
-				'==================================================',
-				`  AP MACHINE         : ${machine}`,
-				`  AP SDK VERSION     : ${cgwVersion}`,
-				'==================================================',
-				''
-			].join('\n');
+			// buildtools 환경 경로 확인
+			const envPathResult = await this.ensureBuildtoolsEnvironment(projectRoot, workspaceFolder);
+			if (!envPathResult) return;
+			envPath = envPathResult;
 			
-			axonLog(configInfo);
-			
-			// 4. 사용자 확인
-			const confirm = await vscode.window.showWarningMessage(
-				`Yocto Kernel 빌드를 시작하시겠습니까?\n\nMACHINE: ${machine}\nSDK VERSION: ${cgwVersion}\n\n⚠️ Kernel 컴파일 후 이미지를 생성합니다.\n이 작업은 시간이 오래 걸릴 수 있습니다.`,
-				{ modal: true },
-				'빌드 시작',
-				'취소'
-			);
-			
-			if (confirm !== '빌드 시작') {
-				axonLog('❌ 사용자 취소: 빌드가 취소되었습니다.');
-				vscode.window.showInformationMessage('빌드가 취소되었습니다.');
-				return;
-			}
-			
-			// 5. buildtools 환경 확인
-			const envPath = await this.ensureBuildtoolsEnvironment(projectRoot, workspaceFolder);
-			if (!envPath) {
-				return;
-			}
-			
-			// 6. 빌드 디렉토리 설정 (cgw-build.sh 실행)
-			const buildDir = `${projectRoot}/build/${machine}`;
+			// 빌드 디렉토리 계산
+			buildDir = `${projectRoot}/build/${machine}`;
 			axonLog(`📁 빌드 디렉토리: ${buildDir}`);
 			
-			const setupSuccess = await this.setupBuildDirectoryWithCgwScript(
-				projectRoot,
-				envPath,
-				machine,
-				cgwVersion,
-				workspaceFolder
-			);
-			if (!setupSuccess) {
-				return;
-			}
+			// 3. 빌드 설정 확인 표시
+			const configInfo = config.getConfigInfo(machine, version);
+			axonLog(configInfo);
 			
-			// 7. local.conf 파일 수정 (캐시 경로 설정)
-			axonLog('📝 local.conf 파일 수정 중...');
-			await this.updateLocalConfCachePaths(buildDir, workspaceFolder);
-			
-			// 8. 빌드 명령 구성 및 실행
-			// Kernel 빌드 특화: linux-telechips 컴파일 후 이미지 생성
-			const buildDirRelative = `build/${machine}`;
-			const buildCommands = [
-				`bitbake linux-telechips -f -c compile`,
-				`bitbake telechips-cgw-image`,
-				`bitbake -f -c make_fai telechips-cgw-image`,
-				`echo ""`,
-				`echo "✅ Yocto Kernel 빌드가 완료되었습니다!"`,
-				`echo "MACHINE: ${machine}"`,
-				`echo "SDK VERSION: ${cgwVersion}"`,
-				`echo ""`,
-				`echo "Press any key to close..."`,
-				`read -n1 -s -r`
-			];
-			
-			vscode.window.showInformationMessage('Yocto Kernel 빌드가 시작되었습니다. 터미널을 확인하세요.');
-			
-			await this.executeBuildCommand(
-				projectRoot,
-				envPath,
-				buildDirRelative,
-				buildCommands,
-				'Yocto Kernel Build',
-				'yoctoKernelBuild',
-				workspaceFolder
-			);
-			
-			// Build View에 포커스 복원
-			setTimeout(async () => {
-				await vscode.commands.executeCommand('axonBuildView.focus');
-				axonLog(`🔄 Build View에 포커스를 복원했습니다`);
-			}, 100);
-			
-			// 9. 빌드 완료
-			const successMsg = `✅ Yocto Kernel 빌드가 완료되었습니다!\n\nMACHINE: ${machine}\nSDK VERSION: ${cgwVersion}\n빌드 디렉토리: ${buildDir}`;
-			axonSuccess(successMsg);
-			vscode.window.showInformationMessage('Yocto Kernel 빌드가 완료되었습니다!');
-			
-		} catch (error) {
-			const errorMsg = `Yocto Kernel 빌드 중 오류가 발생했습니다: ${error}`;
-			axonError(errorMsg);
-			vscode.window.showErrorMessage(errorMsg);
-			throw error;
-		}
-	}
-
-	/**
-	 * Yocto AP 빌드 클린
-	 * build-axon.py의 action_choice==5 (clean ap) 로직 구현
-	 */
-	static async cleanApBuild(): Promise<void> {
-		axonLog('🧹 Yocto AP 빌드 클린 시작...');
-		
-		try {
-			// 0. bootFirmwareFolderName 설정 확인 및 선택
-			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
-			if (!bootFirmwareFolderName) {
-				vscode.window.showInformationMessage('작업이 취소되었습니다.');
-				return;
-			}
-			
-			// 1. Yocto 프로젝트 루트 찾기 (Unix 경로)
-			const projectRoot = await this.getYoctoProjectRoot();
-			axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
-			
-			// 워크스페이스 폴더로 URI 구성
-			const workspaceFolder = vscode.workspace.workspaceFolders![0];
-			
-			// 2. AP 빌드 디렉토리 확인
-			const apBuildDir = `${projectRoot}/build/tcn1000`;
-			const apBuildUri = vscode.Uri.from({
-				scheme: workspaceFolder.uri.scheme,
-				authority: workspaceFolder.uri.authority,
-				path: apBuildDir
-			});
-			
-			// 빌드 디렉토리 존재 확인
-			try {
-				await vscode.workspace.fs.stat(apBuildUri);
-				axonLog(`✅ AP 빌드 폴더 확인: ${apBuildDir}`);
-			} catch {
-				const msg = 'AP 빌드 폴더를 찾을 수 없습니다. 이미 정리되었거나 빌드되지 않았습니다.';
-				axonLog(`⚠️ ${msg}`);
-				vscode.window.showWarningMessage(msg);
-				return;
-			}
-			
-			// 3. 사용자 확인
+			// 4. 사용자 확인
+			const confirmMsg = config.getConfirmMsg(machine, version);
 			const confirm = await vscode.window.showWarningMessage(
-				`AP 빌드 폴더를 정리하시겠습니까?\n\n경로: ${apBuildDir}\n\n⚠️ 이 작업은 되돌릴 수 없습니다.`,
+				confirmMsg,
 				{ modal: true },
-				'정리 시작',
+				'빌드 시작',
 				'취소'
 			);
 			
-			if (confirm !== '정리 시작') {
-				axonLog('❌ 사용자 취소: AP 빌드 정리가 취소되었습니다.');
-				vscode.window.showInformationMessage('AP 빌드 정리가 취소되었습니다.');
+			if (confirm !== '빌드 시작') {
+				axonLog('❌ 사용자 취소: 빌드가 취소되었습니다.');
+				vscode.window.showInformationMessage('빌드가 취소되었습니다.');
 				return;
 			}
 			
-			// 4. 클린 명령 구성 (원격 환경용 - Unix 경로)
-			//    build/tcn1000 디렉토리는 유지하고, 그 안에서 conf / downloads / sstate-cache 를 제외한 나머지만 삭제
-			const cleanCommand = [
-				`cd "${apBuildDir}"`,
-				`echo "Cleaning Yocto AP build directory (except conf/downloads/sstate-cache)..."`,
-				`find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} +`,
-				`echo ""`,
-				`echo "✅ AP 빌드 정리가 완료되었습니다!"`,
-				`echo "Press any key to close..."`,
-				`read -n1 -s -r`
-			].join(' && ');
-			
-			axonLog('🚀 클린 명령:');
-			axonLog(`  ${cleanCommand}`);
-			
-			// 5. 클린 실행
-			vscode.window.showInformationMessage('AP 빌드 정리가 시작되었습니다. 터미널을 확인하세요.');
-			
-			await executeShellTask({
-				command: cleanCommand,
-				cwd: projectRoot,
-				taskName: 'Yocto AP Clean',
-				taskId: 'yoctoApClean',
-				showTerminal: true,
-				useScriptFile: true
-			});
+		// 5. 빌드 명령 구성 및 실행
+		vscode.window.showInformationMessage(`${config.taskName}가 시작되었습니다. 터미널을 확인하세요.`);
 		
+		// 모든 빌드 타입에 대해 fullCommand 생성
+		const fullCommand = config.getBuildCommands(machine, version, projectRoot, envPath, buildDir);
+		
+		axonLog('🚀 빌드 명령:');
+		axonLog(fullCommand);
+		
+		axonLog('🔧 executeShellTask 호출 시작...');
+		
+		await executeShellTask({
+			command: fullCommand,
+			cwd: projectRoot,
+			taskName: config.taskName,
+			taskId: config.taskId,
+			showTerminal: true,
+			useScriptFile: true
+		});
+		
+		axonLog('✅ executeShellTask 완료됨!');
+			
 		// Build View에 포커스 복원
 		setTimeout(async () => {
 			await vscode.commands.executeCommand('axonBuildView.focus');
 			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
 		}, 100);
-			
-			// 6. 완료
-			const successMsg = `✅ AP 빌드 정리가 완료되었습니다!\n\n경로: ${apBuildDir}`;
-			axonSuccess(successMsg);
-			vscode.window.showInformationMessage('AP 빌드 정리가 완료되었습니다!');
+		
+		// 6. 빌드 완료
+		axonLog('📢 빌드 완료 메시지 출력 시작...');
+		const successMsg = `✅ ${config.taskName}가 완료되었습니다!\n\nMACHINE: ${machine}\nSDK VERSION: ${version}\n빌드 디렉토리: ${buildDir}`;
+		axonSuccess(successMsg);
+		vscode.window.showInformationMessage(`${config.taskName}가 완료되었습니다!`);
+		
+		// 터미널 닫기 확인 팝업
+		axonLog('🔔 터미널 닫기 팝업 표시 시작...');
+		await this.askToCloseTerminal(config.taskName);
+		axonLog('✅ 터미널 닫기 팝업 완료');
 			
 		} catch (error) {
-			const errorMsg = `AP 빌드 정리 중 오류가 발생했습니다: ${error}`;
+			const errorMsg = `${config.taskName} 중 오류가 발생했습니다: ${error}`;
 			axonError(errorMsg);
 			vscode.window.showErrorMessage(errorMsg);
 			throw error;
@@ -1264,118 +852,17 @@ echo "✅ 빌드 환경 초기화 완료"`;
 	}
 
 	/**
-	 * Yocto MCU 빌드 클린
-	 * build-axon.py의 action_choice==6 (clean mcu) 로직 구현
+	 * Yocto 클린 작업 공통 실행 함수
 	 */
-	static async cleanMcuBuild(): Promise<void> {
-		axonLog('🧹 Yocto MCU 빌드 클린 시작...');
+	private static async executeYoctoCleanTask(config: YoctoCleanTaskConfig): Promise<void> {
+		axonLog(`🧹 ${config.taskName} 시작...`);
 		
 		try {
-			// 0. bootFirmwareFolderName 설정 확인 및 선택
-			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
-			if (!bootFirmwareFolderName) {
-				vscode.window.showInformationMessage('작업이 취소되었습니다.');
-				return;
-			}
-			
-			// 1. Yocto 프로젝트 루트 찾기 (Unix 경로)
-			const projectRoot = await this.getYoctoProjectRoot();
-			axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
-			
-			// 워크스페이스 폴더로 URI 구성
-			const workspaceFolder = vscode.workspace.workspaceFolders![0];
-			
-			// 2. MCU 빌드 디렉토리 확인
-			const mcuBuildDir = `${projectRoot}/build/tcn1000-mcu`;
-			const mcuBuildUri = vscode.Uri.from({
-				scheme: workspaceFolder.uri.scheme,
-				authority: workspaceFolder.uri.authority,
-				path: mcuBuildDir
-			});
-			
-			// 빌드 디렉토리 존재 확인
-			try {
-				await vscode.workspace.fs.stat(mcuBuildUri);
-				axonLog(`✅ MCU 빌드 폴더 확인: ${mcuBuildDir}`);
-			} catch {
-				const msg = 'MCU 빌드 폴더를 찾을 수 없습니다. 이미 정리되었거나 빌드되지 않았습니다.';
-				axonLog(`⚠️ ${msg}`);
-				vscode.window.showWarningMessage(msg);
-				return;
-			}
-			
-			// 3. 사용자 확인
-			const confirm = await vscode.window.showWarningMessage(
-				`MCU 빌드 폴더를 정리하시겠습니까?\n\n경로: ${mcuBuildDir}\n\n⚠️ 이 작업은 되돌릴 수 없습니다.`,
-				{ modal: true },
-				'정리 시작',
-				'취소'
-			);
-			
-			if (confirm !== '정리 시작') {
-				axonLog('❌ 사용자 취소: MCU 빌드 정리가 취소되었습니다.');
-				vscode.window.showInformationMessage('MCU 빌드 정리가 취소되었습니다.');
-				return;
-			}
-			
-			// 4. 클린 명령 구성 (원격 환경용 - Unix 경로)
-			//    build/tcn1000-mcu 디렉토리는 유지하고, 그 안에서 conf / downloads / sstate-cache 를 제외한 나머지만 삭제
-			const cleanCommand = [
-				`cd "${mcuBuildDir}"`,
-				`echo "Cleaning Yocto MCU build directory (except conf/downloads/sstate-cache)..."`,
-				`find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} +`,
-				`echo ""`,
-				`echo "✅ MCU 빌드 정리가 완료되었습니다!"`,
-				`echo "Press any key to close..."`,
-				`read -n1 -s -r`
-			].join(' && ');
-			
-			axonLog('🚀 클린 명령:');
-			axonLog(`  ${cleanCommand}`);
-			
-			// 5. 클린 실행
-			vscode.window.showInformationMessage('MCU 빌드 정리가 시작되었습니다. 터미널을 확인하세요.');
-			
-			await executeShellTask({
-				command: cleanCommand,
-				cwd: projectRoot,
-				taskName: 'Yocto MCU Clean',
-				taskId: 'yoctoMcuClean',
-				showTerminal: true,
-				useScriptFile: true
-			});
-		
-		// Build View에 포커스 복원
-		setTimeout(async () => {
-			await vscode.commands.executeCommand('axonBuildView.focus');
-			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
-		}, 100);
-			
-			// 6. 완료
-			const successMsg = `✅ MCU 빌드 정리가 완료되었습니다!\n\n경로: ${mcuBuildDir}`;
-			axonSuccess(successMsg);
-			vscode.window.showInformationMessage('MCU 빌드 정리가 완료되었습니다!');
-			
-		} catch (error) {
-			const errorMsg = `MCU 빌드 정리 중 오류가 발생했습니다: ${error}`;
-			axonError(errorMsg);
-			vscode.window.showErrorMessage(errorMsg);
-			throw error;
-		}
-	}
-
-	/**
-	 * Yocto AP + MCU 빌드 클린
-	 * build-axon.py의 action_choice==7 (clean ap + mcu) 로직 구현
-	 * Python에서는 두 함수를 순차 호출하므로, 여기서도 각각 실행
-	 */
-	static async cleanAllBuild(): Promise<void> {
-		axonLog('🧹 Yocto AP + MCU 빌드 클린 시작...');
-		
-		try {
-			// 0. bootFirmwareFolderName 설정 확인 및 선택
-			const bootFirmwareFolderName = await this.ensureBootFirmwareFolderName();
-			if (!bootFirmwareFolderName) {
+			// 프로젝트 타입 확인
+			const { ensureProjectType } = await import('../../utils');
+			const projectType = await ensureProjectType();
+			if (!projectType) {
+				axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
 				vscode.window.showInformationMessage('작업이 취소되었습니다.');
 				return;
 			}
@@ -1388,140 +875,288 @@ echo "✅ 빌드 환경 초기화 완료"`;
 			const workspaceFolder = vscode.workspace.workspaceFolders![0];
 			
 			// 2. 빌드 디렉토리 확인
-			const apBuildDir = `${projectRoot}/build/tcn1000`;
-			const mcuBuildDir = `${projectRoot}/build/tcn1000-mcu`;
+			const buildDirs = config.getBuildDir(projectRoot);
+			const buildDirArray = Array.isArray(buildDirs) ? buildDirs : [buildDirs];
 			
-			const apBuildUri = vscode.Uri.from({
-				scheme: workspaceFolder.uri.scheme,
-				authority: workspaceFolder.uri.authority,
-				path: apBuildDir
-			});
-			
-			const mcuBuildUri = vscode.Uri.from({
-				scheme: workspaceFolder.uri.scheme,
-				authority: workspaceFolder.uri.authority,
-				path: mcuBuildDir
-			});
-			
-			let apExists = false;
-			let mcuExists = false;
-			
-			try {
-				await vscode.workspace.fs.stat(apBuildUri);
-				apExists = true;
-				axonLog(`✅ AP 빌드 폴더 확인: ${apBuildDir}`);
-			} catch {
-				axonLog(`⚠️ AP 빌드 폴더 없음: ${apBuildDir}`);
+			// 디렉토리 존재 확인
+			const existingDirs: string[] = [];
+			for (const buildDir of buildDirArray) {
+				const buildUri = vscode.Uri.from({
+					scheme: workspaceFolder.uri.scheme,
+					authority: workspaceFolder.uri.authority,
+					path: buildDir
+				});
+				
+				try {
+					await vscode.workspace.fs.stat(buildUri);
+					existingDirs.push(buildDir);
+					axonLog(`✅ 빌드 폴더 확인: ${buildDir}`);
+				} catch {
+					axonLog(`⚠️ 빌드 폴더 없음: ${buildDir}`);
+				}
 			}
 			
-			try {
-				await vscode.workspace.fs.stat(mcuBuildUri);
-				mcuExists = true;
-				axonLog(`✅ MCU 빌드 폴더 확인: ${mcuBuildDir}`);
-			} catch {
-				axonLog(`⚠️ MCU 빌드 폴더 없음: ${mcuBuildDir}`);
-			}
-			
-			if (!apExists && !mcuExists) {
-				const msg = 'AP/MCU 빌드 폴더를 찾을 수 없습니다. 이미 정리되었거나 빌드되지 않았습니다.';
+			if (existingDirs.length === 0) {
+				const msg = '빌드 폴더를 찾을 수 없습니다. 이미 정리되었거나 빌드되지 않았습니다.';
 				axonLog(`⚠️ ${msg}`);
 				vscode.window.showWarningMessage(msg);
 				return;
 			}
 			
 			// 3. 사용자 확인
-			const foldersToClean = [];
-			if (apExists) foldersToClean.push('AP');
-			if (mcuExists) foldersToClean.push('MCU');
-			
+			const confirmMsg = config.getConfirmMsg(existingDirs.length > 1 ? existingDirs : existingDirs[0]);
 			const confirm = await vscode.window.showWarningMessage(
-				`${foldersToClean.join(' + ')} 빌드 폴더를 정리하시겠습니까?\n\n` +
-				`${apExists ? `AP: ${apBuildDir}\n` : ''}` +
-				`${mcuExists ? `MCU: ${mcuBuildDir}\n` : ''}` +
-				`\n⚠️ 이 작업은 되돌릴 수 없습니다.`,
+				confirmMsg,
 				{ modal: true },
 				'정리 시작',
 				'취소'
 			);
 			
 			if (confirm !== '정리 시작') {
-				axonLog('❌ 사용자 취소: 빌드 정리가 취소되었습니다.');
-				vscode.window.showInformationMessage('빌드 정리가 취소되었습니다.');
+				axonLog(`❌ 사용자 취소: ${config.taskName}가 취소되었습니다.`);
+				vscode.window.showInformationMessage(`${config.taskName}가 취소되었습니다.`);
 				return;
 			}
 			
-			// 4. 클린 실행 (각각 독립적으로 실행)
-			vscode.window.showInformationMessage('빌드 정리가 시작되었습니다. 터미널을 확인하세요.');
+			// 4. 클린 명령 실행
+			vscode.window.showInformationMessage(`${config.taskName}가 시작되었습니다. 터미널을 확인하세요.`);
 			
-			if (apExists) {
-				const apCleanCommand = [
-					`cd "${apBuildDir}"`,
-					`echo "Cleaning Yocto AP build directory (except conf/downloads/sstate-cache)..."`,
-					`find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} +`
-				].join(' && ');
-				
-				axonLog('🚀 AP 클린 명령:');
-				axonLog(`  ${apCleanCommand}`);
+			for (const buildDir of existingDirs) {
+				const cleanCommand = config.getCleanCommand(buildDir);
+				axonLog('🚀 클린 명령:');
+				axonLog(`  ${cleanCommand}`);
 				
 				await executeShellTask({
-					command: apCleanCommand,
+					command: cleanCommand,
 					cwd: projectRoot,
-					taskName: 'Yocto AP Clean',
-					taskId: 'yoctoApCleanInAll',
+					taskName: `${config.taskName} - ${buildDir.split('/').pop()}`,
+					taskId: `${config.taskId}_${buildDir.split('/').pop()}`,
 					showTerminal: true,
 					useScriptFile: true
 				});
 			}
 			
-			if (mcuExists) {
-				const mcuCleanCommand = [
-					`cd "${mcuBuildDir}"`,
-					`echo "Cleaning Yocto MCU build directory (except conf/downloads/sstate-cache)..."`,
-					`find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} +`
-				].join(' && ');
-				
-				axonLog('🚀 MCU 클린 명령:');
-				axonLog(`  ${mcuCleanCommand}`);
-				
-				await executeShellTask({
-					command: mcuCleanCommand,
-					cwd: projectRoot,
-					taskName: 'Yocto MCU Clean',
-					taskId: 'yoctoMcuCleanInAll',
-					showTerminal: true,
-					useScriptFile: true
-				});
-			}
-			
-			// 모든 클린 작업 완료 후 사용자 확인 대기
-			const waitCommand = `echo "" && echo "✅ 모든 빌드 정리가 완료되었습니다!" && echo "Press any key to close..." && read -n1 -s -r`;
-			
-			await executeShellTask({
-				command: waitCommand,
-				cwd: projectRoot,
-				taskName: 'Yocto Clean All - Wait',
-				taskId: 'yoctoCleanAllWait',
-				showTerminal: true,
-				useScriptFile: true
-			});
-		
-		// Build View에 포커스 복원
-		setTimeout(async () => {
-			await vscode.commands.executeCommand('axonBuildView.focus');
-			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
-		}, 100);
+			// Build View에 포커스 복원
+			setTimeout(async () => {
+				await vscode.commands.executeCommand('axonBuildView.focus');
+				axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+			}, 100);
 			
 			// 5. 완료
-			const successMsg = `✅ ${foldersToClean.join(' + ')} 빌드 정리가 완료되었습니다!`;
+			const successMsg = `✅ ${config.taskName}가 완료되었습니다!\n\n경로: ${existingDirs.join(', ')}`;
 			axonSuccess(successMsg);
-			vscode.window.showInformationMessage(successMsg);
+			vscode.window.showInformationMessage(`${config.taskName}가 완료되었습니다!`);
+			
+			// 터미널 닫기 확인 팝업
+			await this.askToCloseTerminal(config.taskName);
 			
 		} catch (error) {
-			const errorMsg = `빌드 정리 중 오류가 발생했습니다: ${error}`;
+			const errorMsg = `${config.taskName} 중 오류가 발생했습니다: ${error}`;
 			axonError(errorMsg);
 			vscode.window.showErrorMessage(errorMsg);
 			throw error;
 		}
+	}
+	
+	/**
+	 * Yocto AP 빌드 실행
+	 * build-axon.py의 action_choice==2 (build ap) 로직 구현
+	 */
+	static async buildAp(): Promise<void> {
+		await this.executeYoctoBuildTask({
+			taskName: 'Yocto AP Build',
+			taskId: 'yoctoApBuild',
+			buildType: 'ap',
+			getConfigInfo: (machine, version) => [
+				'',
+				'==================================================',
+				'           AP Build Configuration',
+				'==================================================',
+				`  AP MACHINE         : ${machine}`,
+				`  AP SDK VERSION     : ${version}`,
+				'==================================================',
+				''
+			].join('\n'),
+			getConfirmMsg: (machine, version) => 
+				`Yocto AP 빌드를 시작하시겠습니까?\n\nMACHINE: ${machine}\nSDK VERSION: ${version}\n\n이 작업은 시간이 오래 걸릴 수 있습니다.`,
+			getBuildCommands: (machine, version, projectRoot, envPath) => {
+			const apBuildScript = `${projectRoot}/poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh`;
+			return `
+#set -x
+cd "${projectRoot}"
+source "${envPath}"
+source "${apBuildScript}" ${machine} ${version}
+bitbake telechips-cgw-image
+bitbake -f -c make_fai telechips-cgw-image
+
+echo ""
+echo "✅ Yocto AP 빌드가 완료되었습니다!"
+echo "MACHINE: ${machine}"
+echo "SDK VERSION: ${version}"
+echo ""
+`;
+		}
+		});
+	}
+
+	/**
+	 * Yocto MCU 빌드 실행
+	 * build-axon.py의 action_choice==3 (build mcu) 로직 구현
+	 */
+	static async buildMcu(): Promise<void> {
+		await this.executeYoctoBuildTask({
+			taskName: 'Yocto MCU Build',
+			taskId: 'yoctoMcuBuild',
+			buildType: 'mcu',
+			getConfigInfo: (machine, version) => [
+				'',
+				'==================================================',
+				'           MCU Build Configuration',
+				'==================================================',
+				`  MCU MACHINE        : ${machine}`,
+				`  MCU SDK VERSION    : ${version}`,
+				'==================================================',
+				''
+			].join('\n'),
+			getConfirmMsg: (machine, version) => 
+				`Yocto MCU 빌드를 시작하시겠습니까?\n\nMACHINE: ${machine}\nSDK VERSION: ${version}\n\n이 작업은 시간이 오래 걸릴 수 있습니다.`,
+			getBuildCommands: (machine, version, projectRoot, envPath) => {
+				const mcuBuildScript = `${projectRoot}/poky/meta-telechips/meta-dev/meta-mcu-dev/mcu-build.sh`;
+				return `
+#set -x
+cd "${projectRoot}"
+source "${envPath}"
+source "${mcuBuildScript}" ${machine} ${version}
+bitbake m7-0 m7-1 m7-2 m7-np -f -c compile
+
+echo ""
+echo "✅ Yocto MCU 빌드가 완료되었습니다!"
+echo "MACHINE: ${machine}"
+echo "SDK VERSION: ${version}"
+echo ""
+`;
+			}
+		});
+	}
+
+	/**
+	 * Yocto Kernel 빌드 (AP Kernel + SD_fai.rom 생성)
+	 * build-axon.py의 action_choice==8 (build kernel) 로직 구현
+	 */
+	static async buildKernel(): Promise<void> {
+		await this.executeYoctoBuildTask({
+			taskName: 'Yocto Kernel Build',
+			taskId: 'yoctoKernelBuild',
+			buildType: 'kernel',
+			getConfigInfo: (machine, version) => [
+				'',
+				'==================================================',
+				'      Kernel Build + make SD_fai.rom',
+				'==================================================',
+				`  AP MACHINE         : ${machine}`,
+				`  AP SDK VERSION     : ${version}`,
+				'==================================================',
+				''
+			].join('\n'),
+			getConfirmMsg: (machine, version) => 
+				`Yocto Kernel 빌드를 시작하시겠습니까?\n\nMACHINE: ${machine}\nSDK VERSION: ${version}\n\n⚠️ Kernel 컴파일 후 이미지를 생성합니다.\n이 작업은 시간이 오래 걸릴 수 있습니다.`,
+			getBuildCommands: (machine, version, projectRoot, envPath) => {
+			const apBuildScript = `${projectRoot}/poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh`;
+			return `
+#set -x
+cd "${projectRoot}"
+source "${envPath}"
+source "${apBuildScript}" ${machine} ${version}
+bitbake linux-telechips -f -c compile
+bitbake linux-telechips -c deploy
+#bitbake telechips-cgw-image
+#bitbake -f -c make_fai telechips-cgw-image
+
+echo ""
+echo "✅ Yocto Kernel 빌드가 완료되었습니다!"
+echo "MACHINE: ${machine}"
+echo "SDK VERSION: ${version}"
+echo ""
+`;
+		}
+		});
+	}
+
+	/**
+	 * Yocto AP 빌드 클린
+	 * build-axon.py의 action_choice==5 (clean ap) 로직 구현
+	 */
+	static async cleanApBuild(): Promise<void> {
+		await this.executeYoctoCleanTask({
+			taskName: 'Yocto AP Clean',
+			taskId: 'yoctoApClean',
+			cleanType: 'ap',
+			getBuildDir: (projectRoot) => `${projectRoot}/build/tcn1000`,
+			getConfirmMsg: (buildDir) => 
+				`AP 빌드 폴더를 정리하시겠습니까?\n\n경로: ${buildDir}\n\n⚠️ 이 작업은 되돌릴 수 없습니다.`,
+			getCleanCommand: (buildDir) => `
+cd "${buildDir}"
+echo "Cleaning Yocto AP build directory (except conf/downloads/sstate-cache)..."
+find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} +
+
+echo ""
+echo "✅ AP 빌드 정리가 완료되었습니다!"
+echo ""
+`
+		});
+	}
+
+	/**
+	 * Yocto MCU 빌드 클린
+	 * build-axon.py의 action_choice==6 (clean mcu) 로직 구현
+	 */
+	static async cleanMcuBuild(): Promise<void> {
+		await this.executeYoctoCleanTask({
+			taskName: 'Yocto MCU Clean',
+			taskId: 'yoctoMcuClean',
+			cleanType: 'mcu',
+			getBuildDir: (projectRoot) => `${projectRoot}/build/tcn1000-mcu`,
+			getConfirmMsg: (buildDir) => 
+				`MCU 빌드 폴더를 정리하시겠습니까?\n\n경로: ${buildDir}\n\n⚠️ 이 작업은 되돌릴 수 없습니다.`,
+			getCleanCommand: (buildDir) => `
+cd "${buildDir}"
+echo "Cleaning Yocto MCU build directory (except conf/downloads/sstate-cache)..."
+find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} +
+
+echo ""
+echo "✅ MCU 빌드 정리가 완료되었습니다!"
+echo ""
+`
+		});
+	}
+
+	/**
+	 * Yocto AP + MCU 빌드 클린
+	 * build-axon.py의 action_choice==7 (clean ap + mcu) 로직 구현
+	 * Python에서는 두 함수를 순차 호출하므로, 여기서도 각각 실행
+	 */
+	static async cleanAllBuild(): Promise<void> {
+		await this.executeYoctoCleanTask({
+			taskName: 'Yocto All Clean',
+			taskId: 'yoctoAllClean',
+			cleanType: 'all',
+			getBuildDir: (projectRoot) => [
+				`${projectRoot}/build/tcn1000`,
+				`${projectRoot}/build/tcn1000-mcu`
+			],
+			getConfirmMsg: (buildDirs) => {
+				const dirs = Array.isArray(buildDirs) ? buildDirs : [buildDirs];
+				return `AP + MCU 빌드 폴더를 정리하시겠습니까?\n\n경로:\n${dirs.join('\n')}\n\n⚠️ 이 작업은 되돌릴 수 없습니다.`;
+			},
+			getCleanCommand: (buildDir) => `
+cd "${buildDir}"
+echo "Cleaning Yocto build directory (except conf/downloads/sstate-cache)..."
+find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} +
+
+echo ""
+echo "✅ ${buildDir.split('/').pop()} 빌드 정리가 완료되었습니다!"
+`
+		});
 	}
 
 	/**
@@ -1571,17 +1206,30 @@ echo "✅ 빌드 환경 초기화 완료"`;
 					return;
 				}
 
-				// AP 빌드 설정 로드 및 환경 초기화
-				const apConfig = await this.ensureApBuildConfig(projectRoot, workspaceFolder);
-				if (!apConfig) {
-					return;
-				}
-				const { machine, cgwVersion } = apConfig;
+			// AP 빌드 설정 로드 및 환경 초기화
+			const apConfig = await this.ensureApBuildConfig(projectRoot, workspaceFolder);
+			if (!apConfig) {
+				return;
+			}
+			const { machine, cgwVersion } = apConfig;
 
-				const envResult = await this.setupApEnvironmentOnly(projectRoot, workspaceFolder, machine, cgwVersion);
-				if (!envResult) {
-					return;
-				}
+			// buildtools 환경 확인
+			const envPath = await this.ensureBuildtoolsEnvironment(projectRoot, workspaceFolder);
+			if (!envPath) {
+				return;
+			}
+
+			// 빌드 디렉토리 설정 (cgw-build.sh 실행)
+			const setupSuccess = await this.setupBuildDirectoryWithCgwScript(
+				projectRoot,
+				envPath,
+				machine,
+				cgwVersion,
+				workspaceFolder
+			);
+			if (!setupSuccess) {
+				return;
+			}
 
 				// 환경 초기화 후 local.conf가 생성되었는지 다시 확인
 				try {
@@ -1659,17 +1307,70 @@ echo "✅ 빌드 환경 초기화 완료"`;
 					return;
 				}
 
-				// MCU 빌드 설정 로드 및 환경 초기화
-				const mcuConfig = await this.ensureMcuBuildConfig(projectRoot, workspaceFolder);
-				if (!mcuConfig) {
-					return;
-				}
-				const { mcuMachine, mcuVersion } = mcuConfig;
+			// MCU 빌드 설정 로드 및 환경 초기화
+			const mcuConfig = await this.ensureMcuBuildConfig(projectRoot, workspaceFolder);
+			if (!mcuConfig) {
+				return;
+			}
+			const { mcuMachine, mcuVersion } = mcuConfig;
 
-				const envResult = await this.setupMcuEnvironmentOnly(projectRoot, workspaceFolder, mcuMachine, mcuVersion);
-				if (!envResult) {
-					return;
-				}
+			// buildtools 환경 확인
+			const envPath = `${projectRoot}/buildtools/environment-setup-x86_64-pokysdk-linux`;
+			const envUri = vscode.Uri.from({
+				scheme: workspaceFolder.uri.scheme,
+				authority: workspaceFolder.uri.authority,
+				path: envPath
+			});
+
+			try {
+				await vscode.workspace.fs.stat(envUri);
+				axonLog(`✅ Buildtools 환경 확인: ${envPath}`);
+			} catch {
+				const errorMsg = 'Buildtools 환경이 설정되지 않았습니다. 먼저 "build toolchain"을 실행해야 합니다.';
+				axonError(errorMsg);
+				vscode.window.showErrorMessage(errorMsg);
+				return;
+			}
+
+			// MCU 빌드 스크립트 확인
+			const mcuBuildScript = `${projectRoot}/poky/meta-telechips/meta-dev/meta-mcu-dev/mcu-build.sh`;
+			const mcuBuildScriptUri = vscode.Uri.from({
+				scheme: workspaceFolder.uri.scheme,
+				authority: workspaceFolder.uri.authority,
+				path: mcuBuildScript
+			});
+
+			try {
+				await vscode.workspace.fs.stat(mcuBuildScriptUri);
+				axonLog(`✅ MCU 빌드 스크립트 확인: ${mcuBuildScript}`);
+			} catch {
+				const errorMsg = `MCU 빌드 스크립트를 찾을 수 없습니다: ${mcuBuildScript}`;
+				axonError(errorMsg);
+				vscode.window.showErrorMessage(errorMsg);
+				return;
+			}
+
+			// MCU 환경 설정 (local.conf 생성)
+			const commands = [
+				`cd "${projectRoot}"`,
+				`source "${envPath}"`,
+				`source "${mcuBuildScript}" ${mcuMachine} ${mcuVersion}`,
+				`echo "✅ MCU 빌드 환경 설정 완료"`
+			];
+
+			const fullCommand = commands.join(' && ');
+
+			axonLog('🚀 MCU 빌드 환경 설정 명령:');
+			commands.forEach(cmd => axonLog(`  ${cmd}`));
+
+			await executeShellTask({
+				command: fullCommand,
+				cwd: projectRoot,
+				taskName: 'Yocto MCU Build Setup',
+				taskId: 'yoctoMcuBuildSetup',
+				showTerminal: true,
+				useScriptFile: true
+			});
 
 				// 환경 초기화 후 local.conf가 생성되었는지 다시 확인
 				try {

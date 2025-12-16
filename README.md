@@ -140,6 +140,56 @@ code --install-extension axon-0.4.1.vsix
 2. 드롭다운에서 **"Axon"** 선택
 3. 모든 빌드 과정과 로그 실시간 확인
 
+## 🔧 공통 함수 (Common Functions)
+
+프로젝트에서 재사용 가능한 공통 함수들이 `src/projects/common/` 디렉토리에 있습니다.
+
+### Shell 유틸리티 (`shell-utils.ts`)
+
+#### `findProjectRootByShell()`
+
+리눅스 shell의 `find` 명령어를 사용하여 프로젝트 루트를 찾는 공통 함수입니다.
+
+**사용 예시:**
+
+```typescript
+import { findProjectRootByShell } from '../common/shell-utils';
+
+// Yocto 프로젝트 루트 찾기
+const yoctoRoot = await findProjectRootByShell({
+  workspaceFolder,
+  findPattern: 'poky',
+  maxDepth: 3,
+  findType: 'd',
+  parentLevels: 1,
+  excludePattern: '*/.repo/*',
+  taskName: 'Find Yocto Project Root',
+  taskId: 'find-yocto-root',
+  resultFilePrefix: 'axon_project_root'
+});
+
+// MCU 프로젝트 루트 찾기
+const mcuRoot = await findProjectRootByShell({
+  workspaceFolder,
+  findPattern: 'tcn100x_defconfig',
+  maxDepth: 4,
+  findType: 'f',
+  parentLevels: 3,
+  taskName: 'Find MCU Project Root',
+  taskId: 'find-mcu-root',
+  resultFilePrefix: 'axon_mcu_project_root'
+});
+```
+
+**파라미터:**
+- `findPattern`: 찾을 파일/디렉토리 이름
+- `maxDepth`: 최대 탐색 깊이
+- `findType`: 'd' (directory) 또는 'f' (file)
+- `parentLevels`: 상위 몇 단계로 올라갈지
+- `excludePattern`: 제외할 패턴 (선택적)
+
+**참고:** 비슷한 기능이 필요할 때는 이 함수를 재사용하세요. 중복 구현을 방지합니다.
+
 ## 라이선스
 
 MIT
