@@ -46,7 +46,7 @@ export class YoctoProjectBuilder {
 	private static async askToCloseTerminal(taskName: string): Promise<void> {
 		const result = await vscode.window.showInformationMessage(
 			`${taskName}가 완료되었습니다.\n터미널을 닫겠습니까?`,
-			{ modal: false },
+			{ modal: true },
 			'Yes',
 			'No'
 		);
@@ -813,6 +813,8 @@ echo "✅ 빌드 환경 초기화 완료"`;
 		axonLog('🚀 빌드 명령:');
 		axonLog(fullCommand);
 		
+		axonLog('🔧 executeShellTask 호출 시작...');
+		
 		await executeShellTask({
 			command: fullCommand,
 			cwd: projectRoot,
@@ -821,20 +823,25 @@ echo "✅ 빌드 환경 초기화 완료"`;
 			showTerminal: true,
 			useScriptFile: true
 		});
+		
+		axonLog('✅ executeShellTask 완료됨!');
 			
-			// Build View에 포커스 복원
-			setTimeout(async () => {
-				await vscode.commands.executeCommand('axonBuildView.focus');
-				axonLog(`🔄 Build View에 포커스를 복원했습니다`);
-			}, 100);
-			
-			// 6. 빌드 완료
-			const successMsg = `✅ ${config.taskName}가 완료되었습니다!\n\nMACHINE: ${machine}\nSDK VERSION: ${version}\n빌드 디렉토리: ${buildDir}`;
-			axonSuccess(successMsg);
-			vscode.window.showInformationMessage(`${config.taskName}가 완료되었습니다!`);
-			
-			// 터미널 닫기 확인 팝업
-			await this.askToCloseTerminal(config.taskName);
+		// Build View에 포커스 복원
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
+		
+		// 6. 빌드 완료
+		axonLog('📢 빌드 완료 메시지 출력 시작...');
+		const successMsg = `✅ ${config.taskName}가 완료되었습니다!\n\nMACHINE: ${machine}\nSDK VERSION: ${version}\n빌드 디렉토리: ${buildDir}`;
+		axonSuccess(successMsg);
+		vscode.window.showInformationMessage(`${config.taskName}가 완료되었습니다!`);
+		
+		// 터미널 닫기 확인 팝업
+		axonLog('🔔 터미널 닫기 팝업 표시 시작...');
+		await this.askToCloseTerminal(config.taskName);
+		axonLog('✅ 터미널 닫기 팝업 완료');
 			
 		} catch (error) {
 			const errorMsg = `${config.taskName} 중 오류가 발생했습니다: ${error}`;
@@ -987,8 +994,6 @@ echo "✅ Yocto AP 빌드가 완료되었습니다!"
 echo "MACHINE: ${machine}"
 echo "SDK VERSION: ${version}"
 echo ""
-echo "Press any key to close..."
-read -n1 -s -r
 `;
 		}
 		});
@@ -1029,8 +1034,6 @@ echo "✅ Yocto MCU 빌드가 완료되었습니다!"
 echo "MACHINE: ${machine}"
 echo "SDK VERSION: ${version}"
 echo ""
-echo "Press any key to close..."
-read -n1 -s -r
 `;
 			}
 		});
@@ -1074,8 +1077,6 @@ echo "✅ Yocto Kernel 빌드가 완료되었습니다!"
 echo "MACHINE: ${machine}"
 echo "SDK VERSION: ${version}"
 echo ""
-echo "Press any key to close..."
-read -n1 -s -r
 `;
 		}
 		});
@@ -1100,8 +1101,7 @@ find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -n
 
 echo ""
 echo "✅ AP 빌드 정리가 완료되었습니다!"
-echo "Press any key to close..."
-read -n1 -s -r
+echo ""
 `
 		});
 	}
@@ -1125,8 +1125,7 @@ find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -n
 
 echo ""
 echo "✅ MCU 빌드 정리가 완료되었습니다!"
-echo "Press any key to close..."
-read -n1 -s -r
+echo ""
 `
 		});
 	}

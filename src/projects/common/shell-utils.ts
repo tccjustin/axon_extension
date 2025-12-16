@@ -191,6 +191,7 @@ export async function findProjectRootByShell(options: {
 	findType: 'd' | 'f';        // 'd': directory, 'f': file
 	parentLevels: number;       // 상위 몇 단계로 올라갈지 (예: 1, 3)
 	excludePattern?: string;    // 제외할 패턴 (선택적, 예: "*/.repo/*")
+	searchPath?: string;        // 검색 시작 경로 (선택적, 기본값: "." = 워크스페이스 루트)
 	taskName: string;           // 작업 이름 (예: "Find Yocto Project Root")
 	taskId: string;             // 작업 ID (예: "find-yocto-root")
 	resultFilePrefix: string;   // 결과 파일 접두사 (예: "axon_project_root")
@@ -202,6 +203,7 @@ export async function findProjectRootByShell(options: {
 		findType,
 		parentLevels,
 		excludePattern,
+		searchPath = '.',        // 기본값: 현재 디렉토리 (워크스페이스 루트)
 		taskName,
 		taskId,
 		resultFilePrefix
@@ -212,12 +214,13 @@ export async function findProjectRootByShell(options: {
 	const resultFileUri = vscode.Uri.joinPath(workspaceFolder.uri, resultFile);
 	
 	try {
-		// find 명령어 구성
-		let findCommand = `find . -maxdepth ${maxDepth} -name ${findPattern} -type ${findType}`;
+		// find 명령어 구성 (searchPath 사용)
+		let findCommand = `find ${searchPath} -maxdepth ${maxDepth} -name ${findPattern} -type ${findType}`;
 		if (excludePattern) {
 			findCommand += ` -not -path "${excludePattern}"`;
 		}
-		findCommand += ` | head -1`;
+		// -print -quit: 첫 번째 결과를 찾으면 즉시 종료 (head -1보다 빠름)
+		findCommand += ` -print -quit`;
 		
 		// 상위 디렉토리로 올라가는 명령어 생성 (dirname 중첩)
 		// 예: parentLevels=1이면 dirname "$FOUND_PATH"
@@ -252,13 +255,14 @@ export async function findProjectRootByShell(options: {
 			new vscode.ShellExecution(shellScript, { cwd: workspacePath })
 		);
 		
-		task.presentationOptions = {
-			reveal: vscode.TaskRevealKind.Silent,
-			focus: false,
-			panel: vscode.TaskPanelKind.Shared,
-			showReuseMessage: false,
-			clear: false
-		};
+	task.presentationOptions = {
+		reveal: vscode.TaskRevealKind.Silent,
+		focus: false,
+		panel: vscode.TaskPanelKind.Shared,
+		showReuseMessage: false,
+		clear: false,
+		close: true  // Task 완료 후 터미널 자동 닫기
+	};
 		
 		// 작업 실행 및 완료 대기
 		await new Promise<void>((resolve, reject) => {

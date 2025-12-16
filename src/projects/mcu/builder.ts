@@ -20,6 +20,30 @@ interface McuTaskConfig {
  */
 export class McuProjectBuilder {
 	/**
+	 * 작업 완료 후 터미널 닫기 확인 팝업
+	 */
+	private static async askToCloseTerminal(taskName: string): Promise<void> {
+		const result = await vscode.window.showInformationMessage(
+			`${taskName}가 완료되었습니다.\n터미널을 닫겠습니까?`,
+			{ modal: true },
+			'Yes',
+			'No'
+		);
+		
+		if (result === 'Yes') {
+			const activeTerminal = vscode.window.activeTerminal;
+			if (activeTerminal) {
+				axonLog(`✅ 사용자가 터미널 닫기를 선택했습니다. 터미널을 닫습니다.`);
+				activeTerminal.dispose();
+			} else {
+				axonLog(`⚠️ 활성 터미널이 없습니다.`);
+			}
+		} else {
+			axonLog(`ℹ️ 사용자가 터미널을 열어둡니다.`);
+		}
+	}
+
+	/**
 	 * settings.json 업데이트 함수
 	 */
 	private static async updateSettingsJson(
@@ -263,30 +287,34 @@ export class McuProjectBuilder {
 				return;
 			}
 
-			axonLog(`🔨 실행할 명령 준비 완료`);
-			
-			await executeShellTask({
-				command: command,
-				cwd: mcuBuildPath,
-				taskName: config.taskName,
-				taskId: config.taskId,
-				showTerminal: true,
-				useScriptFile: true
-			});
-			
-			// Build View에 포커스 복원
-			setTimeout(async () => {
-				await vscode.commands.executeCommand('axonBuildView.focus');
-				axonLog(`🔄 Build View에 포커스를 복원했습니다`);
-			}, 100);
-			
-			axonLog(`✅ ${config.taskName} 실행 완료`);
+		axonLog(`🔨 실행할 명령 준비 완료`);
+		
+		await executeShellTask({
+			command: command,
+			cwd: mcuBuildPath,
+			taskName: config.taskName,
+			taskId: config.taskId,
+			showTerminal: true,
+			useScriptFile: true
+		});
+		
+		// Build View에 포커스 복원
+		setTimeout(async () => {
+			await vscode.commands.executeCommand('axonBuildView.focus');
+			axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+		}, 100);
+		
+		axonLog(`✅ ${config.taskName} 실행 완료`);
+		vscode.window.showInformationMessage(`${config.taskName}이 완료되었습니다!`);
+		
+		// 터미널 닫기 확인 팝업
+		await this.askToCloseTerminal(config.taskName);
 
-		} catch (error) {
-			const errorMsg = `${config.taskName} 실행 중 오류가 발생했습니다: ${error}`;
-			axonError(errorMsg);
-			vscode.window.showErrorMessage(errorMsg);
-		}
+	} catch (error) {
+		const errorMsg = `${config.taskName} 실행 중 오류가 발생했습니다: ${error}`;
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
+	}
 	}
 
 	/**

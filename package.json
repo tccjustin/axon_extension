@@ -3,7 +3,7 @@
   "displayName": "Axon",
   "publisher": "justin-lee",
   "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.4.6",
+  "version": "0.4.8",
   "icon": "icon.png",
   "extensionKind": [
     "ui",
@@ -192,6 +192,11 @@
           "type": "string",
           "default": "",
           "description": "Yocto project root directory path (automatically set when creating a project)"
+        },
+        "axon.yocto.imagesDir": {
+          "type": "string",
+          "default": "",
+          "description": "Yocto images directory path where SD_Data.gpt is located (automatically set when found)"
         },
         "axon.mcu.projectRoot": {
           "type": "string",

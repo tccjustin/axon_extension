@@ -275,24 +275,24 @@ async function executeFwdnWithAutoClose(terminal: vscode.Terminal): Promise<void
 							const successMsg = '✅ FWDN 실행 완료!';
 							axonSuccess(successMsg);
 							
-							// 터미널 닫기 확인 팝업
-							const result = await vscode.window.showInformationMessage(
-								`FWDN이 완료되었습니다.\n터미널을 닫겠습니까?`,
-								{ modal: false },
-								'Yes',
-								'No'
-							);
-							
-							if (result === 'Yes') {
-								try {
-									terminal.dispose();
-									axonLog(`✅ 사용자가 터미널 닫기를 선택했습니다. 터미널을 닫습니다.`);
-								} catch (disposeError) {
-									axonLog(`⚠️ 터미널 종료 중 오류: ${disposeError}`);
-								}
-							} else {
-								axonLog(`ℹ️ 사용자가 터미널을 열어둡니다.`);
+						// 터미널 닫기 확인 팝업
+						const result = await vscode.window.showInformationMessage(
+							`FWDN이 완료되었습니다.\n터미널을 닫겠습니까?`,
+							{ modal: true },
+							'Yes',
+							'No'
+						);
+						
+						if (result === 'Yes') {
+							try {
+								terminal.dispose();
+								axonLog(`✅ 사용자가 터미널 닫기를 선택했습니다. 터미널을 닫습니다.`);
+							} catch (disposeError) {
+								axonLog(`⚠️ 터미널 종료 중 오류: ${disposeError}`);
 							}
+						} else {
+							axonLog(`ℹ️ 사용자가 터미널을 열어둡니다.`);
+						}
 							
 							resolve();
 						}
@@ -777,40 +777,96 @@ export async function executeFwdnAvailableImage(extensionPath: string): Promise<
 	axonLog(`🚀 FWDN Specific Image File 실행 명령 시작`);
 	
 	try {
-		// 프로젝트 타입 확인
-		const { ensureProjectType } = await import('./utils');
-		const projectType = await ensureProjectType();
-		if (!projectType) {
-			axonLog('❌ 프로젝트 타입 선택이 취소되었습니다.');
-			vscode.window.showInformationMessage('작업이 취소되었습니다.');
-			return;
-		}
-		
-		// Yocto 프로젝트 루트 찾기
-		const { YoctoProjectBuilder } = await import('./projects/yocto/builder');
-		const projectRoot = await YoctoProjectBuilder.getYoctoProjectRoot();
-		axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
-		
 		// 워크스페이스 폴더
 		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
 		if (!workspaceFolder) {
 			throw new Error('워크스페이스 폴더를 찾을 수 없습니다.');
 		}
 		
-		// AP 빌드 설정 로드
-		const apConfig = await YoctoProjectBuilder.ensureApBuildConfig(projectRoot, workspaceFolder);
-		if (!apConfig) {
-			axonLog('❌ AP 빌드 설정 선택이 취소되었습니다.');
+		// settings.json에서 Yocto 프로젝트 루트 가져오기
+		const config = vscode.workspace.getConfiguration('axon');
+		let projectRoot = config.get<string>('yocto.projectRoot');
+		
+		if (!projectRoot || projectRoot.trim() === '') {
+			// settings.json에 없으면 찾기
+			axonLog('⚠️ settings.json에 Yocto 프로젝트 루트가 없습니다. 자동 탐지를 시작합니다.');
+			const { YoctoProjectBuilder } = await import('./projects/yocto/builder');
+			projectRoot = await YoctoProjectBuilder.getYoctoProjectRoot();
+		} else {
+			axonLog(`✅ settings.json에서 Yocto 프로젝트 루트 사용: ${projectRoot}`);
+		}
+		
+		axonLog(`📁 Yocto 프로젝트 루트: ${projectRoot}`);
+	
+	// SD_Data.gpt 파일이 있는 이미지 디렉토리 경로 가져오기
+	// settings.json에 저장된 경로가 있으면 사용하고, 없으면 검색 후 저장
+	axonLog('🔍 이미지 디렉토리 경로 확인 중...');
+	
+	let imagesDir: string | null = config.get<string>('yocto.imagesDir') || null;
+	
+	// settings.json에 저장된 경로가 있으면 유효성 검증
+	if (imagesDir && imagesDir.trim() !== '') {
+		axonLog(`🔍 저장된 이미지 디렉토리 확인 중: ${imagesDir}`);
+		
+		// SD_Data.gpt 파일 존재 여부 확인
+		const gptFileUri = vscode.Uri.from({
+			scheme: workspaceFolder.uri.scheme,
+			authority: workspaceFolder.uri.authority,
+			path: `${imagesDir}/SD_Data.gpt`
+		});
+		
+		try {
+			await vscode.workspace.fs.stat(gptFileUri);
+			axonLog(`✅ 저장된 이미지 디렉토리 사용: ${imagesDir}`);
+		} catch {
+			axonLog(`⚠️ 저장된 경로에 SD_Data.gpt 파일이 없습니다. 재탐색을 시작합니다.`);
+			imagesDir = null;
+		}
+	}
+	
+	// settings.json에 없거나 유효하지 않으면 검색
+	if (!imagesDir) {
+		axonLog('🔍 SD_Data.gpt 파일을 찾아 이미지 디렉토리 탐지 중...');
+		const { findProjectRootByShell } = await import('./projects/common/shell-utils');
+		
+		// projectRoot가 워크스페이스와 같은지 확인
+		const workspacePath = workspaceFolder.uri.path;
+		const useAbsolutePath = projectRoot !== workspacePath;
+		const searchPath = useAbsolutePath ? projectRoot : '.';
+		
+		imagesDir = await findProjectRootByShell({
+			workspaceFolder,
+			findPattern: 'SD_Data.gpt',
+			maxDepth: 10,  // 충분히 깊게 검색 (하지만 -print -quit로 첫 번째 찾으면 즉시 종료)
+			findType: 'f',
+			parentLevels: 1,  // 파일이 있는 디렉토리 경로를 가져옴 (dirname 1번 적용)
+			searchPath: searchPath,
+			taskName: 'Find Images Directory',
+			taskId: 'find-images-dir',
+			resultFilePrefix: 'axon_images_dir'
+		});
+		
+		if (!imagesDir) {
+			const errorMsg = `SD_Data.gpt 파일을 찾을 수 없습니다.\n\n` +
+				`Yocto AP 빌드를 먼저 실행하여 이미지 파일을 생성해주세요.`;
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
 			return;
 		}
 		
-		const { machine } = apConfig;
-		axonLog(`📋 MACHINE: ${machine}`);
+		axonLog(`✅ 이미지 디렉토리 발견: ${imagesDir}`);
 		
-		// partition.list 경로 구성
-		const imagesDir = `${projectRoot}/build/${machine}/tmp/deploy/images/${machine}`;
-		const partitionListPath = `${imagesDir}/partition.list`;
-		axonLog(`📁 partition.list 경로: ${partitionListPath}`);
+		// settings.json에 저장
+		try {
+			await updateSettingsJson(workspaceFolder, { 'axon.yocto.imagesDir': imagesDir });
+			axonLog(`✅ 이미지 디렉토리를 settings.json에 저장했습니다.`);
+		} catch (error) {
+			axonLog(`⚠️ settings.json 저장 실패: ${error}`);
+		}
+	}
+	
+	const partitionListPath = `${imagesDir}/partition.list`;
+	axonLog(`📁 partition.list 경로: ${partitionListPath}`);
 		
 		// partition.list 파일 읽기
 		const partitionListUri = vscode.Uri.from({
@@ -858,16 +914,36 @@ export async function executeFwdnAvailableImage(extensionPath: string): Promise<
 			canPickMany: false
 		});
 		
-		if (!selected) {
-			axonLog('❌ 사용자가 파티션 선택을 취소했습니다.');
-			vscode.window.showInformationMessage('파티션 다운로드가 취소되었습니다.');
-			return;
-		}
-		
-		axonLog(`✅ 선택된 파티션: ${selected.partition.name}`);
-		
-		// 선택한 파티션 다운로드 실행
-		await executeFwdnDownloadPartition(extensionPath, selected.partition, imagesDir);
+	if (!selected) {
+		axonLog('❌ 사용자가 파티션 선택을 취소했습니다.');
+		vscode.window.showInformationMessage('파티션 다운로드가 취소되었습니다.');
+		return;
+	}
+	
+	axonLog(`✅ 선택된 파티션: ${selected.partition.name}`);
+	
+	// 사용자 확인 팝업
+	const confirmResult = await vscode.window.showWarningMessage(
+		`선택한 파티션을 다운로드하시겠습니까?\n\n` +
+		`파티션: ${selected.partition.name}\n` +
+		`파일: ${selected.partition.fileName}\n` +
+		`크기: ${selected.partition.size}\n\n` +
+		`⚠️ 타겟 보드에 이미지가 다운로드됩니다.`,
+		{ modal: true },
+		'실행',
+		'취소'
+	);
+	
+	if (confirmResult !== '실행') {
+		axonLog('❌ 사용자가 파티션 다운로드 실행을 취소했습니다.');
+		vscode.window.showInformationMessage('파티션 다운로드가 취소되었습니다.');
+		return;
+	}
+	
+	axonLog('✅ 사용자가 파티션 다운로드 실행을 확인했습니다.');
+	
+	// 선택한 파티션 다운로드 실행
+	await executeFwdnDownloadPartition(extensionPath, selected.partition, imagesDir);
 		
 	} catch (error) {
 		const errorMsg = `FWDN Specific Image File 실행 중 오류가 발생했습니다: ${error}`;
