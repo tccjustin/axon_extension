@@ -178,7 +178,8 @@
           "type": "string",
           "enum": [
             "mcu_project",
-            "yocto_project"
+            "yocto_project",
+            "yocto_project_autolinux"
           ],
           "default": "",
           "description": "Project type (automatically sets buildAxonFolderName)"
@@ -217,6 +218,42 @@
           "type": "array",
           "default": [],
           "description": "List of devtool recipes that have been created (automatically managed)"
+        },
+        "axon.yocto.sourceMirror": {
+          "type": "string",
+          "default": "",
+          "description": "Source Mirror 경로 (Yocto 다운로드 시간 단축)",
+          "scope": "machine"
+        },
+        "axon.yocto.buildtool": {
+          "type": "string",
+          "default": "",
+          "description": "Build Tools 경로 (Yocto 빌드 도구 재사용)",
+          "scope": "machine"
+        },
+        "axon.yocto.autolinuxGitUrl": {
+          "type": "string",
+          "default": "ssh://bitbucket.telechips.com:7999/script/build-autolinux",
+          "description": "Autolinux build script Git Repository URL",
+          "scope": "window"
+        },
+        "axon.yocto.manifestGitUrl": {
+          "type": "string",
+          "default": "ssh://git@bitbucket.telechips.com:7999/manifest/manifest-cgw.git",
+          "description": "Yocto Manifest Git Repository URL",
+          "scope": "window"
+        },
+        "axon.mcu.gitUrl": {
+          "type": "string",
+          "default": "ssh://git@bitbucket.telechips.com:7999/linux_yp4_0_cgw/mcu-tcn100x.git",
+          "description": "MCU Standalone Project Git Repository URL",
+          "scope": "window"
+        },
+        "axon.mcu.buildtool": {
+          "type": "string",
+          "default": "",
+          "description": "MCU Build Tools Path (optional, for faster setup)",
+          "scope": "machine"
         }
       }
     },

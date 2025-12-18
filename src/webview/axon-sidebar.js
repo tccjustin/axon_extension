@@ -100,9 +100,17 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'btn-run-create-project': {
                 const select = document.getElementById('create-project-select');
                 const value = select.value;
+                let action;
+                if (value === 'mcu') {
+                    action = 'axon.createMcuStandaloneProject';
+                } else if (value === 'yocto-autolinux') {
+                    action = 'axon.createAutolinuxProject';
+                } else {
+                    action = 'axon.createYoctoProject';
+                }
                 vscode.postMessage({ 
                     command: 'execute', 
-                    action: value === 'mcu' ? 'axon.createMcuStandaloneProject' : 'axon.createYoctoProject' 
+                    action: action
                 });
                 break;
             }
@@ -164,6 +172,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const select = document.getElementById('yocto-clean-select');
                 const actions = { ap: 'axon.cleanYoctoAp', mcu: 'axon.cleanYoctoMcu', all: 'axon.cleanYoctoAll' };
                 vscode.postMessage({ command: 'execute', action: actions[select.value] });
+                break;
+            }
+            // Build Yocto(autolinux)
+            case 'btn-yocto-autolinux-run-build': {
+                const select = document.getElementById('yocto-autolinux-build-select');
+                if (select.value === 'build') {
+                    vscode.postMessage({ command: 'execute', action: 'axon.buildAutolinux' });
+                }
                 break;
             }
             // DevTool
@@ -265,13 +281,20 @@ window.addEventListener('message', event => {
 function updateProjectTypeUI(projectType) {
     const label = document.getElementById('current-project-type');
     if (label) {
-        const displayMap = { mcu_project: 'MCU Project', yocto_project: 'Yocto Project' };
+        const displayMap = { 
+            mcu_project: 'MCU Project', 
+            yocto_project: 'Yocto Project',
+            yocto_autolinux: 'Yocto Project (autolinux)',
+            yocto_project_autolinux: 'Yocto Project (autolinux)'
+        };
         label.textContent = `Current: ${displayMap[projectType] || 'None'}`;
     }
 
     const select = document.getElementById('project-type-select');
     if (select && projectType) {
-        select.value = projectType;
+        // yocto_project_autolinux는 UI에서 yocto_autolinux로 표시
+        const uiProjectType = projectType === 'yocto_project_autolinux' ? 'yocto_autolinux' : projectType;
+        select.value = uiProjectType;
     }
 
     // projectType이 없으면 Build, FWDN 섹션만 숨기기 (Configuration은 프로젝트 타입 선택을 위해 항상 표시)
@@ -286,6 +309,7 @@ function updateProjectTypeUI(projectType) {
     const groups = {
         mcu: document.getElementById('group-mcu-build'),
         yocto: document.getElementById('group-yocto-build'),
+        yoctoAutolinux: document.getElementById('group-yocto-autolinux'),
         devtool: document.getElementById('group-devtool'),
         yoctoConfig: document.getElementById('group-yocto-config'),
         buildOptionExtraction: document.getElementById('group-build-option-extraction')
@@ -300,11 +324,24 @@ function updateProjectTypeUI(projectType) {
     // projectType이 있을 때 그룹별 표시/숨김 처리
     const isYocto = projectType === 'yocto_project';
     const isMcu = projectType === 'mcu_project';
+    const isYoctoAutolinux = projectType === 'yocto_autolinux' || projectType === 'yocto_project_autolinux';
 
-    if (groups.mcu) groups.mcu.classList.toggle('hidden', isYocto);
-    if (groups.yocto) groups.yocto.classList.toggle('hidden', isMcu);
-    if (groups.devtool) groups.devtool.classList.toggle('hidden', isMcu);
-    if (groups.yoctoConfig) groups.yoctoConfig.classList.toggle('hidden', isMcu);
+    // MCU 빌드: MCU 프로젝트일 때만 표시
+    if (groups.mcu) groups.mcu.classList.toggle('hidden', !isMcu);
+    
+    // Yocto 빌드: Yocto 프로젝트일 때만 표시
+    if (groups.yocto) groups.yocto.classList.toggle('hidden', !isYocto);
+    
+    // Yocto(autolinux) 빌드: autolinux 프로젝트일 때만 표시
+    if (groups.yoctoAutolinux) groups.yoctoAutolinux.classList.toggle('hidden', !isYoctoAutolinux);
+    
+    // DevTool: Yocto 프로젝트일 때만 표시 (autolinux는 제외)
+    if (groups.devtool) groups.devtool.classList.toggle('hidden', !isYocto);
+    
+    // Yocto Config: Yocto 프로젝트일 때만 표시 (autolinux는 제외)
+    if (groups.yoctoConfig) groups.yoctoConfig.classList.toggle('hidden', !isYocto);
+    
+    // Build Option Extraction: MCU 프로젝트일 때만 표시
     if (groups.buildOptionExtraction) groups.buildOptionExtraction.classList.toggle('hidden', !isMcu);
 }
 

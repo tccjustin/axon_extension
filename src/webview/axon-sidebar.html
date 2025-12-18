@@ -17,6 +17,7 @@
                 <select id="create-project-select">
                     <option value="mcu">MCU Standalone Project</option>
                     <option value="yocto">Yocto Project</option>
+                    <option value="yocto-autolinux">Yocto Project (autolinux)</option>
                 </select>
                 <button id="btn-run-create-project" title="Create Project">
                     <span class="codicon codicon-play"></span>
@@ -42,6 +43,7 @@
                         <select id="project-type-select">
                             <option value="mcu_project">MCU Project</option>
                             <option value="yocto_project">Yocto Project</option>
+                            <option value="yocto_autolinux">Yocto Project (autolinux)</option>
                         </select>
                         <button id="btn-set-project-type" title="Apply Project Type">
                             <span class="codicon codicon-check"></span>
@@ -155,6 +157,21 @@
                         <span class="codicon codicon-trash"></span> Clean All
                     </button>
                     -->
+                </div>
+            </details>
+
+            <!-- Yocto(autolinux) Group -->
+            <details id="group-yocto-autolinux">
+                <summary><span class="codicon codicon-package"></span> Yocto (autolinux)</summary>
+                <div class="group-content">
+                    <div class="input-group">
+                        <select id="yocto-autolinux-build-select">
+                            <option value="build">./autolinux -c build</option>
+                        </select>
+                        <button id="btn-yocto-autolinux-run-build" title="Run Build">
+                            <span class="codicon codicon-play"></span>
+                        </button>
+                    </div>
                 </div>
             </details>
 

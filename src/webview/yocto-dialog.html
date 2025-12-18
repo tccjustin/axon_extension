@@ -12,40 +12,24 @@
         <h1>Yocto Project 생성</h1>
         
         <div class="form-group">
-            <label for="projectName">프로젝트 이름 *</label>
-            <input type="text" id="projectName" placeholder="my-yocto-project" />
-        </div>
-
-        <div class="form-group">
-            <label for="projectPath">프로젝트 생성 위치 *</label>
-            <div class="button-group">
-                <input type="text" id="projectPath" readonly />
+            <label for="projectPath">프로젝트 폴더 생성 및 Manifest git clone *</label>
+            <div class="button-group-triple">
                 <button type="button" id="browseBtn">Browse</button>
-            </div>
-        </div>
-
-        <!-- Manifest 기반 프로젝트 생성 -->
-        <div class="form-group">
-            <label for="manifestGitUrl">Manifest Git 저장소 URL *</label>
-            <div class="button-group">
-                <input type="text" id="manifestGitUrl" value="ssh://git@bitbucket.telechips.com:7999/manifest/manifest-cgw.git" />
+                <input type="text" id="projectPath" placeholder="/home/user/workspace/my-yocto-project" />
                 <button type="button" id="loadManifestsBtn">Load</button>
             </div>
+            <p class="help-text">💡 Browse로 상위 폴더를 선택하고, 경로 끝에 프로젝트 이름을 추가한 후 Load를 클릭하세요</p>
+            <p class="help-text">💡 Manifest Git URL은 Settings (Ctrl+,)에서 "Axon: Manifest Git Url"을 검색하여 변경할 수 있습니다</p>
         </div>
+
+        <!-- Hidden input for Manifest Git URL (Settings에서 자동으로 설정됨) -->
+        <input type="hidden" id="manifestGitUrl" />
 
         <div class="form-group" id="manifestSelectGroup" style="display: none;">
             <label for="manifestSelect">SDK Manifest 선택 *</label>
             <select id="manifestSelect">
                 <option value="">-- 선택하세요 --</option>
             </select>
-        </div>
-
-        <!-- 경고 문구 (Load 후에만 표시) -->
-        <div class="warning-message" id="warningMessage" style="display: none;">
-            <div class="warning-icon">⚠️</div>
-            <div class="warning-content">
-                <strong>주의:</strong> Load만 하고 생성을 완료하지 않으면 불필요한 폴더가 원격 서버에 남아있을 수 있습니다.
-            </div>
         </div>
 
         <div class="actions">

@@ -19,6 +19,7 @@ import { McuProjectDialog } from './projects/mcu/dialog';
 import { McuProjectBuilder } from './projects/mcu/builder';
 import { YoctoProjectDialog } from './projects/yocto/dialog';
 import { YoctoProjectBuilder } from './projects/yocto/builder';
+import { AutolinuxProjectDialog } from './projects/yocto/autolinux-dialog';
 import { executeShellTask } from './projects/common/shell-utils';
 import { AxonSidebarProvider } from './AxonSidebarProvider';
 
@@ -273,6 +274,9 @@ export async function activate(context: vscode.ExtensionContext) {
 	
 	// Yocto Project Dialog Provider 등록
 	const yoctoProjectDialog = new YoctoProjectDialog(context);
+	
+	// Autolinux Project Dialog Provider 등록
+	const autolinuxProjectDialog = new AutolinuxProjectDialog(context);
 
 	// FWDN ALL 실행 명령
 	const runFwdnAllDisposable = vscode.commands.registerCommand(
@@ -336,6 +340,23 @@ export async function activate(context: vscode.ExtensionContext) {
 		'axon.createYoctoProject',
 		async () => {
 			await yoctoProjectDialog.showProjectCreationWebView();
+		}
+	);
+
+	// Create Autolinux Project 명령
+	const createAutolinuxProjectDisposable = vscode.commands.registerCommand(
+		'axon.createAutolinuxProject',
+		async () => {
+			await autolinuxProjectDialog.showProjectCreationWebView();
+		}
+	);
+
+	// Build Autolinux 명령
+	const buildAutolinuxDisposable = vscode.commands.registerCommand(
+		'axon.buildAutolinux',
+		async () => {
+			const { AutolinuxProjectBuilder } = await import('./projects/yocto/autolinux-builder');
+			await AutolinuxProjectBuilder.buildAutolinux();
 		}
 	);
 
@@ -441,12 +462,37 @@ export async function activate(context: vscode.ExtensionContext) {
 	const setProjectTypeDisposable = vscode.commands.registerCommand(
 		'axon.setProjectType',
 		async (projectType: string) => {
-			if (projectType !== 'mcu_project' && projectType !== 'yocto_project') {
+			if (projectType !== 'mcu_project' && 
+			    projectType !== 'yocto_project' && 
+			    projectType !== 'yocto_autolinux' &&
+			    projectType !== 'yocto_project_autolinux') {
 				vscode.window.showErrorMessage(`잘못된 프로젝트 타입입니다: ${projectType}`);
 				return;
 			}
 			
-			await setProjectType(projectType as 'mcu_project' | 'yocto_project');
+			console.log(`[Axon] setProjectType 호출됨: ${projectType}`);
+			
+			// yocto_autolinux 또는 yocto_project_autolinux를 yocto_project_autolinux로 통일
+			let normalizedProjectType = projectType;
+			if (projectType === 'yocto_autolinux') {
+				normalizedProjectType = 'yocto_project_autolinux';
+			}
+			
+			// projectType을 직접 저장
+			const config = vscode.workspace.getConfiguration('axon');
+			await config.update('projectType', normalizedProjectType, vscode.ConfigurationTarget.Workspace);
+			
+			const displayMap: { [key: string]: string } = { 
+				mcu_project: 'MCU Project', 
+				yocto_project: 'Yocto Project',
+				yocto_project_autolinux: 'Yocto Project (autolinux)'
+			};
+			
+			console.log(`[Axon] projectType 저장 완료: ${normalizedProjectType}`);
+			
+			vscode.window.showInformationMessage(
+				`프로젝트 타입이 설정되었습니다: ${displayMap[normalizedProjectType] || normalizedProjectType}`
+			);
 			
 			// webview에 상태 동기화
 			if (globalBuildProvider) {
@@ -466,10 +512,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		// 새로운 프로젝트 생성 명령어들
 		createMcuStandaloneProjectDisposable,
 		createYoctoProjectDisposable,
+		createAutolinuxProjectDisposable,
 		// 빌드 명령어들
 		buildYoctoApDisposable,
 		buildYoctoMcuDisposable,
 		buildYoctoKernelDisposable,
+		buildAutolinuxDisposable,
 		// DevTool 명령어들
 		devtoolCreateModifyDisposable,
 		devtoolBuildDisposable,
