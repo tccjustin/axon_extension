@@ -180,3 +180,55 @@ details > summary .codicon {
 .hidden {
     display: none !important;
 }
+
+/* Help Icon & Tooltip Styles */
+.help-icon {
+    margin-left: 6px;
+    font-size: 14px;
+    color: var(--vscode-descriptionForeground);
+    cursor: help;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+.help-icon:hover {
+    opacity: 1;
+    color: var(--vscode-foreground);
+}
+
+.section-header .help-icon {
+    margin-left: auto;
+}
+
+summary .help-icon {
+    margin-left: 6px;
+}
+
+/* Tooltip Container */
+.help-tooltip {
+    position: fixed;
+    background: var(--vscode-editorHoverWidget-background);
+    border: 1px solid var(--vscode-editorHoverWidget-border);
+    border-radius: 4px;
+    padding: 8px 12px;
+    max-width: 350px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--vscode-editorHoverWidget-foreground);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    white-space: pre-line;
+}
+
+.help-tooltip.show {
+    opacity: 1;
+}
+
+.help-tooltip strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--vscode-textLink-foreground);
+}

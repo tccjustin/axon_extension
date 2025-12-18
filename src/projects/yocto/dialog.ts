@@ -135,16 +135,20 @@ export class YoctoProjectDialog {
 		// HTML 내용 설정
 		panel.webview.html = await this.buildWebviewHtml(panel.webview);
 
-		// Settings에서 Manifest Git URL 가져오기 및 WebView로 전송
+		// Settings에서 설정값 가져오기 및 WebView로 전송
 		const config = vscode.workspace.getConfiguration('axon.yocto');
 		const manifestGitUrl = config.get<string>('manifestGitUrl') || 
 		                       'ssh://git@bitbucket.telechips.com:7999/manifest/manifest-cgw.git';
+		const sourceMirrorPath = config.get<string>('sourceMirror', '');
+		const buildtoolPath = config.get<string>('buildtool', '');
 		
 		// WebView 로드 완료 후 초기 데이터 전송
 		setTimeout(() => {
 			panel.webview.postMessage({
 				command: 'init',
-				manifestGitUrl: manifestGitUrl
+				manifestGitUrl: manifestGitUrl,
+				sourceMirrorPath: sourceMirrorPath,
+				buildtoolPath: buildtoolPath
 			});
 		}, 100);
 
@@ -177,6 +181,12 @@ export class YoctoProjectDialog {
 			case 'browseFolder':
 				await this.browseFolderForWebView(panel);
 				break;
+			case 'browseSourceMirror':
+				await this.browseSourceMirrorForWebView(panel);
+				break;
+			case 'browseBuildtool':
+				await this.browseBuildtoolForWebView(panel);
+				break;
 			case 'loadManifests':
 				await this.loadManifestsForWebView(message, panel);
 				break;
@@ -207,6 +217,62 @@ export class YoctoProjectDialog {
 				command: 'setFolderPath',
 				path: folderPath // Unix 경로를 웹뷰로 전달
 			});
+		}
+	}
+
+	/**
+	 * Source Mirror 폴더 선택 다이얼로그
+	 */
+	private async browseSourceMirrorForWebView(panel: vscode.WebviewPanel): Promise<void> {
+		const folders = await vscode.window.showOpenDialog({
+			canSelectFiles: false,
+			canSelectFolders: true,
+			canSelectMany: false,
+			openLabel: 'Source Mirror 경로 선택',
+			title: 'Source Mirror 폴더를 선택하세요'
+		});
+
+		if (folders && folders.length > 0) {
+			const folderPath = folders[0].path; // Unix 경로 형식
+			
+			// settings.json에 저장 (machine scope)
+			const config = vscode.workspace.getConfiguration('axon.yocto');
+			await config.update('sourceMirror', folderPath, vscode.ConfigurationTarget.Global);
+			
+			panel.webview.postMessage({
+				command: 'setSourceMirrorPath',
+				path: folderPath
+			});
+			
+			axonLog(`✅ Source Mirror 경로 저장: ${folderPath}`);
+		}
+	}
+
+	/**
+	 * Buildtool 폴더 선택 다이얼로그
+	 */
+	private async browseBuildtoolForWebView(panel: vscode.WebviewPanel): Promise<void> {
+		const folders = await vscode.window.showOpenDialog({
+			canSelectFiles: false,
+			canSelectFolders: true,
+			canSelectMany: false,
+			openLabel: 'Buildtool 경로 선택',
+			title: 'Buildtool 폴더를 선택하세요'
+		});
+
+		if (folders && folders.length > 0) {
+			const folderPath = folders[0].path; // Unix 경로 형식
+			
+			// settings.json에 저장 (machine scope)
+			const config = vscode.workspace.getConfiguration('axon.yocto');
+			await config.update('buildtool', folderPath, vscode.ConfigurationTarget.Global);
+			
+			panel.webview.postMessage({
+				command: 'setBuildtoolPath',
+				path: folderPath
+			});
+			
+			axonLog(`✅ Buildtool 경로 저장: ${folderPath}`);
 		}
 	}
 

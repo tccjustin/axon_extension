@@ -380,3 +380,144 @@ function updateRecipesList(recipes) {
     }
 }
 
+// === Help Tooltip System ===
+const helpMessages = {
+    'create-project': `프로젝트를 생성합니다.
+
+• MCU Standalone Project: MCU 프로젝트를 Git clone하고 초기 설정을 수행합니다.
+• Yocto Project: Manifest 기반 Yocto 프로젝트를 생성합니다 (repo init/sync).
+• Yocto Project (autolinux): Autolinux 빌드 스크립트를 사용한 Yocto 프로젝트를 생성합니다.`,
+
+    'project-type': `현재 워크스페이스의 프로젝트 타입을 설정합니다.
+
+프로젝트 타입에 따라 사이드바에 표시되는 빌드 메뉴가 달라집니다.
+• MCU Project: MCU 빌드 메뉴만 표시
+• Yocto Project: Yocto 빌드 메뉴만 표시
+• Yocto Project (autolinux): Autolinux 빌드 메뉴 표시`,
+
+    'build-option-extraction': `MCU 프로젝트의 빌드 옵션을 추출합니다.
+
+bear make 명령을 실행하여 compile_commands.json을 생성하고,
+이를 c_cpp_properties.json에 반영하여 IntelliSense를 개선합니다.
+
+※ MCU 프로젝트에서만 사용 가능합니다.`,
+
+    'yocto-config': `Yocto 프로젝트의 설정 파일을 편집합니다.
+
+• AP local.conf: AP 빌드 설정 파일
+• MCU local.conf: MCU 빌드 설정 파일
+• Modify branch/srcrev: Git 브랜치 및 소스 리비전 수정
+• vscode - exclude folders: VS Code에서 제외할 폴더 설정`,
+
+    'mcu-build': `MCU 프로젝트를 빌드합니다.
+
+• Build All: 모든 MCU 코어 빌드
+• Build m7-np/m7-0/m7-1/m7-2: 특정 코어만 빌드
+• Clean: 빌드 결과물 삭제
+
+make tcn100x_<core>_defconfig && make 명령을 실행합니다.`,
+
+    'yocto-build': `Yocto 프로젝트를 빌드합니다.
+
+• Build AP: Application Processor 이미지 빌드
+• Build MCU: MCU 펌웨어 빌드
+• Build Kernel: 리눅스 커널만 빌드
+• Clean: 빌드 결과물 삭제 (AP/MCU/All)
+
+bitbake 명령을 사용하여 빌드를 수행합니다.`,
+
+    'devtool': `Yocto DevTool을 사용하여 외부 소스를 관리합니다.
+
+• Create-workspace & modify: 레시피의 소스를 외부 워크스페이스로 추출
+• Build: 수정된 레시피를 빌드
+• Finish: 수정 사항을 레이어에 반영
+
+외부 소스 코드를 직접 수정하고 빌드할 수 있습니다.`,
+
+    'fwdn': `FWDN (Firmware Download)을 실행합니다.
+
+• Run FWDN: 펌웨어를 타겟 보드에 다운로드
+• Low Level Format: eMMC/SNOR 저장소를 포맷
+• FWDN Specific Image File: 특정 파티션 이미지만 다운로드
+
+※ 로컬 환경에서만 실행 가능합니다.
+※ Boot firmware 경로가 필요합니다.`
+};
+
+// Tooltip element
+const tooltip = document.getElementById('help-tooltip');
+let hideTooltipTimeout;
+
+// Show tooltip
+function showTooltip(iconElement, message) {
+    if (!tooltip || !message) return;
+    
+    // Clear any pending hide timeout
+    if (hideTooltipTimeout) {
+        clearTimeout(hideTooltipTimeout);
+    }
+    
+    // Set tooltip content
+    tooltip.textContent = message;
+    tooltip.classList.add('show');
+    
+    // Position tooltip near the icon
+    const rect = iconElement.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    
+    // Calculate position (try to show on the right, fallback to left if not enough space)
+    let left = rect.right + 10;
+    let top = rect.top;
+    
+    // Check if tooltip would go off-screen to the right
+    if (left + tooltipRect.width > window.innerWidth) {
+        left = rect.left - tooltipRect.width - 10;
+    }
+    
+    // Check if tooltip would go off-screen at the bottom
+    if (top + tooltipRect.height > window.innerHeight) {
+        top = window.innerHeight - tooltipRect.height - 10;
+    }
+    
+    // Ensure tooltip doesn't go off-screen at the top
+    if (top < 10) {
+        top = 10;
+    }
+    
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+}
+
+// Hide tooltip
+function hideTooltip() {
+    if (!tooltip) return;
+    
+    // Add a small delay before hiding
+    hideTooltipTimeout = setTimeout(() => {
+        tooltip.classList.remove('show');
+    }, 100);
+}
+
+// Setup help icon event listeners
+document.addEventListener('DOMContentLoaded', () => {
+    const helpIcons = document.querySelectorAll('.help-icon');
+    
+    helpIcons.forEach(icon => {
+        icon.addEventListener('mouseenter', (e) => {
+            const helpKey = e.target.dataset.help;
+            if (helpKey && helpMessages[helpKey]) {
+                showTooltip(e.target, helpMessages[helpKey]);
+            }
+        });
+        
+        icon.addEventListener('mouseleave', () => {
+            hideTooltip();
+        });
+        
+        // Prevent click from triggering parent elements (like details/summary)
+        icon.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    });
+});
+

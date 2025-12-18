@@ -168,6 +168,27 @@ select:focus {
     margin-top: 4px;
 }
 
+/* Build Tools 섹션 스타일 */
+.section-header {
+    margin-top: 24px;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.section-header h3 {
+    margin: 0 0 8px 0;
+    font-size: 16px;
+    color: var(--vscode-foreground);
+}
+
+.section-header .hint {
+    margin: 0;
+    font-size: 0.9em;
+    color: var(--vscode-descriptionForeground);
+    font-style: italic;
+}
+
 
 
 

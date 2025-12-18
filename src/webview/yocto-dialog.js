@@ -7,6 +7,7 @@ let projectPathInput, createBtn;
 let manifestGitUrlInput, loadManifestsBtn, manifestSelectGroup, manifestSelect;
 let manifestList = [];
 let browseBtn, warningMessage;
+let sourceMirrorPathInput, buildtoolPathInput, browseSourceMirrorBtn, browseBuildtoolBtn;
 
 // DOMContentLoaded 이벤트
 document.addEventListener('DOMContentLoaded', () => {
@@ -27,6 +28,12 @@ function initializeUI() {
     
     // 추가 요소
     browseBtn = document.getElementById('browseBtn');
+    
+    // Build Tools 요소
+    sourceMirrorPathInput = document.getElementById('sourceMirrorPath');
+    buildtoolPathInput = document.getElementById('buildtoolPath');
+    browseSourceMirrorBtn = document.getElementById('browseSourceMirrorBtn');
+    browseBuildtoolBtn = document.getElementById('browseBuildtoolBtn');
     
     // 이벤트 리스너 설정
     setupEventListeners();
@@ -97,6 +104,15 @@ function setupEventListeners() {
         vscode.postMessage({ command: 'browseFolder' });
     };
 
+    // Build Tools Browse 버튼
+    browseSourceMirrorBtn.onclick = () => {
+        vscode.postMessage({ command: 'browseSourceMirror' });
+    };
+
+    browseBuildtoolBtn.onclick = () => {
+        vscode.postMessage({ command: 'browseBuildtool' });
+    };
+
     document.getElementById('cancelBtn').onclick = () => {
         vscode.postMessage({ command: 'cancel' });
     };
@@ -112,7 +128,9 @@ function setupEventListeners() {
                 projectName: projectName,
                 projectPath: selectedPath,
                 manifestGitUrl: manifestGitUrlInput.value.trim(),
-                selectedManifest: manifestSelect.value
+                selectedManifest: manifestSelect.value,
+                sourceMirrorPath: sourceMirrorPathInput.value.trim(),
+                buildtoolPath: buildtoolPathInput.value.trim()
             }
         });
     };
@@ -125,7 +143,18 @@ window.addEventListener('message', e => {
         if (msg.manifestGitUrl) {
             manifestGitUrlInput.value = msg.manifestGitUrl;
         }
+        // Settings에서 받은 Build Tools 경로 설정
+        if (msg.sourceMirrorPath) {
+            sourceMirrorPathInput.value = msg.sourceMirrorPath;
+        }
+        if (msg.buildtoolPath) {
+            buildtoolPathInput.value = msg.buildtoolPath;
+        }
         validate();
+    } else if (msg.command === 'setSourceMirrorPath') {
+        sourceMirrorPathInput.value = msg.path;
+    } else if (msg.command === 'setBuildtoolPath') {
+        buildtoolPathInput.value = msg.path;
     } else if (msg.command === 'setFolderPath') {
         // 선택된 경로를 input에 설정 (사용자가 마지막 폴더명을 수정할 수 있음)
         projectPathInput.value = msg.path;

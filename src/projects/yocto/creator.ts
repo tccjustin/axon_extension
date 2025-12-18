@@ -13,6 +13,8 @@ export interface YoctoProjectData {
 	branchName?: string;
 	manifestGitUrl?: string;
 	selectedManifest?: string;
+	sourceMirrorPath?: string;
+	buildtoolPath?: string;
 }
 
 /**
@@ -23,7 +25,7 @@ export class YoctoProjectCreator {
 	 * Yocto 프로젝트 생성 메인 함수
 	 */
 	static async createYoctoProject(data: YoctoProjectData): Promise<void> {
-		const { projectName, projectUri, gitUrl, branchName, manifestGitUrl, selectedManifest } = data;
+		const { projectName, projectUri, gitUrl, branchName, manifestGitUrl, selectedManifest, sourceMirrorPath, buildtoolPath } = data;
 
 		const projectFullUri = vscode.Uri.joinPath(projectUri, projectName);
 
@@ -96,13 +98,19 @@ export class YoctoProjectCreator {
 			await this.repoSync(sdkFsPath, isRemote);
 			axonSuccess(`✅ repo sync가 완료되었습니다.`);
 			
-			// 4. build script 심볼릭 링크 생성 (SDK 폴더 안에)
+			// 4. Source Mirror & Buildtools 심볼릭 링크 생성 (선택사항)
+			if (sourceMirrorPath || buildtoolPath) {
+				axonLog(`🔗 Build Tools 심볼릭 링크 생성...`);
+				await this.createBuildToolsSymlinks(sdkFsPath, sourceMirrorPath, buildtoolPath, isRemote, sdkPath);
+			}
+
+			// 5. build script 심볼릭 링크 생성 (SDK 폴더 안에)
 			const buildScriptSourcePath = `${projectPath}/build-axon/buildscripts/build-axon.py`;
 			axonLog(`🔗 Build script 심볼릭 링크 생성...`);
 			await this.createBuildScriptSymlink(buildScriptSourcePath, sdkFsPath, sdkName, isRemote);
 			axonSuccess(`✅ Build script 심볼릭 링크가 생성되었습니다.`);
 			
-		// 5. auto-setup 실행 (SDK 폴더에서)
+		// 6. auto-setup 실행 (SDK 폴더에서)
 		axonLog(`⚙️ Auto-setup 실행...`);
 		await this.runAutoSetup(sdkFsPath, sdkName, isRemote, sdkPath);
 		axonSuccess(`✅ Auto-setup이 완료되었습니다.`);
@@ -189,6 +197,87 @@ export class YoctoProjectCreator {
 			taskId: 'yoctoRepoSync',
 			showTerminal: true
 		});
+	}
+
+	/**
+	 * Build Tools (Source Mirror & Buildtools) 심볼릭 링크 생성
+	 * 
+	 * @param sdkPath - SDK 폴더 경로
+	 * @param sourceMirrorPath - Source Mirror 경로 (선택사항)
+	 * @param buildtoolPath - Buildtool 경로 (선택사항)
+	 * @param isRemote - 원격 환경 여부
+	 * @param sdkUri - SDK URI (원격 환경용)
+	 */
+	private static async createBuildToolsSymlinks(
+		sdkPath: string, 
+		sourceMirrorPath?: string, 
+		buildtoolPath?: string,
+		isRemote: boolean = false,
+		sdkUri?: vscode.Uri
+	): Promise<void> {
+		axonLog(`🔗 Build Tools 심볼릭 링크 생성 시작...`);
+		
+		// Source Mirror 심볼릭 링크 생성
+		if (sourceMirrorPath && sourceMirrorPath.trim() !== '') {
+			axonLog(`🔗 Source Mirror 링크: ${sdkPath}/source-mirror -> ${sourceMirrorPath}`);
+			
+			const createSourceMirrorCmd = `
+# 기존 source-mirror 제거 (파일, 폴더, 심볼릭 링크 모두)
+rm -rf source-mirror
+
+# 심볼릭 링크 생성
+ln -s "${sourceMirrorPath}" source-mirror
+
+echo "✅ Source Mirror 심볼릭 링크 생성 완료"
+`;
+			
+			try {
+				await executeShellTask({
+					command: createSourceMirrorCmd,
+					cwd: sdkPath,
+					taskName: 'Create Source Mirror Link (Yocto)',
+					taskId: 'yoctoCreateSourceMirrorLink',
+					showTerminal: false,
+					useScriptFile: true,
+					cwdUri: sdkUri
+				});
+				axonSuccess(`✅ Source Mirror 심볼릭 링크 생성 완료: ${sdkPath}/source-mirror`);
+			} catch (error) {
+				axonError(`⚠️ Source Mirror 심볼릭 링크 생성 실패 (계속 진행): ${error}`);
+			}
+		}
+		
+		// Buildtools 심볼릭 링크 생성
+		if (buildtoolPath && buildtoolPath.trim() !== '') {
+			axonLog(`🔗 Buildtools 링크: ${sdkPath}/buildtools -> ${buildtoolPath}`);
+			
+			const createBuildtoolsCmd = `
+# 기존 buildtools 제거 (파일, 폴더, 심볼릭 링크 모두)
+rm -rf buildtools
+
+# 심볼릭 링크 생성
+ln -s "${buildtoolPath}" buildtools
+
+echo "✅ Buildtools 심볼릭 링크 생성 완료"
+`;
+			
+			try {
+				await executeShellTask({
+					command: createBuildtoolsCmd,
+					cwd: sdkPath,
+					taskName: 'Create Buildtools Link (Yocto)',
+					taskId: 'yoctoCreateBuildtoolsLink',
+					showTerminal: false,
+					useScriptFile: true,
+					cwdUri: sdkUri
+				});
+				axonSuccess(`✅ Buildtools 심볼릭 링크 생성 완료: ${sdkPath}/buildtools`);
+			} catch (error) {
+				axonError(`⚠️ Buildtools 심볼릭 링크 생성 실패 (계속 진행): ${error}`);
+			}
+		}
+		
+		axonSuccess(`✅ Build Tools 심볼릭 링크 생성 완료`);
 	}
 
 	/**

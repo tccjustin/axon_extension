@@ -11,6 +11,7 @@
     <div class="section">
         <div class="section-header">
             <span class="codicon codicon-new-folder"></span> Create Projects
+            <span class="codicon codicon-question help-icon" data-help="create-project"></span>
         </div>
         <div class="section-content">
             <div class="input-group">
@@ -34,7 +35,10 @@
         <div class="section-content">
             <!-- Project Type Selection -->
             <details open id="group-project-type">
-                <summary><span class="codicon codicon-project"></span> Project Type</summary>
+                <summary>
+                    <span class="codicon codicon-project"></span> Project Type
+                    <span class="codicon codicon-question help-icon" data-help="project-type"></span>
+                </summary>
                 <div class="group-content">
                     <div class="status-row">
                         <span id="current-project-type">Current: None</span>
@@ -54,7 +58,10 @@
 
             <!-- Build Option Extraction (MCU Project Only) -->
             <details id="group-build-option-extraction">
-                <summary><span class="codicon codicon-code"></span> Build Option Extraction</summary>
+                <summary>
+                    <span class="codicon codicon-code"></span> Build Option Extraction
+                    <span class="codicon codicon-question help-icon" data-help="build-option-extraction"></span>
+                </summary>
                 <div class="group-content">
                     <button id="btn-build-option-extraction" title="Extract Build Options">
                         <span class="codicon codicon-play"></span> Extract Build Options
@@ -63,7 +70,10 @@
             </details>
 
             <details open id="group-yocto-config">
-                <summary><span class="codicon codicon-package"></span> Yocto</summary>
+                <summary>
+                    <span class="codicon codicon-package"></span> Yocto
+                    <span class="codicon codicon-question help-icon" data-help="yocto-config"></span>
+                </summary>
                 <div class="group-content">
                     <button id="btn-edit-ap-conf">
                         <span class="codicon codicon-edit"></span> AP : conf/local.conf
@@ -91,7 +101,10 @@
             
             <!-- MCU Group -->
             <details open id="group-mcu-build">
-                <summary><span class="codicon codicon-circuit-board"></span> MCU</summary>
+                <summary>
+                    <span class="codicon codicon-circuit-board"></span> MCU
+                    <span class="codicon codicon-question help-icon" data-help="mcu-build"></span>
+                </summary>
                 <div class="group-content">
                     <div class="input-group">
                         <select id="mcu-build-select">
@@ -113,7 +126,10 @@
 
             <!-- Yocto Group -->
             <details id="group-yocto-build">
-                <summary><span class="codicon codicon-package"></span> Yocto</summary>
+                <summary>
+                    <span class="codicon codicon-package"></span> Yocto
+                    <span class="codicon codicon-question help-icon" data-help="yocto-build"></span>
+                </summary>
                 <div class="group-content">
                     <div class="input-group">
                         <select id="yocto-build-select">
@@ -177,7 +193,10 @@
 
             <!-- DevTool Group -->
             <details id="group-devtool">
-                <summary><span class="codicon codicon-beaker"></span> DevTool (External Src)</summary>
+                <summary>
+                    <span class="codicon codicon-beaker"></span> DevTool (External Src)
+                    <span class="codicon codicon-question help-icon" data-help="devtool"></span>
+                </summary>
                 <div class="group-content">
                     <div class="status-row">
                         devtool Create-workspace & devtool modify &lt;recipe&gt;
@@ -234,6 +253,7 @@
     <div class="section" id="section-fwdn">
         <div class="section-header">
             <span class="codicon codicon-plug"></span> FWDN
+            <span class="codicon codicon-question help-icon" data-help="fwdn"></span>
         </div>
         <div class="section-content">
             <div class="input-group">
@@ -253,6 +273,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Tooltip Container -->
+    <div id="help-tooltip" class="help-tooltip"></div>
 
     <script src="axon-sidebar.js"></script>
 </body>
