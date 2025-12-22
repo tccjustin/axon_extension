@@ -952,3 +952,312 @@ export async function executeFwdnAvailableImage(extensionPath: string): Promise<
 	}
 }
 
+/**
+ * FWDN Read Partition (Dump)
+ * partition.list에서 파티션 크기를 읽어서 자동으로 덤프
+ */
+export async function executeFwdnReadPartition(extensionPath: string): Promise<void> {
+	axonLog('🔧 FWDN Read Partition 시작');
+	
+	try {
+		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		if (!workspaceFolder) {
+			vscode.window.showErrorMessage('워크스페이스 폴더를 찾을 수 없습니다.');
+			return;
+		}
+		
+		// 이미지 디렉토리 찾기
+		let imagesDir = vscode.workspace.getConfiguration('axon.yocto').get<string>('imagesDir');
+		
+		if (!imagesDir) {
+			axonLog('⚠️ 이미지 디렉토리가 설정되지 않았습니다. 자동 탐색을 시작합니다...');
+			
+			// SD_Data.gpt 파일 찾기
+			const files = await vscode.workspace.findFiles('**/SD_Data.gpt', '**/node_modules/**', 1);
+			
+			if (files.length === 0) {
+				const errorMsg = `SD_Data.gpt 파일을 찾을 수 없습니다.\n\n` +
+					`Yocto AP 빌드를 먼저 실행하여 이미지 파일을 생성해주세요.`;
+				axonError(errorMsg);
+				vscode.window.showErrorMessage(errorMsg);
+				return;
+			}
+			
+			// SD_Data.gpt가 있는 디렉토리 = 이미지 디렉토리
+			const sdDataPath = files[0].path;
+			imagesDir = path.dirname(sdDataPath);
+			
+			if (!imagesDir) {
+				const errorMsg = `이미지 디렉토리를 찾을 수 없습니다.`;
+				axonError(errorMsg);
+				vscode.window.showErrorMessage(errorMsg);
+				return;
+			}
+			
+			axonLog(`✅ 이미지 디렉토리 발견: ${imagesDir}`);
+			
+			// settings.json에 저장
+			try {
+				await updateSettingsJson(workspaceFolder, { 'axon.yocto.imagesDir': imagesDir });
+				axonLog(`✅ 이미지 디렉토리를 settings.json에 저장했습니다.`);
+			} catch (error) {
+				axonLog(`⚠️ settings.json 저장 실패: ${error}`);
+			}
+		}
+		
+		const partitionListPath = `${imagesDir}/partition.list`;
+		axonLog(`📁 partition.list 경로: ${partitionListPath}`);
+		
+		// partition.list 파일 읽기
+		const partitionListUri = vscode.Uri.from({
+			scheme: workspaceFolder.uri.scheme,
+			authority: workspaceFolder.uri.authority,
+			path: partitionListPath
+		});
+		
+		let partitionListContent: string;
+		try {
+			const content = await vscode.workspace.fs.readFile(partitionListUri);
+			partitionListContent = Buffer.from(content).toString('utf8');
+			axonLog(`✅ partition.list 파일 읽기 성공`);
+		} catch (error) {
+			const errorMsg = `partition.list 파일을 찾을 수 없습니다.\n\n` +
+				`경로: ${partitionListPath}\n\n` +
+				`Yocto AP 빌드를 먼저 실행하여 이미지 파일을 생성해주세요.`;
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			return;
+		}
+		
+		// 파티션 목록 파싱
+		const partitions = parsePartitionList(partitionListContent);
+		axonLog(`📋 파싱된 파티션 개수: ${partitions.length}`);
+		
+		if (partitions.length === 0) {
+			const errorMsg = `사용 가능한 파티션이 없습니다.\n\n` +
+				`partition.list 파일에 유효한 파티션 정보가 없거나, 모든 파티션이 필터링되었습니다.`;
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			return;
+		}
+		
+		// 파티션 선택 메뉴 생성
+		const items = partitions.map(p => ({
+			label: `${p.name}`,
+			description: `Size: ${p.size}`,
+			detail: `Read dump from ${p.name} partition`,
+			partition: p
+		}));
+		
+		const selected = await vscode.window.showQuickPick(items, {
+			placeHolder: 'Select partition to read (dump)',
+			title: 'FWDN Read Partition'
+		});
+		
+		if (!selected) {
+			axonLog('❌ 파티션 선택이 취소되었습니다.');
+			return;
+		}
+		
+		axonLog(`✅ 선택된 파티션: ${selected.partition.name} (${selected.partition.size})`);
+		
+		// 저장할 파일명 입력
+		const defaultFileName = `${selected.partition.name}_dump.bin`;
+		const outputFileName = await vscode.window.showInputBox({
+			prompt: 'Enter output file name',
+			value: defaultFileName,
+			placeHolder: 'e.g., boot1_dump.bin'
+		});
+		
+		if (!outputFileName) {
+			axonLog('❌ 파일명 입력이 취소되었습니다.');
+			return;
+		}
+		
+		// 저장 위치 선택
+		const saveUri = await vscode.window.showSaveDialog({
+			defaultUri: vscode.Uri.file(path.join(os.homedir(), outputFileName)),
+			filters: {
+				'Binary files': ['bin'],
+				'All files': ['*']
+			}
+		});
+		
+		if (!saveUri) {
+			axonLog('❌ 저장 위치 선택이 취소되었습니다.');
+			return;
+		}
+		
+		axonLog(`💾 저장 경로: ${saveUri.fsPath}`);
+		
+		// 스토리지 타입 선택
+		const storageType = await vscode.window.showQuickPick(
+			[
+				{ label: 'emmc', description: 'eMMC storage' },
+				{ label: 'ufs', description: 'UFS storage' }
+			],
+			{
+				placeHolder: 'Select storage type',
+				title: 'Storage Type'
+			}
+		);
+		
+		if (!storageType) {
+			axonLog('❌ 스토리지 타입 선택이 취소되었습니다.');
+			return;
+		}
+		
+		// Area 타입 결정 (파티션 이름에서 추출)
+		// 예: boot1, boot0 → boot1, boot0
+		// 예: user:boot → user
+		let area = selected.partition.name;
+		if (area.includes(':')) {
+			area = area.split(':')[0];
+		}
+		
+		// 선택한 파티션 읽기 실행
+		await executeFwdnReadDump(
+			extensionPath,
+			selected.partition,
+			saveUri.fsPath,
+			storageType.label,
+			area
+		);
+		
+	} catch (error) {
+		const errorMsg = `FWDN Read Partition 실행 중 오류가 발생했습니다: ${error}`;
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
+	}
+}
+
+/**
+ * FWDN Read Dump 실행
+ */
+async function executeFwdnReadDump(
+	extensionPath: string,
+	partition: PartitionInfo,
+	outputPath: string,
+	storageType: string,
+	area: string
+): Promise<void> {
+	axonLog(`🔧 FWDN Read Dump 실행: ${partition.name}`);
+	
+	// FWDN 설정 가져오기
+	let config: FwdnConfig;
+	try {
+		config = await getFwdnConfig(extensionPath);
+		axonLog(`📋 설정 - FWDN 경로: ${config.fwdnExePath}, Boot Firmware 경로: ${config.bootFirmwarePath}`);
+	} catch (error) {
+		axonError(`설정 오류: ${error}`);
+		const errorMsg = `Boot Firmware 폴더를 찾을 수 없습니다.\n\n` +
+			`prebuilt 폴더가 워크스페이스 또는 그 하위 4단계까지 있는지 확인하세요.`;
+		vscode.window.showErrorMessage(errorMsg);
+		return;
+	}
+	
+	// 설정 검증
+	const validationError = validateConfig(config);
+	if (validationError) {
+		axonError(validationError);
+		vscode.window.showErrorMessage(validationError);
+		return;
+	}
+	
+	// 크기 변환 (2M → 0x200000)
+	const sizeInBytes = convertSizeToBytes(partition.size);
+	const sizeHex = `0x${sizeInBytes.toString(16)}`;
+	
+	axonLog(`📏 크기 변환: ${partition.size} → ${sizeHex} (${sizeInBytes} bytes)`);
+	
+	try {
+		axonLog(`🔧 로컬 PowerShell에서 FWDN Read 실행`);
+		
+		// FWDN 명령어 생성
+		// fwdn -r [file name] -m emmc --area boot1 --size 0x100000
+		const fwdnCommand = `"${config.fwdnExePath}" -r "${outputPath}" -m ${storageType} --area ${area} --size ${sizeHex}`;
+		
+		axonLog(`📋 FWDN 명령: ${fwdnCommand}`);
+		
+		// PowerShell 실행 파일 경로 결정
+		const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+		const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+		
+		const psExe = fs.existsSync(ps7) ? ps7 : (fs.existsSync(ps5) ? ps5 : null);
+		if (!psExe) {
+			throw new Error('로컬 PC에서 PowerShell 실행 파일을 찾지 못했습니다.');
+		}
+		
+		// 환경 감지 및 터미널 생성
+		const isRemote = vscode.env.remoteName !== undefined;
+		let terminal: vscode.Terminal;
+		
+		if (isRemote) {
+			// 원격 환경: 로컬 터미널 생성
+			await vscode.commands.executeCommand('workbench.action.terminal.newLocal');
+			const term = vscode.window.activeTerminal;
+			if (!term) {
+				throw new Error('로컬 터미널 생성에 실패했습니다.');
+			}
+			terminal = term;
+		} else {
+			// 로컬 환경: 기본 터미널 생성
+			try {
+				await vscode.commands.executeCommand('workbench.action.terminal.new');
+				const basicTerminal = vscode.window.activeTerminal;
+				if (basicTerminal) {
+					terminal = basicTerminal;
+				} else {
+					throw new Error('기본 터미널 생성에 실패했습니다.');
+				}
+			} catch {
+				terminal = vscode.window.createTerminal({
+					name: `FWDN Read: ${partition.name}`,
+					isTransient: true
+				});
+			}
+		}
+		
+		// Boot Firmware 경로로 이동 후 FWDN 실행
+		terminal.sendText(`cd "${config.bootFirmwarePath}"`, true);
+		terminal.sendText(fwdnCommand, true);
+		terminal.show();
+		
+		axonSuccess(`✅ FWDN Read Dump 명령이 실행되었습니다!\n\n` +
+			`파티션: ${partition.name}\n` +
+			`크기: ${partition.size} (${sizeHex})\n` +
+			`출력 파일: ${outputPath}\n` +
+			`스토리지: ${storageType}\n` +
+			`영역: ${area}`);
+		
+	} catch (error) {
+		const errorMsg = `FWDN Read Dump 실행 중 오류가 발생했습니다: ${error}`;
+		axonError(errorMsg);
+		throw error;
+	}
+}
+
+/**
+ * 크기 문자열을 바이트로 변환
+ * 예: "2M" → 2097152, "512K" → 524288
+ */
+function convertSizeToBytes(sizeStr: string): number {
+	const match = sizeStr.match(/^(\d+(?:\.\d+)?)\s*([KMGT])?$/i);
+	if (!match) {
+		throw new Error(`Invalid size format: ${sizeStr}`);
+	}
+	
+	const value = parseFloat(match[1]);
+	const unit = (match[2] || '').toUpperCase();
+	
+	const multipliers: Record<string, number> = {
+		'': 1,
+		'K': 1024,
+		'M': 1024 * 1024,
+		'G': 1024 * 1024 * 1024,
+		'T': 1024 * 1024 * 1024 * 1024
+	};
+	
+	return Math.floor(value * (multipliers[unit] || 1));
+}
+

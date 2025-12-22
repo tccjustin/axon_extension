@@ -161,6 +161,9 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'btn-fwdn-available-image':
                 vscode.postMessage({ command: 'execute', action: 'axon.FWDN_AVAILABLE_IMAGE' });
                 break;
+            case 'btn-fwdn-read-partition':
+                vscode.postMessage({ command: 'execute', action: 'axon.FWDN_READ_PARTITION' });
+                break;
             // Build Yocto
             case 'btn-yocto-run-build': {
                 const select = document.getElementById('yocto-build-select');

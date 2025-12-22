@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
 import { initializeLogger, axonLog, axonError, axonSuccess } from './logger';
-import { executeFwdnCommand, executeFwdnLowFormat, executeFwdnAvailableImage } from './fwdn';
+import { executeFwdnCommand, executeFwdnLowFormat, executeFwdnAvailableImage, executeFwdnReadPartition } from './fwdn';
 import { 
 	getAxonConfig, 
 	EXCLUDE_FOLDERS, 
@@ -296,6 +296,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		async () => executeFwdnAvailableImage(context.extensionPath)
 	);
 
+	// FWDN Read Partition 실행 명령
+	const runFwdnReadPartitionDisposable = vscode.commands.registerCommand(
+		'axon.FWDN_READ_PARTITION',
+		async () => executeFwdnReadPartition(context.extensionPath)
+	);
+
 	// MCU Build Make 실행 명령
 	const mcuBuildMakeDisposable = vscode.commands.registerCommand(
 		'axon.mcuBuildMake',
@@ -505,6 +511,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		runFwdnAllDisposable,
 		runFwdnLowFormatDisposable,
 		runFwdnAvailableImageDisposable,
+		runFwdnReadPartitionDisposable,
 		mcuBuildMakeDisposable,
 		mcuBuildAllDisposable,
 		mcuCleanDisposable,

@@ -19,6 +19,7 @@
     "onCommand:axon.FWDN_ALL",
     "onCommand:axon.FWDN_LOW_FORMAT",
     "onCommand:axon.FWDN_AVAILABLE_IMAGE",
+    "onCommand:axon.FWDN_READ_PARTITION",
     "onCommand:axon.mcuBuildMake",
     "onCommand:axon.mcuBuildAll",
     "onCommand:axon.mcuClean",
@@ -47,6 +48,11 @@
       {
         "command": "axon.FWDN_AVAILABLE_IMAGE",
         "title": "FWDN Specific Image File",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.FWDN_READ_PARTITION",
+        "title": "FWDN Read Partition (Dump)",
         "category": "Axon"
       },
       {
