@@ -9,10 +9,6 @@
     "ui",
     "workspace"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/tccjustin/axon_extension.git"
-  },
   "engines": {
     "vscode": "^1.74.0"
   },
