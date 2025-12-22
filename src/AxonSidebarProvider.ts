@@ -150,7 +150,13 @@ export class AxonSidebarProvider implements vscode.WebviewViewProvider {
 
     public sendProjectType() {
         const config = vscode.workspace.getConfiguration('axon');
-        const projectType = config.get<string>('projectType', '');
+        let projectType = config.get<string>('projectType', '');
+        
+        // yocto_project_autolinux를 yocto_autolinux로 변환 (UI 호환성)
+        if (projectType === 'yocto_project_autolinux') {
+            projectType = 'yocto_autolinux';
+        }
+        
         if (this._view) {
             this._view.webview.postMessage({ type: 'updateState', projectType: projectType });
         }

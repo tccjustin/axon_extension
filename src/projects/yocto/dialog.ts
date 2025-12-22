@@ -135,6 +135,23 @@ export class YoctoProjectDialog {
 		// HTML 내용 설정
 		panel.webview.html = await this.buildWebviewHtml(panel.webview);
 
+		// Settings에서 설정값 가져오기 및 WebView로 전송
+		const config = vscode.workspace.getConfiguration('axon.yocto');
+		const manifestGitUrl = config.get<string>('manifestGitUrl') || 
+		                       'ssh://git@bitbucket.telechips.com:7999/manifest/manifest-cgw.git';
+		const sourceMirrorPath = config.get<string>('sourceMirror', '');
+		const buildtoolPath = config.get<string>('buildtool', '');
+		
+		// WebView 로드 완료 후 초기 데이터 전송
+		setTimeout(() => {
+			panel.webview.postMessage({
+				command: 'init',
+				manifestGitUrl: manifestGitUrl,
+				sourceMirrorPath: sourceMirrorPath,
+				buildtoolPath: buildtoolPath
+			});
+		}, 100);
+
 		// 메시지 리스너 설정
 		const disposable = panel.webview.onDidReceiveMessage(
 			async (message) => {
@@ -164,6 +181,12 @@ export class YoctoProjectDialog {
 			case 'browseFolder':
 				await this.browseFolderForWebView(panel);
 				break;
+			case 'browseSourceMirror':
+				await this.browseSourceMirrorForWebView(panel);
+				break;
+			case 'browseBuildtool':
+				await this.browseBuildtoolForWebView(panel);
+				break;
 			case 'loadManifests':
 				await this.loadManifestsForWebView(message, panel);
 				break;
@@ -189,11 +212,67 @@ export class YoctoProjectDialog {
 		});
 
 		if (folders && folders.length > 0) {
-			const folderUriString = folders[0].toString(); // fsPath 대신 toString() 사용
+			const folderPath = folders[0].path; // Unix 경로 사용 (원격 환경 호환)
 			panel.webview.postMessage({
 				command: 'setFolderPath',
-				path: folderUriString // URI 문자열을 웹뷰로 전달
+				path: folderPath // Unix 경로를 웹뷰로 전달
 			});
+		}
+	}
+
+	/**
+	 * Source Mirror 폴더 선택 다이얼로그
+	 */
+	private async browseSourceMirrorForWebView(panel: vscode.WebviewPanel): Promise<void> {
+		const folders = await vscode.window.showOpenDialog({
+			canSelectFiles: false,
+			canSelectFolders: true,
+			canSelectMany: false,
+			openLabel: 'Source Mirror 경로 선택',
+			title: 'Source Mirror 폴더를 선택하세요'
+		});
+
+		if (folders && folders.length > 0) {
+			const folderPath = folders[0].path; // Unix 경로 형식
+			
+			// settings.json에 저장 (machine scope)
+			const config = vscode.workspace.getConfiguration('axon.yocto');
+			await config.update('sourceMirror', folderPath, vscode.ConfigurationTarget.Global);
+			
+			panel.webview.postMessage({
+				command: 'setSourceMirrorPath',
+				path: folderPath
+			});
+			
+			axonLog(`✅ Source Mirror 경로 저장: ${folderPath}`);
+		}
+	}
+
+	/**
+	 * Buildtool 폴더 선택 다이얼로그
+	 */
+	private async browseBuildtoolForWebView(panel: vscode.WebviewPanel): Promise<void> {
+		const folders = await vscode.window.showOpenDialog({
+			canSelectFiles: false,
+			canSelectFolders: true,
+			canSelectMany: false,
+			openLabel: 'Buildtool 경로 선택',
+			title: 'Buildtool 폴더를 선택하세요'
+		});
+
+		if (folders && folders.length > 0) {
+			const folderPath = folders[0].path; // Unix 경로 형식
+			
+			// settings.json에 저장 (machine scope)
+			const config = vscode.workspace.getConfiguration('axon.yocto');
+			await config.update('buildtool', folderPath, vscode.ConfigurationTarget.Global);
+			
+			panel.webview.postMessage({
+				command: 'setBuildtoolPath',
+				path: folderPath
+			});
+			
+			axonLog(`✅ Buildtool 경로 저장: ${folderPath}`);
 		}
 	}
 
@@ -215,16 +294,29 @@ export class YoctoProjectDialog {
 				throw new Error('프로젝트 이름을 먼저 입력해주세요.');
 			}
 			
-			// URI로 변환
-			const targetUri = typeof projectPath === 'string' && projectPath.includes('://')
-				? vscode.Uri.parse(projectPath)
-				: vscode.Uri.file(projectPath);
+			// 원격 환경을 고려한 URI 생성
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+			let targetUri: vscode.Uri;
+			
+			if (workspaceFolder) {
+				// 워크스페이스가 있으면 그 scheme과 authority 사용
+				targetUri = vscode.Uri.from({
+					scheme: workspaceFolder.uri.scheme,
+					authority: workspaceFolder.uri.authority,
+					path: projectPath
+				});
+			} else {
+				// 워크스페이스가 없으면 기본 처리
+				targetUri = projectPath.includes('://') 
+					? vscode.Uri.parse(projectPath)
+					: vscode.Uri.file(projectPath);
+			}
 			
 			// 프로젝트 폴더 URI 생성
 			const projectUri = vscode.Uri.joinPath(targetUri, projectName);
 			
 			axonLog(`📋 Manifest 목록 로드 시작: ${manifestGitUrl}`);
-			axonLog(`📂 프로젝트 경로: ${projectUri.fsPath}`);
+			axonLog(`📂 프로젝트 경로: ${projectUri.path}`);
 			const manifests = await YoctoProjectCreator.fetchManifestList(manifestGitUrl, projectUri);
 			
 			panel.webview.postMessage({
@@ -251,13 +343,22 @@ export class YoctoProjectDialog {
 		try {
 			// projectPath를 projectUri로 변환 (웹뷰에서 전달된 경로)
 			if (typeof data.projectPath === 'string') {
-				// URI 형식 (file://, ssh://, etc.)과 로컬 파일 경로 모두 처리
-				if (data.projectPath.includes('://')) {
-					// URI 문자열을 vscode.Uri 객체로 파싱
-					data.projectUri = vscode.Uri.parse(data.projectPath);
+				const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+				
+				// 원격 환경을 고려한 URI 생성
+				if (workspaceFolder) {
+					data.projectUri = vscode.Uri.from({
+						scheme: workspaceFolder.uri.scheme,
+						authority: workspaceFolder.uri.authority,
+						path: data.projectPath
+					});
 				} else {
-					// 로컬 파일 경로를 vscode.Uri 객체로 변환
-					data.projectUri = vscode.Uri.file(data.projectPath);
+					// Workspace가 없으면 기본 처리
+					if (data.projectPath.includes('://')) {
+						data.projectUri = vscode.Uri.parse(data.projectPath);
+					} else {
+						data.projectUri = vscode.Uri.file(data.projectPath);
+					}
 				}
 				delete data.projectPath;
 			}

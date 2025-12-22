@@ -13,6 +13,8 @@ export interface YoctoProjectData {
 	branchName?: string;
 	manifestGitUrl?: string;
 	selectedManifest?: string;
+	sourceMirrorPath?: string;
+	buildtoolPath?: string;
 }
 
 /**
@@ -23,7 +25,7 @@ export class YoctoProjectCreator {
 	 * Yocto 프로젝트 생성 메인 함수
 	 */
 	static async createYoctoProject(data: YoctoProjectData): Promise<void> {
-		const { projectName, projectUri, gitUrl, branchName, manifestGitUrl, selectedManifest } = data;
+		const { projectName, projectUri, gitUrl, branchName, manifestGitUrl, selectedManifest, sourceMirrorPath, buildtoolPath } = data;
 
 		const projectFullUri = vscode.Uri.joinPath(projectUri, projectName);
 
@@ -56,9 +58,8 @@ export class YoctoProjectCreator {
 			axonLog(`📂 기존 Yocto 프로젝트 폴더 사용: ${projectFullUri.toString()}`);
 		}
 
-		const projectPath = projectFullUri.scheme === 'file'
-			? projectFullUri.fsPath
-			: projectFullUri.path;
+		// 원격 환경 호환: 항상 Unix 경로 사용
+		const projectPath = projectFullUri.path;
 
 		// Manifest 기반 프로젝트 생성 (repo init/sync 방식)
 		if (manifestGitUrl && selectedManifest) {
@@ -79,7 +80,8 @@ export class YoctoProjectCreator {
 			axonLog(`📂 SDK 폴더 생성: ${sdkPath.toString()}`);
 			await vscode.workspace.fs.createDirectory(sdkPath);
 			
-			const sdkFsPath = sdkPath.scheme === 'file' ? sdkPath.fsPath : sdkPath.path;
+			// 원격 환경 호환: 항상 Unix 경로 사용
+			const sdkFsPath = sdkPath.path;
 			
 			// 최종 구조: 
 			// project_root/
@@ -96,13 +98,19 @@ export class YoctoProjectCreator {
 			await this.repoSync(sdkFsPath, isRemote);
 			axonSuccess(`✅ repo sync가 완료되었습니다.`);
 			
-			// 4. build script 심볼릭 링크 생성 (SDK 폴더 안에)
+			// 4. Source Mirror & Buildtools 심볼릭 링크 생성 (선택사항)
+			if (sourceMirrorPath || buildtoolPath) {
+				axonLog(`🔗 Build Tools 심볼릭 링크 생성...`);
+				await this.createBuildToolsSymlinks(sdkFsPath, sourceMirrorPath, buildtoolPath, isRemote, sdkPath);
+			}
+
+			// 5. build script 심볼릭 링크 생성 (SDK 폴더 안에)
 			const buildScriptSourcePath = `${projectPath}/build-axon/buildscripts/build-axon.py`;
 			axonLog(`🔗 Build script 심볼릭 링크 생성...`);
 			await this.createBuildScriptSymlink(buildScriptSourcePath, sdkFsPath, sdkName, isRemote);
 			axonSuccess(`✅ Build script 심볼릭 링크가 생성되었습니다.`);
 			
-		// 5. auto-setup 실행 (SDK 폴더에서)
+		// 6. auto-setup 실행 (SDK 폴더에서)
 		axonLog(`⚙️ Auto-setup 실행...`);
 		await this.runAutoSetup(sdkFsPath, sdkName, isRemote, sdkPath);
 		axonSuccess(`✅ Auto-setup이 완료되었습니다.`);
@@ -140,7 +148,7 @@ export class YoctoProjectCreator {
 	/**
 	 * Buildscript 클론
 	 */
-	private static async cloneBuildscript(projectPath: string): Promise<void> {
+	private static async cloneBuildscript(projectPath: string, projectUri?: vscode.Uri): Promise<void> {
 		axonLog(`🔄 Cloning buildscript repository...`);
 		
 		await executeShellTask({
@@ -148,7 +156,8 @@ export class YoctoProjectCreator {
 			cwd: projectPath,
 			taskName: 'Clone Buildscript (Yocto)',
 			taskId: 'yoctoCloneBuildscript',
-			showTerminal: true
+			showTerminal: true,
+			cwdUri: projectUri
 		});
 	}
 
@@ -188,6 +197,87 @@ export class YoctoProjectCreator {
 			taskId: 'yoctoRepoSync',
 			showTerminal: true
 		});
+	}
+
+	/**
+	 * Build Tools (Source Mirror & Buildtools) 심볼릭 링크 생성
+	 * 
+	 * @param sdkPath - SDK 폴더 경로
+	 * @param sourceMirrorPath - Source Mirror 경로 (선택사항)
+	 * @param buildtoolPath - Buildtool 경로 (선택사항)
+	 * @param isRemote - 원격 환경 여부
+	 * @param sdkUri - SDK URI (원격 환경용)
+	 */
+	private static async createBuildToolsSymlinks(
+		sdkPath: string, 
+		sourceMirrorPath?: string, 
+		buildtoolPath?: string,
+		isRemote: boolean = false,
+		sdkUri?: vscode.Uri
+	): Promise<void> {
+		axonLog(`🔗 Build Tools 심볼릭 링크 생성 시작...`);
+		
+		// Source Mirror 심볼릭 링크 생성
+		if (sourceMirrorPath && sourceMirrorPath.trim() !== '') {
+			axonLog(`🔗 Source Mirror 링크: ${sdkPath}/source-mirror -> ${sourceMirrorPath}`);
+			
+			const createSourceMirrorCmd = `
+# 기존 source-mirror 제거 (파일, 폴더, 심볼릭 링크 모두)
+rm -rf source-mirror
+
+# 심볼릭 링크 생성
+ln -s "${sourceMirrorPath}" source-mirror
+
+echo "✅ Source Mirror 심볼릭 링크 생성 완료"
+`;
+			
+			try {
+				await executeShellTask({
+					command: createSourceMirrorCmd,
+					cwd: sdkPath,
+					taskName: 'Create Source Mirror Link (Yocto)',
+					taskId: 'yoctoCreateSourceMirrorLink',
+					showTerminal: false,
+					useScriptFile: true,
+					cwdUri: sdkUri
+				});
+				axonSuccess(`✅ Source Mirror 심볼릭 링크 생성 완료: ${sdkPath}/source-mirror`);
+			} catch (error) {
+				axonError(`⚠️ Source Mirror 심볼릭 링크 생성 실패 (계속 진행): ${error}`);
+			}
+		}
+		
+		// Buildtools 심볼릭 링크 생성
+		if (buildtoolPath && buildtoolPath.trim() !== '') {
+			axonLog(`🔗 Buildtools 링크: ${sdkPath}/buildtools -> ${buildtoolPath}`);
+			
+			const createBuildtoolsCmd = `
+# 기존 buildtools 제거 (파일, 폴더, 심볼릭 링크 모두)
+rm -rf buildtools
+
+# 심볼릭 링크 생성
+ln -s "${buildtoolPath}" buildtools
+
+echo "✅ Buildtools 심볼릭 링크 생성 완료"
+`;
+			
+			try {
+				await executeShellTask({
+					command: createBuildtoolsCmd,
+					cwd: sdkPath,
+					taskName: 'Create Buildtools Link (Yocto)',
+					taskId: 'yoctoCreateBuildtoolsLink',
+					showTerminal: false,
+					useScriptFile: true,
+					cwdUri: sdkUri
+				});
+				axonSuccess(`✅ Buildtools 심볼릭 링크 생성 완료: ${sdkPath}/buildtools`);
+			} catch (error) {
+				axonError(`⚠️ Buildtools 심볼릭 링크 생성 실패 (계속 진행): ${error}`);
+			}
+		}
+		
+		axonSuccess(`✅ Build Tools 심볼릭 링크 생성 완료`);
 	}
 
 	/**
@@ -423,7 +513,8 @@ echo buildtools | tools/$BUILDTOOLS_SCRIPT
 	 */
 	static async fetchManifestList(manifestGitUrl: string, projectPath: vscode.Uri): Promise<string[]> {
 		axonLog(`📋 Fetching manifest list from: ${manifestGitUrl} (원격 환경)`);
-		const projectPathStr = projectPath.scheme === 'file' ? projectPath.fsPath : projectPath.path;
+		// 원격 환경 호환: 항상 Unix 경로 사용
+		const projectPathStr = projectPath.path;
 		axonLog(`📂 프로젝트 폴더: ${projectPathStr}`);
 		
 		// Git clone으로 자동 생성될 폴더명 추출 (예: manifest-cgw.git → manifest-cgw)
@@ -432,38 +523,52 @@ echo buildtools | tools/$BUILDTOOLS_SCRIPT
 		
 		let projectFolderCreated = false;
 		
+	try {
+	// 프로젝트 폴더 생성 (원격 환경에서는 shell 명령 사용)
+	try {
+		// 워크스페이스 폴더에서 상위 디렉토리의 URI를 가져옴
+		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		const parentUri = workspaceFolder?.uri || vscode.Uri.file('/');
+		
+		// shell 명령으로 폴더 생성 (원격 환경 지원)
+		await executeShellTask({
+			command: `mkdir -p "${projectPathStr}"`,
+			cwd: parentUri.path,
+			taskName: 'Create Project Directory (Yocto)',
+			taskId: 'yoctoCreateProjectDir',
+			showTerminal: false,
+			cwdUri: parentUri
+		});
+		
+		projectFolderCreated = true;
+		axonLog(`✅ 프로젝트 폴더 생성: ${projectPathStr}`);
+	} catch (error) {
+		// 폴더가 이미 존재하면 무시
+		axonLog(`📁 프로젝트 폴더가 이미 존재하거나 생성 중 오류 (계속 진행): ${error}`);
+	}
+		
+		// Buildscript 클론 (가장 먼저!)
+		axonLog(`🔄 Buildscript 클론 시작...`);
 		try {
-		// 프로젝트 폴더 생성
-		try {
-			await vscode.workspace.fs.createDirectory(projectPath);
-			projectFolderCreated = true;
-			axonLog(`✅ 프로젝트 폴더 생성: ${projectPathStr}`);
-		} catch (error) {
-			// 폴더가 이미 존재하면 무시
-			axonLog(`📁 프로젝트 폴더가 이미 존재하거나 생성 중 오류 (계속 진행): ${error}`);
+			await this.cloneBuildscript(projectPathStr, projectPath);
+			axonLog(`✅ Buildscript 클론 완료`);
+		} catch (buildscriptError) {
+			axonLog(`⚠️ Buildscript 클론 실패: ${buildscriptError}`);
+			axonLog(`ℹ️ Buildscript 없이 계속 진행합니다`);
 		}
-			
-			// Buildscript 클론 (가장 먼저!)
-			axonLog(`🔄 Buildscript 클론 시작...`);
-			try {
-				await this.cloneBuildscript(projectPathStr);
-				axonLog(`✅ Buildscript 클론 완료`);
-			} catch (buildscriptError) {
-				axonLog(`⚠️ Buildscript 클론 실패: ${buildscriptError}`);
-				axonLog(`ℹ️ Buildscript 없이 계속 진행합니다`);
-			}
-			
-			// manifest 저장소 클론 (Git이 자동으로 폴더 생성)
-			axonLog(`🔄 Cloning manifest repository (원격 환경)...`);
-			
-			try {
-				await executeShellTask({
-					command: `git clone ${manifestGitUrl}`,
-					cwd: projectPath.scheme === 'file' ? projectPath.fsPath : projectPath.path,
-					taskName: 'Load Manifests (Yocto)',
-					taskId: 'yoctoLoadManifests',
-					showTerminal: true  // 에러 발생 시 터미널 표시
-				});
+		
+		// manifest 저장소 클론 (Git이 자동으로 폴더 생성)
+		axonLog(`🔄 Cloning manifest repository (원격 환경)...`);
+		
+		try {
+			await executeShellTask({
+				command: `git clone ${manifestGitUrl}`,
+				cwd: projectPath.path,  // 원격 환경 호환: 항상 Unix 경로 사용
+				taskName: 'Load Manifests (Yocto)',
+				taskId: 'yoctoLoadManifests',
+				showTerminal: true,  // 에러 발생 시 터미널 표시
+				cwdUri: projectPath
+			});
 			} catch (cloneError) {
 				// Git clone 실패 시 상세한 에러 메시지 제공
 				const errorMsg = 

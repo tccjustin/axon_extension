@@ -12,24 +12,38 @@
         <h1>Yocto Project 생성</h1>
         
         <div class="form-group">
-            <label for="projectName">프로젝트 이름 *</label>
-            <input type="text" id="projectName" placeholder="my-yocto-project" />
+            <label for="projectPath">프로젝트 폴더 생성 및 Manifest git clone *</label>
+            <div class="button-group-triple">
+                <button type="button" id="browseBtn">Browse</button>
+                <input type="text" id="projectPath" placeholder="/home/user/workspace/my-yocto-project" />
+                <button type="button" id="loadManifestsBtn">Load</button>
+            </div>
+            <p class="help-text">💡 Browse로 상위 폴더를 선택하고, 경로 끝에 프로젝트 이름을 추가한 후 Load를 클릭하세요</p>
+            <p class="help-text">💡 Manifest Git URL은 Settings (Ctrl+,)에서 "Axon: Manifest Git Url"을 검색하여 변경할 수 있습니다</p>
+        </div>
+
+        <!-- Hidden input for Manifest Git URL (Settings에서 자동으로 설정됨) -->
+        <input type="hidden" id="manifestGitUrl" />
+
+        <!-- Build Tools 섹션 (선택사항) -->
+        <div class="section-header">
+            <h3>⚙️ Build Tools</h3>
+            <p class="hint">💡 선택사항: 이전에 다운로드한 경로를 설정하면 시간을 단축할 수 있습니다.</p>
         </div>
 
         <div class="form-group">
-            <label for="projectPath">프로젝트 생성 위치 *</label>
+            <label for="sourceMirrorPath">Source Mirror Path</label>
             <div class="button-group">
-                <input type="text" id="projectPath" readonly />
-                <button type="button" id="browseBtn">Browse</button>
+                <input type="text" id="sourceMirrorPath" placeholder="예: /home/user/yocto/source-mirror" />
+                <button type="button" id="browseSourceMirrorBtn">Browse</button>
             </div>
         </div>
 
-        <!-- Manifest 기반 프로젝트 생성 -->
         <div class="form-group">
-            <label for="manifestGitUrl">Manifest Git 저장소 URL *</label>
+            <label for="buildtoolPath">Buildtool Path</label>
             <div class="button-group">
-                <input type="text" id="manifestGitUrl" value="ssh://git@bitbucket.telechips.com:7999/manifest/manifest-cgw.git" />
-                <button type="button" id="loadManifestsBtn">Load</button>
+                <input type="text" id="buildtoolPath" placeholder="예: /home/user/yocto/buildtools" />
+                <button type="button" id="browseBuildtoolBtn">Browse</button>
             </div>
         </div>
 
@@ -38,14 +52,6 @@
             <select id="manifestSelect">
                 <option value="">-- 선택하세요 --</option>
             </select>
-        </div>
-
-        <!-- 경고 문구 (Load 후에만 표시) -->
-        <div class="warning-message" id="warningMessage" style="display: none;">
-            <div class="warning-icon">⚠️</div>
-            <div class="warning-content">
-                <strong>주의:</strong> Load만 하고 생성을 완료하지 않으면 불필요한 폴더가 원격 서버에 남아있을 수 있습니다.
-            </div>
         </div>
 
         <div class="actions">

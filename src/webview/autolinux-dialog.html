@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <!--CSP-->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yocto Project (autolinux)</title>
+    <!--CSS_INLINE-->
+</head>
+<body>
+    <div class="container" id="app">
+        <h1>Yocto Project (autolinux) 생성</h1>
+        
+        <div class="form-group">
+            <label for="projectPath">프로젝트 폴더 생성 및 autolinux git clone *</label>
+            <div class="button-group-triple">
+                <button type="button" id="browseBtn">Browse</button>
+                <input type="text" id="projectPath" placeholder="/home/user/workspace/my-autolinux-project" />
+                <button type="button" id="loadBtn">Load</button>
+            </div>
+            <p class="help-text">💡 Browse로 상위 폴더를 선택하고, 경로 끝에 프로젝트 이름을 추가한 후 Load를 클릭하세요</p>
+            <p class="help-text">💡 Git URL은 Settings (Ctrl+,)에서 "Axon: Autolinux Git Url"을 검색하여 변경할 수 있습니다</p>
+        </div>
+
+        <!-- Hidden input for Git URL (Settings에서 자동으로 설정됨) -->
+        <input type="hidden" id="autolinuxGitUrl" />
+
+        <!-- Build Tools & Source Mirror Section (Load 후 활성화, 선택사항) -->
+        <div class="section" id="buildToolsSection" style="display: none;">
+            <div class="section-divider"></div>
+            <h2>⚙️ Build Tools & Source Mirror</h2>
+            <p class="help-text">💡 선택사항: 이전에 다운로드한 경로를 설정하면 다운로드 시간을 단축할 수 있습니다</p>
+            
+            <div class="form-group">
+                <label for="sourceMirror">Source Mirror Path</label>
+                <div class="button-group">
+                    <input type="text" id="sourceMirror" placeholder="/home/username/source-mirror" disabled />
+                    <button type="button" id="browseMirrorBtn" disabled>Browse</button>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="buildtool">Build Tools Path</label>
+                <div class="button-group">
+                    <input type="text" id="buildtool" placeholder="/home/username/buildtools" disabled />
+                    <button type="button" id="browseBuildtoolBtn" disabled>Browse</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Autolinux Configuration Section (Load 후 활성화) -->
+        <div class="config-section" id="configSection" style="display: none;">
+            <div class="section-divider"></div>
+            <h2>📦 Autolinux Configuration</h2>
+
+            <div class="form-group">
+                <label for="platform">Platform *</label>
+                <select id="platform" disabled>
+                    <option value="">Select Platform...</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="sdkTemplate">SDK Template *</label>
+                <select id="sdkTemplate" disabled>
+                    <option value="">Select SDK...</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="manifest">Manifest *</label>
+                <select id="manifest" disabled>
+                    <option value="">Select Manifest...</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="machine">Machine *</label>
+                <select id="machine" disabled>
+                    <option value="">Select Machine...</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Build Version *</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="buildVersion" value="master" checked disabled />
+                        <span>Master</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="buildVersion" value="qa" disabled />
+                        <span>QA</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="buildVersion" value="release" disabled />
+                        <span>Release</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Main Machine Features -->
+            <div class="form-group" id="mainFeaturesGroup" style="display: none;">
+                <label id="mainFeaturesLabel">Main Machine Features</label>
+                <div class="checkbox-group" id="mainFeaturesCheckboxes">
+                    <!-- 동적으로 생성됨 -->
+                </div>
+            </div>
+
+            <!-- Sub Machine Features -->
+            <div class="form-group" id="subFeaturesGroup" style="display: none;">
+                <label id="subFeaturesLabel">Sub Machine Features</label>
+                <div class="checkbox-group" id="subFeaturesCheckboxes">
+                    <!-- 동적으로 생성됨 -->
+                </div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn-secondary" id="cancelBtn">취소</button>
+            <button id="createBtn" disabled>생성 & Configure</button>
+        </div>
+    </div>
+    <!--JS_INLINE-->
+</body>
+</html>
+

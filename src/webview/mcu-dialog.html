@@ -12,26 +12,32 @@
         <h1>MCU Standalone Project 생성</h1>
         
         <div class="form-group">
-            <label for="projectName">프로젝트 이름 *</label>
-            <input type="text" id="projectName" placeholder="my-mcu-project" />
-        </div>
-
-        <div class="form-group">
-            <label for="projectPath">프로젝트 생성 위치 *</label>
+            <label for="projectPath">프로젝트 폴더 생성 *</label>
             <div class="button-group">
-                <input type="text" id="projectPath" readonly />
                 <button type="button" id="browseBtn">Browse</button>
+                <input type="text" id="projectPath" placeholder="/home/user/workspace/my-mcu-project" />
             </div>
+            <p class="help-text">💡 Browse로 상위 폴더를 선택하고, 경로 끝에 프로젝트 이름을 추가하세요</p>
+            <p class="help-text">💡 Git URL은 Settings (Ctrl+,)에서 "Axon: MCU Git Url"을 검색하여 변경할 수 있습니다</p>
         </div>
 
-        <div class="form-group">
-            <label for="gitUrl">Git 저장소 URL *</label>
-            <input type="text" id="gitUrl" value="ssh://git@bitbucket.telechips.com:7999/linux_yp4_0_cgw/mcu-tcn100x.git" />
-        </div>
+        <!-- Hidden input for Git URL (Settings에서 자동으로 설정됨) -->
+        <input type="hidden" id="gitUrl" />
 
-        <div class="form-group">
-            <label for="branchName">새 브랜치 이름 (선택)</label>
-            <input type="text" id="branchName" placeholder="feature/new-function" />
+        <!-- Build Tools Section (선택사항) -->
+        <div class="section" id="buildToolsSection">
+            <div class="section-divider"></div>
+            <h2>⚙️ Build Tools</h2>
+            <p class="help-text">💡 선택사항: 이전에 다운로드한 경로를 설정하면 시간을 단축할 수 있습니다.</p>
+            
+            <div class="form-group">
+                <label for="buildtool">Build Tools Path</label>
+                <div class="button-group">
+                    <input type="text" id="buildtool" placeholder="/home/username/buildtools" />
+                    <button type="button" id="browseBuildtoolBtn">Browse</button>
+                </div>
+                <p class="help-text">💡 Settings (Ctrl+,)에서 "Axon: MCU Buildtool"을 검색하여 기본값을 변경할 수 있습니다</p>
+            </div>
         </div>
 
         <div class="actions">
