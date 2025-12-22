@@ -256,6 +256,12 @@
           "default": "",
           "description": "MCU Build Tools Path (optional, for faster setup)",
           "scope": "machine"
+        },
+        "axon.yocto.apBuildScript": {
+          "type": "string",
+          "default": "poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh",
+          "description": "AP Build Script path (relative to project root)",
+          "scope": "window"
         }
       }
     },

@@ -292,7 +292,13 @@ export class YoctoProjectBuilder {
 		version: string,
 		workspaceFolder: vscode.WorkspaceFolder
 	): Promise<boolean> {
-		const cgwBuildScript = `${projectRoot}/poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh`;
+		// Settings에서 AP 빌드 스크립트 경로 가져오기
+		const config = vscode.workspace.getConfiguration('axon.yocto');
+		const apBuildScriptPath = config.get<string>('apBuildScript') || 'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh';
+		const cgwBuildScript = `${projectRoot}/${apBuildScriptPath}`;
+		
+		axonLog(`📋 AP 빌드 스크립트 (Setup): ${cgwBuildScript}`);
+		
 		const cgwBuildScriptUri = vscode.Uri.from({
 			scheme: workspaceFolder.uri.scheme,
 			authority: workspaceFolder.uri.authority,
@@ -977,11 +983,17 @@ echo "✅ 빌드 환경 초기화 완료"`;
 				'==================================================',
 				''
 			].join('\n'),
-			getConfirmMsg: (machine, version) => 
-				`Yocto AP 빌드를 시작하시겠습니까?\n\nMACHINE: ${machine}\nSDK VERSION: ${version}\n\n이 작업은 시간이 오래 걸릴 수 있습니다.`,
-			getBuildCommands: (machine, version, projectRoot, envPath) => {
-			const apBuildScript = `${projectRoot}/poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh`;
-			return `
+		getConfirmMsg: (machine, version) => 
+			`Yocto AP 빌드를 시작하시겠습니까?\n\nMACHINE: ${machine}\nSDK VERSION: ${version}\n\n이 작업은 시간이 오래 걸릴 수 있습니다.`,
+		getBuildCommands: (machine, version, projectRoot, envPath) => {
+		// Settings에서 AP 빌드 스크립트 경로 가져오기
+		const config = vscode.workspace.getConfiguration('axon.yocto');
+		const apBuildScriptPath = config.get<string>('apBuildScript') || 'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh';
+		const apBuildScript = `${projectRoot}/${apBuildScriptPath}`;
+		
+		axonLog(`📋 AP 빌드 스크립트: ${apBuildScript}`);
+		
+		return `
 #set -x
 cd "${projectRoot}"
 source "${envPath}"
@@ -995,9 +1007,9 @@ echo "MACHINE: ${machine}"
 echo "SDK VERSION: ${version}"
 echo ""
 `;
-		}
-		});
 	}
+	});
+}
 
 	/**
 	 * Yocto MCU 빌드 실행
@@ -1058,11 +1070,17 @@ echo ""
 				'==================================================',
 				''
 			].join('\n'),
-			getConfirmMsg: (machine, version) => 
-				`Yocto Kernel 빌드를 시작하시겠습니까?\n\nMACHINE: ${machine}\nSDK VERSION: ${version}\n\n⚠️ Kernel 컴파일 후 이미지를 생성합니다.\n이 작업은 시간이 오래 걸릴 수 있습니다.`,
-			getBuildCommands: (machine, version, projectRoot, envPath) => {
-			const apBuildScript = `${projectRoot}/poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh`;
-			return `
+		getConfirmMsg: (machine, version) => 
+			`Yocto Kernel 빌드를 시작하시겠습니까?\n\nMACHINE: ${machine}\nSDK VERSION: ${version}\n\n⚠️ Kernel 컴파일 후 이미지를 생성합니다.\n이 작업은 시간이 오래 걸릴 수 있습니다.`,
+		getBuildCommands: (machine, version, projectRoot, envPath) => {
+		// Settings에서 AP 빌드 스크립트 경로 가져오기
+		const config = vscode.workspace.getConfiguration('axon.yocto');
+		const apBuildScriptPath = config.get<string>('apBuildScript') || 'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh';
+		const apBuildScript = `${projectRoot}/${apBuildScriptPath}`;
+		
+		axonLog(`📋 AP 빌드 스크립트 (Kernel): ${apBuildScript}`);
+		
+		return `
 #set -x
 cd "${projectRoot}"
 source "${envPath}"
@@ -1078,9 +1096,9 @@ echo "MACHINE: ${machine}"
 echo "SDK VERSION: ${version}"
 echo ""
 `;
-		}
-		});
 	}
+	});
+}
 
 	/**
 	 * Yocto AP 빌드 클린

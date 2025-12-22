@@ -88,16 +88,17 @@ export class AutolinuxProjectCreator {
 			axonSuccess(`✅ Autolinux Configuration이 완료되었습니다.`);
 		}
 
-		// .vscode/settings.json 생성
-		axonLog(`⚙️ Autolinux 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
-		await createVscodeSettingsUtil(projectFullUri, {
-			'axon.projectType': 'yocto_project_autolinux',
-			'axon.yocto.projectRoot': projectPath,
-			'axon.yocto.autolinux.sdk': sdkTemplate,
-			'axon.yocto.autolinux.machine': machine,
-			'axon.yocto.autolinux.buildVersion': buildVersion
-		});
-		axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
+	// .vscode/settings.json 생성
+	axonLog(`⚙️ Autolinux 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
+	await createVscodeSettingsUtil(projectFullUri, {
+		'axon.projectType': 'yocto_project_autolinux',
+		'axon.yocto.projectRoot': projectPath,
+		'axon.yocto.autolinux.sdk': sdkTemplate,
+		'axon.yocto.autolinux.machine': machine,
+		'axon.yocto.autolinux.buildVersion': buildVersion,
+		'axon.yocto.apBuildScript': 'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh'  // AP 빌드 스크립트 기본값
+	});
+	axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 
 		// 생성된 프로젝트 폴더를 VS Code에서 열기
 		await vscode.commands.executeCommand('vscode.openFolder', projectFullUri, { forceNewWindow: true });

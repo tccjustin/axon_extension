@@ -1061,68 +1061,59 @@ export async function executeFwdnReadPartition(extensionPath: string): Promise<v
 		
 		axonLog(`✅ 선택된 파티션: ${selected.partition.name} (${selected.partition.size})`);
 		
-		// 저장할 파일명 입력
-		const defaultFileName = `${selected.partition.name}_dump.bin`;
-		const outputFileName = await vscode.window.showInputBox({
-			prompt: 'Enter output file name',
-			value: defaultFileName,
-			placeHolder: 'e.g., boot1_dump.bin'
-		});
-		
-		if (!outputFileName) {
-			axonLog('❌ 파일명 입력이 취소되었습니다.');
-			return;
+	// 저장할 파일명 입력
+	const defaultFileName = `${selected.partition.name}_dump.bin`;
+	const outputFileName = await vscode.window.showInputBox({
+		prompt: 'Enter output file name',
+		value: defaultFileName,
+		placeHolder: 'e.g., system_a_dump.bin'
+	});
+	
+	if (!outputFileName) {
+		axonLog('❌ 파일명 입력이 취소되었습니다.');
+		return;
+	}
+	
+	// 저장 위치 선택
+	const saveUri = await vscode.window.showSaveDialog({
+		defaultUri: vscode.Uri.file(path.join(os.homedir(), outputFileName)),
+		filters: {
+			'Binary files': ['bin'],
+			'All files': ['*']
 		}
-		
-		// 저장 위치 선택
-		const saveUri = await vscode.window.showSaveDialog({
-			defaultUri: vscode.Uri.file(path.join(os.homedir(), outputFileName)),
-			filters: {
-				'Binary files': ['bin'],
-				'All files': ['*']
-			}
-		});
-		
-		if (!saveUri) {
-			axonLog('❌ 저장 위치 선택이 취소되었습니다.');
-			return;
+	});
+	
+	if (!saveUri) {
+		axonLog('❌ 저장 위치 선택이 취소되었습니다.');
+		return;
+	}
+	
+	axonLog(`💾 저장 경로: ${saveUri.fsPath}`);
+	
+	// 스토리지 타입 선택 (기본값: emmc)
+	const storageType = await vscode.window.showQuickPick(
+		[
+			{ label: 'emmc', description: 'eMMC storage (GPT format, user area only)' },
+			{ label: 'ufs', description: 'UFS storage (GPT format, user area only)' }
+		],
+		{
+			placeHolder: 'Select storage type',
+			title: 'Storage Type'
 		}
-		
-		axonLog(`💾 저장 경로: ${saveUri.fsPath}`);
-		
-		// 스토리지 타입 선택
-		const storageType = await vscode.window.showQuickPick(
-			[
-				{ label: 'emmc', description: 'eMMC storage' },
-				{ label: 'ufs', description: 'UFS storage' }
-			],
-			{
-				placeHolder: 'Select storage type',
-				title: 'Storage Type'
-			}
-		);
-		
-		if (!storageType) {
-			axonLog('❌ 스토리지 타입 선택이 취소되었습니다.');
-			return;
-		}
-		
-		// Area 타입 결정 (파티션 이름에서 추출)
-		// 예: boot1, boot0 → boot1, boot0
-		// 예: user:boot → user
-		let area = selected.partition.name;
-		if (area.includes(':')) {
-			area = area.split(':')[0];
-		}
-		
-		// 선택한 파티션 읽기 실행
-		await executeFwdnReadDump(
-			extensionPath,
-			selected.partition,
-			saveUri.fsPath,
-			storageType.label,
-			area
-		);
+	);
+	
+	if (!storageType) {
+		axonLog('❌ 스토리지 타입 선택이 취소되었습니다.');
+		return;
+	}
+	
+	// 선택한 파티션 읽기 실행 (--part 옵션 사용)
+	await executeFwdnReadDump(
+		extensionPath,
+		selected.partition,
+		saveUri.fsPath,
+		storageType.label
+	);
 		
 	} catch (error) {
 		const errorMsg = `FWDN Read Partition 실행 중 오류가 발생했습니다: ${error}`;
@@ -1132,14 +1123,13 @@ export async function executeFwdnReadPartition(extensionPath: string): Promise<v
 }
 
 /**
- * FWDN Read Dump 실행
+ * FWDN Read Dump 실행 (GPT format, --part 옵션 사용)
  */
 async function executeFwdnReadDump(
 	extensionPath: string,
 	partition: PartitionInfo,
 	outputPath: string,
-	storageType: string,
-	area: string
+	storageType: string
 ): Promise<void> {
 	axonLog(`🔧 FWDN Read Dump 실행: ${partition.name}`);
 	
@@ -1164,22 +1154,20 @@ async function executeFwdnReadDump(
 		return;
 	}
 	
-	// 크기 변환 (2M → 0x200000)
-	const sizeInBytes = convertSizeToBytes(partition.size);
-	const sizeHex = `0x${sizeInBytes.toString(16)}`;
-	
-	axonLog(`📏 크기 변환: ${partition.size} → ${sizeHex} (${sizeInBytes} bytes)`);
-	
 	try {
-		axonLog(`🔧 로컬 PowerShell에서 FWDN Read 실행`);
+		axonLog(`🔧 로컬 PowerShell에서 배치 파일로 FWDN Read 실행`);
 		
-		// FWDN 명령어 생성
-		// fwdn -r [file name] -m emmc --area boot1 --size 0x100000
-		const fwdnCommand = `"${config.fwdnExePath}" -r "${outputPath}" -m ${storageType} --area ${area} --size ${sizeHex}`;
+		// 배치 파일 경로 생성 (익스텐션 설치 경로 기준)
+		const batchFilePath = path.join(extensionPath, 'fwdn_read_partition.bat');
+		axonLog(`📝 배치 파일 경로: ${batchFilePath}`);
 		
-		axonLog(`📋 FWDN 명령: ${fwdnCommand}`);
+		// PowerShell에서 배치 파일 실행
+		// 인자: <boot_firmware_path> <fwdn_exe_path> <output_file> <storage_type> <partition_name>
+		const psCommand = `& "${batchFilePath}" "${config.bootFirmwarePath}" "${config.fwdnExePath}" "${outputPath}" "${storageType}" "${partition.name}"`;
 		
-		// PowerShell 실행 파일 경로 결정
+		axonLog(`📋 실행 명령: ${psCommand}`);
+		
+		// PowerShell 실행 파일 경로 결정 (PowerShell 7 우선)
 		const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
 		const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
 		
@@ -1193,7 +1181,7 @@ async function executeFwdnReadDump(
 		let terminal: vscode.Terminal;
 		
 		if (isRemote) {
-			// 원격 환경: 로컬 터미널 생성
+			// 원격 환경: 로컬 터미널 생성 명령 사용
 			await vscode.commands.executeCommand('workbench.action.terminal.newLocal');
 			const term = vscode.window.activeTerminal;
 			if (!term) {
@@ -1201,7 +1189,7 @@ async function executeFwdnReadDump(
 			}
 			terminal = term;
 		} else {
-			// 로컬 환경: 기본 터미널 생성
+			// 로컬 환경: 기본 터미널 생성 시도
 			try {
 				await vscode.commands.executeCommand('workbench.action.terminal.new');
 				const basicTerminal = vscode.window.activeTerminal;
@@ -1211,6 +1199,7 @@ async function executeFwdnReadDump(
 					throw new Error('기본 터미널 생성에 실패했습니다.');
 				}
 			} catch {
+				// 폴백: 직접 터미널 생성
 				terminal = vscode.window.createTerminal({
 					name: `FWDN Read: ${partition.name}`,
 					isTransient: true
@@ -1218,46 +1207,19 @@ async function executeFwdnReadDump(
 			}
 		}
 		
-		// Boot Firmware 경로로 이동 후 FWDN 실행
-		terminal.sendText(`cd "${config.bootFirmwarePath}"`, true);
-		terminal.sendText(fwdnCommand, true);
+		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
 		terminal.show();
 		
 		axonSuccess(`✅ FWDN Read Dump 명령이 실행되었습니다!\n\n` +
 			`파티션: ${partition.name}\n` +
-			`크기: ${partition.size} (${sizeHex})\n` +
+			`크기: ${partition.size}\n` +
 			`출력 파일: ${outputPath}\n` +
-			`스토리지: ${storageType}\n` +
-			`영역: ${area}`);
+			`스토리지: ${storageType} (GPT format, user area only)`);
 		
 	} catch (error) {
 		const errorMsg = `FWDN Read Dump 실행 중 오류가 발생했습니다: ${error}`;
 		axonError(errorMsg);
 		throw error;
 	}
-}
-
-/**
- * 크기 문자열을 바이트로 변환
- * 예: "2M" → 2097152, "512K" → 524288
- */
-function convertSizeToBytes(sizeStr: string): number {
-	const match = sizeStr.match(/^(\d+(?:\.\d+)?)\s*([KMGT])?$/i);
-	if (!match) {
-		throw new Error(`Invalid size format: ${sizeStr}`);
-	}
-	
-	const value = parseFloat(match[1]);
-	const unit = (match[2] || '').toUpperCase();
-	
-	const multipliers: Record<string, number> = {
-		'': 1,
-		'K': 1024,
-		'M': 1024 * 1024,
-		'G': 1024 * 1024 * 1024,
-		'T': 1024 * 1024 * 1024 * 1024
-	};
-	
-	return Math.floor(value * (multipliers[unit] || 1));
 }
 
