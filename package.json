@@ -1,7 +1,7 @@
 {
   "name": "axon",
   "displayName": "Axon",
-  "publisher": "justin-lee",
+  "publisher": "JustinLee-tcc",
   "description": "A powerful VS Code extension for enhanced development experience",
   "version": "0.4.8",
   "icon": "icon.png",
@@ -305,7 +305,11 @@
     "build": "npm run compile:fast && npm run package:no-deps",
     "build:full": "npm run compile && npm run package",
     "package:auto": "vsce package",
-    "build:clean": "npm run compile && echo y | vsce package --out axon-$(date +%Y%m%d-%H%M%S).vsix"
+    "build:clean": "npm run compile && echo y | vsce package --out axon-$(date +%Y%m%d-%H%M%S).vsix",
+    "publish": "vsce publish",
+    "publish:patch": "npm run build:full && vsce publish patch",
+    "publish:minor": "npm run build:full && vsce publish minor",
+    "publish:major": "npm run build:full && vsce publish major"
   },
   "devDependencies": {
     "@types/node": "16.x",
