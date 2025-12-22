@@ -1,195 +1,257 @@
-# Axon
+# Axon Dev
 
-VS Code 확장 프로그램으로, MCU/Yocto 펌웨어 개발을 위한 빌드 및 배포 자동화 도구입니다.
+Telechips MCU/Yocto 펌웨어 개발을 위한 통합 개발 도구입니다. WSL/SSH 원격 환경에서 MCU 빌드, Yocto 빌드, FWDN 펌웨어 다운로드를 간편하게 수행할 수 있습니다.
 
 ## ✨ 주요 기능
 
-### 프로젝트 생성
-- **MCU Standalone 프로젝트 생성**: MCU 개발 환경 자동 구성
-- **Yocto 프로젝트 생성**: Yocto 빌드 환경 자동 구성
+### 🚀 프로젝트 생성
 
-### MCU 빌드
-- **MCU Build Make**: 선택한 코어(m7-0, m7-1, m5-0)에 대해 make 빌드 실행
-- **MCU Build All**: 모든 defconfig(tcn100x_m70_defconfig, tcn100x_m71_defconfig, tcn100x_m50_defconfig)를 한번에 빌드
-- **MCU Select Core**: 빌드할 MCU 코어 선택
+#### MCU Standalone 프로젝트
+- Git 저장소에서 MCU 프로젝트 자동 클론
+- 빌드 도구 자동 설정
+- 개발 환경 즉시 구성
+
+#### Yocto 프로젝트 (Autolinux)
+
+- Manifest 기반 Yocto 프로젝트 생성
+- SDK, Manifest, Machine 선택
+- Source Mirror 및 Build Tools 재사용
+- 자동 configure 실행
+
+### 🔨 MCU 빌드
+
+- **MCU Build Make**: 선택한 코어(M7-NP, M7-0, M7-2, M7-1) 빌드
+- **MCU Build All**: 모든 코어를 한 번에 순차 빌드
 - **MCU Clean**: 빌드 결과물 정리
+- **빌드 옵션 추출**: defconfig에서 빌드 옵션 자동 추출 (compile_commands.json 생성)
 
-### Yocto 빌드
-- **Build Yocto AP**: AP 이미지 빌드
-- **Build Yocto MCU**: MCU 이미지 빌드
-- **Build Yocto Kernel**: 커널 빌드
-- **Clean Yocto AP/MCU/All**: 빌드 결과물 정리
-- **Edit AP/MCU local.conf**: Yocto 빌드 설정 파일 편집
-- **Edit Branch/Srcrev**: 소스 버전 관리 파일 편집
+### 🏗️ Yocto 빌드
 
-### FWDN (펌웨어 다운로드)
-- **FWDN ALL**: 전체 펌웨어 다운로드 (로컬 Windows 환경 전용)
+#### 빌드 명령어
+- **Build Yocto AP**: Application Processor 이미지 빌드
+- **Build Yocto MCU**: MCU 펌웨어 빌드
+- **Build Yocto Kernel**: 리눅스 커널 빌드
 
-### 설정 관리
-- **Configure Settings**: FWDN 경로, 프로젝트 타입, WSL 설정 등 관리
-- **Configure Project Folder**: 프로젝트 폴더명 설정
-- **Configure Boot Firmware Folder**: Boot Firmware 폴더명 설정
+#### 정리 명령어
+- **Clean Yocto AP**: AP 빌드 결과물 정리
+- **Clean Yocto MCU**: MCU 빌드 결과물 정리
+- **Clean Yocto All**: 모든 빌드 결과물 정리
 
-### 스크립트 관리
-- **Build and Copy Scripts**: MCU 빌드 스크립트 자동 복사
+#### 설정 관리
+- **Edit AP local.conf**: AP 빌드 설정 파일 편집
+- **Edit MCU local.conf**: MCU 빌드 설정 파일 편집
+- **Edit Branch/Srcrev**: Git 브랜치 및 리비전 관리
 
-### 사이드바 뷰
-- **Create Projects**: 프로젝트 생성 관련 명령어 모음
-- **Configurations**: 설정 관련 명령어 모음
-- **Build**: 빌드 관련 명령어 모음
+#### DevTool 지원
+- **DevTool Create & Modify**: 레시피 생성 및 소스 수정
+- **DevTool Build**: 개발 중인 레시피 빌드
+
+### 📥 FWDN (펌웨어 다운로드)
+
+**⚠️ Windows 로컬 환경 전용**
+
+- **FWDN**: 전체 펌웨어 다운로드
+- **FWDN Low Level Format**: 저수준 포맷 후 다운로드
+- **FWDN Specific Image**: 특정 이미지 파일만 선택하여 다운로드
+
+### ⚙️ 설정 관리
+
+- **FWDN 실행 파일 경로**: 커스텀 fwdn.exe 경로 설정
+- **프로젝트 타입**: MCU/Yocto 프로젝트 타입 선택
+- **WSL Distro 이름**: WSL 배포판 이름 설정
+- **Source Mirror**: Yocto 다운로드 시간 단축
+- **Build Tools**: 빌드 도구 재사용 설정
+- **Git Repository URL**: MCU/Yocto Git 저장소 URL 설정
+
+### 🎨 사이드바 UI
+
+Activity Bar에 Axon 아이콘이 추가되어 모든 기능에 빠르게 접근할 수 있습니다:
+
+- **Create Projects**: 프로젝트 생성 대화상자
+- **Build**: MCU 코어별 빌드 버튼
+- **Configurations**: 설정 관리
 
 ## 📋 요구 사항
 
+### 필수 환경
 - **VS Code**: 1.74.0 이상
-- **개발 환경**: WSL 또는 SSH 리눅스 환경 (FWDN 제외)
-- **FWDN 실행**: Windows 로컬 환경 (fwdn.exe)
-- **빌드/개발**: WSL 또는 SSH 리눅스 환경
+- **원격 환경**: WSL 또는 SSH 리눅스 환경
+- **OS**: Windows (로컬) + Linux (원격)
+
+### 권장 환경
+- **WSL2**: Ubuntu 20.04 이상
+- **Git**: 2.0 이상
+- **Python**: 3.6 이상 (Yocto 빌드용)
 
 ## 📦 설치 방법
 
-### 1. VSIX 파일로 설치
+### Marketplace에서 설치 (추천)
+
+1. VS Code Extensions에서 "Axon Dev" 검색
+2. Install 클릭
+3. 원격 환경(WSL/SSH)에도 설치 필요 시 "Install in WSL" 클릭
+
+### 명령어로 설치
 
 ```bash
-# 로컬 VS Code에 설치
-code --install-extension axon-0.4.1.vsix
+code --install-extension JustinLee-tcc.axon-dev
 ```
 
-## 🚀 사용 방법
+## 🚀 빠른 시작
 
-### 프로젝트 생성
-
-1. **사이드바에서 Axon 아이콘 클릭**
-2. **Create Projects 뷰에서 원하는 프로젝트 타입 선택**:
-   - `Create MCU Standalone Project`: MCU 단독 개발 환경
-   - `Create Yocto Project`: Yocto 통합 빌드 환경
-
-### MCU 빌드
-
-#### 특정 코어 빌드
+### 1. MCU 프로젝트 시작하기
 
 1. **Command Palette** (`Ctrl+Shift+P`) 열기
-2. **"Axon: MCU Select Core"** 실행
-3. 빌드할 코어 선택 (m7-0, m7-1, m5-0)
-4. **"Axon: MCU Build Make"** 실행
+2. **"Axon: Create MCU Standalone Project"** 실행
+3. Git URL, 브랜치, 저장 경로 입력
+4. 프로젝트 자동 생성 완료!
 
-#### 전체 코어 빌드
+### 2. MCU 빌드하기
 
-1. **Command Palette** (`Ctrl+Shift+P`) 열기
-2. **"Axon: MCU Build All"** 실행
-   - 모든 defconfig(m70, m71, m50)를 순차적으로 빌드
+**방법 1: 사이드바 사용**
+1. Activity Bar에서 Axon 아이콘 클릭
+2. Build 섹션에서 원하는 코어 클릭 (M7-NP, M7-0, M7-2, M7-1)
 
-#### 사이드바에서 빌드
+**방법 2: Command Palette 사용**
+1. `Ctrl+Shift+P` → **"Axon: MCU Build All"**
+2. 모든 코어가 순차적으로 빌드됨
 
-1. **사이드바의 Build 뷰**에서 원하는 코어 클릭
-2. 빌드가 자동으로 시작됨
-
-### Yocto 빌드
-
-#### AP 빌드
+### 3. Yocto 프로젝트 시작하기
 
 1. **Command Palette** (`Ctrl+Shift+P`) 열기
-2. **"Axon: Build Yocto AP"** 실행
+2. **"Axon: Create Yocto Project"** 실행
+3. 대화상자에서 설정:
+   - SDK 경로 선택
+   - Manifest URL 및 브랜치 입력
+   - Machine 선택
+   - Source Mirror/Build Tools 설정 (선택사항)
+4. Configure 자동 실행
 
-#### MCU 빌드
+### 4. Yocto 빌드하기
 
-1. **Command Palette** (`Ctrl+Shift+P`) 열기
-2. **"Axon: Build Yocto MCU"** 실행
+```
+Ctrl+Shift+P → "Axon: Build Yocto AP"
+Ctrl+Shift+P → "Axon: Build Yocto MCU"
+```
 
-#### 커널 빌드
+### 5. FWDN 펌웨어 다운로드
 
-1. **Command Palette** (`Ctrl+Shift+P`) 열기
-2. **"Axon: Build Yocto Kernel"** 실행
+**⚠️ 주의**: Windows 로컬 환경에서만 실행됩니다.
 
-#### 설정 파일 편집
+1. Yocto 빌드 완료 후 이미지 파일 생성 확인
+2. `Ctrl+Shift+P` → **"Axon: FWDN"**
+3. 자동으로 SD_Data.gpt 파일 찾아서 다운로드
 
-1. **Command Palette** (`Ctrl+Shift+P`) 열기
-2. 편집할 파일 선택:
-   - **"Axon: Edit AP local.conf"**: AP 빌드 설정
-   - **"Axon: Edit MCU local.conf"**: MCU 빌드 설정
-   - **"Axon: Edit Branch/Srcrev"**: 소스 버전 관리
-
-### FWDN 실행
-
-**⚠️ 주의**: FWDN은 **로컬 Windows 환경**에서만 실행됩니다.
-
-1. **Command Palette** (`Ctrl+Shift+P`) 열기
-2. **"Axon: FWDN"** 실행
-3. 펌웨어 다운로드가 자동으로 진행됨
-
-### 설정 관리
-
-1. **Command Palette** (`Ctrl+Shift+P`) 열기
-2. **"Axon: Configure Settings"** 실행
-3. 변경할 설정 선택:
-   - **FWDN 실행 파일 경로**: fwdn.exe 위치 설정
-   - **프로젝트 타입**: MCU 또는 Yocto 선택
-   - **프로젝트 폴더명**: 빌드 폴더 이름 설정
-   - **Boot Firmware 폴더명**: Boot Firmware 폴더 이름 설정
-   - **WSL Distro 이름**: WSL 배포판 이름 설정
-
-### 빠른 실행
-
-- **사이드바 Axon 아이콘**: 모든 기능에 빠르게 접근
-- **Build 뷰**: MCU 코어 클릭으로 즉시 빌드
-- **Configurations 뷰**: 설정 관리
-- **Create Projects 뷰**: 프로젝트 생성
+## 💡 사용 팁
 
 ### Output 로그 확인
 
+모든 빌드 과정을 실시간으로 확인할 수 있습니다:
+
 1. **View** → **Output** (또는 `Ctrl+Shift+U`)
 2. 드롭다운에서 **"Axon"** 선택
-3. 모든 빌드 과정과 로그 실시간 확인
+3. 빌드 진행 상황, 에러 메시지 확인
 
-## 🔧 공통 함수 (Common Functions)
+### DevTool로 레시피 개발
 
-프로젝트에서 재사용 가능한 공통 함수들이 `src/projects/common/` 디렉토리에 있습니다.
+Yocto 레시피를 개발할 때 유용합니다:
 
-### Shell 유틸리티 (`shell-utils.ts`)
+1. `Ctrl+Shift+P` → **"Axon: DevTool Create & Modify"**
+2. 레시피 이름 입력 (예: `my-app`)
+3. 소스 수정 후 `Ctrl+Shift+P` → **"Axon: DevTool Build"**
+4. 빠르게 테스트 가능
 
-#### `findProjectRootByShell()`
+### 설정 파일 편집
 
-리눅스 shell의 `find` 명령어를 사용하여 프로젝트 루트를 찾는 공통 함수입니다.
+Yocto 빌드 설정을 쉽게 변경할 수 있습니다:
 
-**사용 예시:**
+- **AP local.conf**: `Ctrl+Shift+P` → "Axon: Edit AP local.conf"
+- **MCU local.conf**: `Ctrl+Shift+P` → "Axon: Edit MCU local.conf"
+- **Branch/Srcrev**: Git 브랜치 및 리비전 관리
 
-```typescript
-import { findProjectRootByShell } from '../common/shell-utils';
+### 폴더 제외 설정
 
-// Yocto 프로젝트 루트 찾기
-const yoctoRoot = await findProjectRootByShell({
-  workspaceFolder,
-  findPattern: 'poky',
-  maxDepth: 3,
-  findType: 'd',
-  parentLevels: 1,
-  excludePattern: '*/.repo/*',
-  taskName: 'Find Yocto Project Root',
-  taskId: 'find-yocto-root',
-  resultFilePrefix: 'axon_project_root'
-});
+Yocto 빌드 폴더는 용량이 크므로 VS Code 검색에서 제외하는 것이 좋습니다:
 
-// MCU 프로젝트 루트 찾기
-const mcuRoot = await findProjectRootByShell({
-  workspaceFolder,
-  findPattern: 'tcn100x_defconfig',
-  maxDepth: 4,
-  findType: 'f',
-  parentLevels: 3,
-  taskName: 'Find MCU Project Root',
-  taskId: 'find-mcu-root',
-  resultFilePrefix: 'axon_mcu_project_root'
-});
-```
+`Ctrl+Shift+P` → **"Axon: VSCode - Exclude Folders"**
 
-**파라미터:**
-- `findPattern`: 찾을 파일/디렉토리 이름
-- `maxDepth`: 최대 탐색 깊이
-- `findType`: 'd' (directory) 또는 'f' (file)
-- `parentLevels`: 상위 몇 단계로 올라갈지
-- `excludePattern`: 제외할 패턴 (선택적)
+## 🔧 고급 기능
 
-**참고:** 비슷한 기능이 필요할 때는 이 함수를 재사용하세요. 중복 구현을 방지합니다.
+### Source Mirror 설정
 
-## 라이선스
+Yocto 다운로드 시간을 대폭 단축할 수 있습니다:
 
-MIT
+1. Settings에서 `axon.yocto.sourceMirror` 설정
+2. 기존 프로젝트의 `downloads` 폴더 경로 입력
+3. 새 프로젝트 생성 시 자동으로 재사용
+
+### Build Tools 재사용
+
+빌드 도구를 재사용하여 설치 시간을 절약할 수 있습니다:
+
+1. Settings에서 `axon.yocto.buildtool` 설정
+2. 기존 프로젝트의 `buildtools` 경로 입력
+3. 새 프로젝트에서 자동으로 심볼릭 링크 생성
+
+### Git Repository URL 커스터마이징
+
+회사 내부 Git 서버를 사용하는 경우:
+
+- `axon.yocto.autolinuxGitUrl`: Autolinux 스크립트 URL
+- `axon.yocto.manifestGitUrl`: Manifest 저장소 URL
+- `axon.mcu.gitUrl`: MCU 프로젝트 URL
+
+## 🐛 문제 해결
+
+### FWDN이 실행되지 않을 때
+
+1. Windows 로컬 환경에서 실행 중인지 확인
+2. Settings에서 `axon.fwdn.exePath` 확인
+3. 비어있으면 내장 fwdn.exe 사용 (권장)
+
+### 빌드가 실패할 때
+
+1. Output 로그 확인 (`Ctrl+Shift+U` → "Axon")
+2. 원격 환경(WSL/SSH) 연결 확인
+3. 프로젝트 경로가 올바른지 확인
+
+### 프로젝트 루트를 찾지 못할 때
+
+1. 워크스페이스 폴더가 프로젝트 루트 또는 상위 폴더인지 확인
+2. `mcu-tcn100x` 또는 `build-axon` 폴더가 있는지 확인
+
+## 📚 추가 정보
+
+### 지원하는 프로젝트 타입
+
+- **MCU Standalone**: Cortex-M 기반 MCU 개발
+- **Yocto (Autolinux)**: Embedded Linux 시스템 개발
+
+### 지원하는 MCU 코어
+
+- **M7-NP**: Cortex-M7 Non-Preemptive
+- **M7-0**: Cortex-M7 Core 0
+- **M7-2**: Cortex-M7 Core 2
+- **M7-1**: Cortex-M7 Core 1
+
+### 원격 환경 지원
+
+이 확장 프로그램은 원격 개발 환경을 완벽하게 지원합니다:
+
+- **WSL (Windows Subsystem for Linux)**
+- **SSH Remote**
+- **Dev Containers**
+
+모든 빌드 작업은 원격 리눅스 환경에서 실행되며, FWDN만 Windows 로컬에서 실행됩니다.
+
+## 📄 라이선스
+
+MIT License
+
+## 🤝 기여
+
+버그 리포트나 기능 제안은 환영합니다!
+
+---
+
+**Axon Dev** - Telechips 펌웨어 개발을 더 쉽고 빠르게! 🚀

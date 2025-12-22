@@ -26,8 +26,6 @@ package.bat
 vscode-env.bat
 test_rev_update.sh
 define.py
-fwdn_all.bat
-fwdn_download_partition.bat
 PAT_생성_가이드.md
 PUBLISH_GUIDE.md
 create-publisher.md
