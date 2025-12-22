@@ -11,6 +11,23 @@ vsc-extension-quickstart.md
 temp/**
 test-project/**
 *.vsix
+*.tsbuildinfo
+node_modules/**
+package-lock.json
+.cursor_instructions.md
+.cursorrules
+.cursorignore
+.commit_template.md
+구현사항.md
+요구사항.md
+커밋_요약.md
+build.bat
+package.bat
+vscode-env.bat
+test_rev_update.sh
+define.py
+fwdn_all.bat
+fwdn_download_partition.bat
 
 
 

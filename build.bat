@@ -1,12 +1,15 @@
 @echo off
 chcp 65001 >nul
 echo ==========================================
-echo Axon Extension Build Script
+echo Axon Extension Build Script (Optimized)
 echo ==========================================
 echo.
 
-echo [1/3] Starting compilation...
-call npm run compile
+REM 시작 시간 기록
+set START_TIME=%TIME%
+
+echo [1/3] Starting fast compilation (incremental)...
+call npm run compile:fast
 if %errorlevel% neq 0 (
     echo [ERROR] Compilation failed!
     pause
@@ -15,11 +18,11 @@ if %errorlevel% neq 0 (
 echo [SUCCESS] Compilation completed!
 echo.
 
-echo [2/3] Starting package creation...
+echo [2/3] Starting package creation (no-deps)...
 echo [INFO] Cleaning up old .vsix files...
 del /F /Q axon-*.vsix 2>nul
 echo.
-call npm run package:auto
+call npm run package:no-deps
 if %errorlevel% neq 0 (
     echo [ERROR] Package creation failed!
     pause
@@ -83,11 +86,18 @@ if %CURSOR_RESULT% neq 0 (
     )
 )
 
+REM 종료 시간 및 소요 시간 계산
+set END_TIME=%TIME%
+
 echo.
 echo [%HOUR%:%MIN%:%SEC%] [INFO] Extension '%VSIX_FILE%' installation completed!
 echo [INFO] Please reload window to activate the extension.
 echo.
 echo ==========================================
 echo Build and Installation completed!
+echo Start: %START_TIME%
+echo End:   %END_TIME%
 echo ==========================================
+echo.
+echo [TIP] For even faster builds, use: npm run build
 pause
