@@ -3,7 +3,7 @@
   "displayName": "Axon",
   "publisher": "JustinLee-tcc",
   "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "icon": "icon.png",
   "extensionKind": [
     "ui",
