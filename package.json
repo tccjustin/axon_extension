@@ -25,6 +25,13 @@
     "onCommand:axon.mcuClean",
     "onCommand:axon.createMcuStandaloneProject",
     "onCommand:axon.createYoctoProject",
+    "onCommand:axon.createAutolinuxProject",
+    "onCommand:axon.buildAutolinux",
+    "onCommand:axon.autolinuxUpdate",
+    "onCommand:axon.autolinuxClean",
+    "onCommand:axon.autolinuxMakeFai",
+    "onCommand:axon.autolinuxInfo",
+    "onCommand:axon.autolinuxMakeUpdateDir",
     "onCommand:axon.buildYoctoAp",
     "onCommand:axon.buildYoctoMcu",
     "onCommand:axon.devtoolCreateModify",
@@ -83,6 +90,41 @@
       {
         "command": "axon.createYoctoProject",
         "title": "Create Yocto Project",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.createAutolinuxProject",
+        "title": "Create Yocto Project (autolinux)",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.buildAutolinux",
+        "title": "Build Autolinux Image",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.autolinuxUpdate",
+        "title": "Autolinux: Update Sources",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.autolinuxClean",
+        "title": "Autolinux: Clean Build",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.autolinuxMakeFai",
+        "title": "Autolinux: Make FAI",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.autolinuxInfo",
+        "title": "Autolinux: Show Info",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.autolinuxMakeUpdateDir",
+        "title": "Autolinux: Make Update Directory",
         "category": "Axon"
       },
       {
@@ -262,6 +304,12 @@
           "default": "poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh",
           "description": "AP Build Script path (relative to project root)",
           "scope": "window"
+        },
+        "axon.yocto.apImageName": {
+          "type": "string",
+          "default": "telechips-cgw-image",
+          "description": "AP Image name for bitbake build",
+          "scope": "window"
         }
       }
     },
@@ -305,19 +353,19 @@
     "compile": "tsc -p ./ && npm run copy-webview",
     "compile:fast": "tsc -p ./ --incremental && npm run copy-webview",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package",
-    "package:no-deps": "vsce package --no-dependencies",
-    "package:patch": "vsce package --patch",
-    "package:minor": "vsce package --minor",
-    "package:major": "vsce package --major",
+    "package": "vsce package --allow-missing-repository",
+    "package:no-deps": "vsce package --no-dependencies --allow-missing-repository",
+    "package:patch": "vsce package --patch --allow-missing-repository",
+    "package:minor": "vsce package --minor --allow-missing-repository",
+    "package:major": "vsce package --major --allow-missing-repository",
     "build": "npm run compile:fast && npm run package:no-deps",
     "build:full": "npm run compile && npm run package",
-    "package:auto": "vsce package",
-    "build:clean": "npm run compile && echo y | vsce package --out axon-$(date +%Y%m%d-%H%M%S).vsix",
-    "publish": "vsce publish",
-    "publish:patch": "npm run build:full && vsce publish patch",
-    "publish:minor": "npm run build:full && vsce publish minor",
-    "publish:major": "npm run build:full && vsce publish major"
+    "package:auto": "vsce package --allow-missing-repository",
+    "build:clean": "npm run compile && echo y | vsce package --out axon-$(date +%Y%m%d-%H%M%S).vsix --allow-missing-repository",
+    "publish": "vsce publish --allow-missing-repository",
+    "publish:patch": "npm run build:full && vsce publish patch --allow-missing-repository",
+    "publish:minor": "npm run build:full && vsce publish minor --allow-missing-repository",
+    "publish:major": "npm run build:full && vsce publish major --allow-missing-repository"
   },
   "devDependencies": {
     "@types/node": "16.x",

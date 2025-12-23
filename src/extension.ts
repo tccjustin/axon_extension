@@ -366,6 +366,51 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
+	// Autolinux Update 명령
+	const autolinuxUpdateDisposable = vscode.commands.registerCommand(
+		'axon.autolinuxUpdate',
+		async () => {
+			const { AutolinuxProjectManager } = await import('./projects/yocto/autolinux-manager');
+			await AutolinuxProjectManager.updateSources();
+		}
+	);
+
+	// Autolinux Clean 명령
+	const autolinuxCleanDisposable = vscode.commands.registerCommand(
+		'axon.autolinuxClean',
+		async () => {
+			const { AutolinuxProjectManager } = await import('./projects/yocto/autolinux-manager');
+			await AutolinuxProjectManager.cleanBuild();
+		}
+	);
+
+	// Autolinux Make FAI 명령
+	const autolinuxMakeFaiDisposable = vscode.commands.registerCommand(
+		'axon.autolinuxMakeFai',
+		async () => {
+			const { AutolinuxProjectManager } = await import('./projects/yocto/autolinux-manager');
+			await AutolinuxProjectManager.makeFai();
+		}
+	);
+
+	// Autolinux Info 명령
+	const autolinuxInfoDisposable = vscode.commands.registerCommand(
+		'axon.autolinuxInfo',
+		async () => {
+			const { AutolinuxProjectManager } = await import('./projects/yocto/autolinux-manager');
+			await AutolinuxProjectManager.showInfo();
+		}
+	);
+
+	// Autolinux Make Update Directory 명령
+	const autolinuxMakeUpdateDirDisposable = vscode.commands.registerCommand(
+		'axon.autolinuxMakeUpdateDir',
+		async () => {
+			const { AutolinuxProjectManager } = await import('./projects/yocto/autolinux-manager');
+			await AutolinuxProjectManager.makeUpdateDir();
+		}
+	);
+
 	// Build Yocto AP 명령
 	const buildYoctoApDisposable = vscode.commands.registerCommand(
 		'axon.buildYoctoAp',
@@ -488,6 +533,22 @@ export async function activate(context: vscode.ExtensionContext) {
 			const config = vscode.workspace.getConfiguration('axon');
 			await config.update('projectType', normalizedProjectType, vscode.ConfigurationTarget.Workspace);
 			
+		// Yocto 프로젝트 타입인 경우 apBuildScript, apImageName 기본값 저장
+		if (normalizedProjectType === 'yocto_project' || normalizedProjectType === 'yocto_project_autolinux') {
+			const yoctoConfig = vscode.workspace.getConfiguration('axon.yocto');
+			await yoctoConfig.update(
+				'apBuildScript', 
+				'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh',
+				vscode.ConfigurationTarget.Workspace
+			);
+			await yoctoConfig.update(
+				'apImageName',
+				'telechips-cgw-image',
+				vscode.ConfigurationTarget.Workspace
+			);
+			console.log(`[Axon] apBuildScript, apImageName 기본값 저장 완료`);
+		}
+			
 			const displayMap: { [key: string]: string } = { 
 				mcu_project: 'MCU Project', 
 				yocto_project: 'Yocto Project',
@@ -525,6 +586,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		buildYoctoMcuDisposable,
 		buildYoctoKernelDisposable,
 		buildAutolinuxDisposable,
+		// Autolinux 관리 명령어들
+		autolinuxUpdateDisposable,
+		autolinuxCleanDisposable,
+		autolinuxMakeFaiDisposable,
+		autolinuxInfoDisposable,
+		autolinuxMakeUpdateDirDisposable,
 		// DevTool 명령어들
 		devtoolCreateModifyDisposable,
 		devtoolBuildDisposable,

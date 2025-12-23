@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Axon Control Panel</title>
+    <link rel="stylesheet" href="https://microsoft.github.io/vscode-codicons/dist/codicon.css">
     <link href="axon-sidebar.css" rel="stylesheet">
 </head>
 <body>
@@ -180,6 +181,12 @@
             <details id="group-yocto-autolinux">
                 <summary><span class="codicon codicon-package"></span> Yocto (autolinux)</summary>
                 <div class="group-content">
+                    <!-- Update Sources -->
+                    <button id="btn-autolinux-update" title="Sync sources (repo sync)">
+                        <span class="codicon codicon-sync"></span> Update Sources
+                    </button>
+                    
+                    <!-- Build Image -->
                     <div class="input-group">
                         <select id="yocto-autolinux-build-select">
                             <option value="build">./autolinux -c build</option>
@@ -188,6 +195,31 @@
                             <span class="codicon codicon-play"></span>
                         </button>
                     </div>
+                    
+                    <!-- Clean Build -->
+                    <button id="btn-autolinux-clean" title="Clean build files">
+                        <span class="codicon codicon-trash"></span> Clean Build
+                    </button>
+                    
+                    <!-- Make FAI -->
+                    <button id="btn-autolinux-make-fai" title="Make FAI file for FWDN">
+                        <span class="codicon codicon-package"></span> Make FAI (FWDN)
+                    </button>
+                    
+                    <!-- Info -->
+                    <button id="btn-autolinux-info" title="Show configuration info">
+                        <span class="codicon codicon-info"></span> Show Info
+                    </button>
+                    
+                    <!-- Advanced Options -->
+                    <details class="nested-details">
+                        <summary><span class="codicon codicon-settings-gear"></span> Advanced</summary>
+                        <div class="group-content">
+                            <button id="btn-autolinux-make-updatedir" title="Make update directory for OTA">
+                                <span class="codicon codicon-folder"></span> Make Update Dir
+                            </button>
+                        </div>
+                    </details>
                 </div>
             </details>
 

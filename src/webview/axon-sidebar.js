@@ -177,6 +177,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 vscode.postMessage({ command: 'execute', action: actions[select.value] });
                 break;
             }
+            // Autolinux Update
+            case 'btn-autolinux-update':
+                vscode.postMessage({ command: 'execute', action: 'axon.autolinuxUpdate' });
+                break;
             // Build Yocto(autolinux)
             case 'btn-yocto-autolinux-run-build': {
                 const select = document.getElementById('yocto-autolinux-build-select');
@@ -185,6 +189,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 break;
             }
+            // Autolinux Clean
+            case 'btn-autolinux-clean':
+                vscode.postMessage({ command: 'execute', action: 'axon.autolinuxClean' });
+                break;
+            // Autolinux Make FAI
+            case 'btn-autolinux-make-fai':
+                vscode.postMessage({ command: 'execute', action: 'axon.autolinuxMakeFai' });
+                break;
+            // Autolinux Info
+            case 'btn-autolinux-info':
+                vscode.postMessage({ command: 'execute', action: 'axon.autolinuxInfo' });
+                break;
+            // Autolinux Make Update Directory
+            case 'btn-autolinux-make-updatedir':
+                vscode.postMessage({ command: 'execute', action: 'axon.autolinuxMakeUpdateDir' });
+                break;
             // DevTool
             case 'btn-devtool-create-modify': {
                 const select = document.getElementById('devtool-recipe-select');
