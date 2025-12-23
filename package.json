@@ -3,7 +3,7 @@
   "displayName": "Axon Dev",
   "publisher": "JustinLee-tcc",
   "description": "A powerful VS Code extension for MCU and Yocto firmware development",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "icon": "icon.png",
   "extensionKind": [
     "ui",
