@@ -6,6 +6,19 @@ import { axonLog, axonError, axonSuccess, getAxonOutputChannel } from './logger'
 import { convertRemotePathToSamba } from './utils';
 import { findProjectRootByShell } from './projects/common/shell-utils';
 
+function escapeForSingleQuotedPowerShellString(value: string): string {
+	// In PowerShell single-quoted strings, escape a single quote by doubling it.
+	return value.replace(/'/g, "''");
+}
+
+function getLocalPowerShellExe(): string {
+	const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+	const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+	if (fs.existsSync(ps7)) return ps7;
+	if (fs.existsSync(ps5)) return ps5;
+	throw new Error('로컬 PC에서 PowerShell 실행 파일을 찾지 못했습니다.');
+}
+
 // FWDN 설정 인터페이스
 export interface FwdnConfig {
 	fwdnExePath: string;
@@ -406,28 +419,16 @@ export async function executeFwdnCommand(extensionPath: string): Promise<void> {
 	try {
 		axonLog(`🔧 로컬 PowerShell에서 직접 실행`);
 
-		// 배치 파일 경로 생성 (익스텐션 설치 경로 기준)
-		const batchFilePath = path.join(extensionPath, 'fwdn_all.bat');
-		axonLog(`📝 배치 파일 경로: ${batchFilePath}`);
-
-		// UNC 경로 처리 (Remote-SSH 환경에서 로컬 파일 접근용)
-		const isUncPath = config.fwdnExePath.startsWith('\\\\tsclient\\');
-		const processedFwdnExePath = isUncPath ? config.fwdnExePath : `"${config.fwdnExePath}"`;
-
-		// PowerShell에서 배치 파일 실행 (ALL 모드로 고정)
-		// 현재 터미널은 PowerShell이므로, & 연산자를 사용해 .bat 파일을 직접 호출합니다.
-		const psCommand = `& "${batchFilePath}" all "${config.bootFirmwarePath}" "${config.fwdnExePath}"`;
-
-		axonLog(`📋 실행 명령: ${psCommand}`);
-
-		// PowerShell 실행 파일 경로 결정 (PowerShell 7 우선)
-		const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
-		const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-
-		const psExe = fs.existsSync(ps7) ? ps7 : (fs.existsSync(ps5) ? ps5 : null);
-		if (!psExe) {
-			throw new Error('로컬 PC에서 PowerShell 실행 파일을 찾지 못했습니다.');
-		}
+		// ps1로 실행 (배치 대비 따옴표/파싱 안정성 개선)
+		const psExe = getLocalPowerShellExe();
+		const ps1Path = path.join(extensionPath, 'fwdn_all.ps1');
+		axonLog(`📝 PS1 파일 경로: ${ps1Path}`);
+		const psCommand =
+			`& "${psExe}" -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}" ` +
+			`-Mode "all" ` +
+			`-BootFirmwarePath "${config.bootFirmwarePath}" ` +
+			`-FwdnExe "${config.fwdnExePath}"`;
+		axonLog(`📋 실행 명령(PowerShell-ps1): ${psCommand}`);
 
 		// 환경 감지 및 터미널 생성
 		const isRemote = vscode.env.remoteName !== undefined;
@@ -460,7 +461,7 @@ export async function executeFwdnCommand(extensionPath: string): Promise<void> {
 			}
 		}
 
-		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
+		terminal.sendText(psCommand, true);
 
 		// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
 		setTimeout(async () => {
@@ -534,23 +535,16 @@ export async function executeFwdnLowFormat(extensionPath: string): Promise<void>
 	try {
 		axonLog(`🔧 로컬 PowerShell에서 직접 실행`);
 
-		// 배치 파일 경로 생성 (익스텐션 설치 경로 기준)
-		const batchFilePath = path.join(extensionPath, 'fwdn_all.bat');
-		axonLog(`📝 배치 파일 경로: ${batchFilePath}`);
-
-		// PowerShell에서 배치 파일 실행 (low-format 모드)
-		const psCommand = `& "${batchFilePath}" low-format "${config.bootFirmwarePath}" "${config.fwdnExePath}"`;
-
-		axonLog(`📋 실행 명령: ${psCommand}`);
-
-		// PowerShell 실행 파일 경로 결정 (PowerShell 7 우선)
-		const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
-		const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-
-		const psExe = fs.existsSync(ps7) ? ps7 : (fs.existsSync(ps5) ? ps5 : null);
-		if (!psExe) {
-			throw new Error('로컬 PC에서 PowerShell 실행 파일을 찾지 못했습니다.');
-		}
+		// ps1로 실행 (배치 대비 따옴표/파싱 안정성 개선)
+		const psExe = getLocalPowerShellExe();
+		const ps1Path = path.join(extensionPath, 'fwdn_all.ps1');
+		axonLog(`📝 PS1 파일 경로: ${ps1Path}`);
+		const psCommand =
+			`& "${psExe}" -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}" ` +
+			`-Mode "low-format" ` +
+			`-BootFirmwarePath "${config.bootFirmwarePath}" ` +
+			`-FwdnExe "${config.fwdnExePath}"`;
+		axonLog(`📋 실행 명령(PowerShell-ps1): ${psCommand}`);
 
 		// 환경 감지 및 터미널 생성
 		const isRemote = vscode.env.remoteName !== undefined;
@@ -583,7 +577,7 @@ export async function executeFwdnLowFormat(extensionPath: string): Promise<void>
 			}
 		}
 
-		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
+		terminal.sendText(psCommand, true);
 
 		// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
 		setTimeout(async () => {
@@ -699,24 +693,26 @@ async function executeFwdnDownloadPartition(
 	
 	try {
 		axonLog(`🔧 로컬 PowerShell에서 직접 실행`);
-		
-		// 배치 파일 경로 생성 (익스텐션 설치 경로 기준)
-		const batchFilePath = path.join(extensionPath, 'fwdn_download_partition.bat');
-		axonLog(`📝 배치 파일 경로: ${batchFilePath}`);
-		
-		// PowerShell에서 배치 파일 실행
-		const psCommand = `& "${batchFilePath}" "${config.bootFirmwarePath}" "${config.fwdnExePath}" "${windowsFilePath}" "${partition.name}"`;
-		
-		axonLog(`📋 실행 명령: ${psCommand}`);
-		
-		// PowerShell 실행 파일 경로 결정 (PowerShell 7 우선)
+
+		// 배치(.bat) 파일 대신 ps1 스크립트를 실행 (따옴표/파싱 이슈 최소화)
 		const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
 		const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-		
 		const psExe = fs.existsSync(ps7) ? ps7 : (fs.existsSync(ps5) ? ps5 : null);
 		if (!psExe) {
 			throw new Error('로컬 PC에서 PowerShell 실행 파일을 찾지 못했습니다.');
 		}
+
+		const ps1Path = path.join(extensionPath, 'fwdn_download_partition.ps1');
+		axonLog(`📝 PS1 파일 경로: ${ps1Path}`);
+
+		const psCommand =
+			`& "${psExe}" -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}" ` +
+			`-BootFirmwarePath "${config.bootFirmwarePath}" ` +
+			`-FwdnExe "${config.fwdnExePath}" ` +
+			`-FilePath "${windowsFilePath}" ` +
+			`-PartitionName "${partition.name}" ` +
+			`-RetryCount 3 -DelaySec 1`;
+		axonLog(`📋 실행 명령(PowerShell-ps1): ${psCommand}`);
 		
 		// 환경 감지 및 터미널 생성
 		const isRemote = vscode.env.remoteName !== undefined;
@@ -749,7 +745,7 @@ async function executeFwdnDownloadPartition(
 			}
 		}
 		
-		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
+		terminal.sendText(psCommand, true);
 		
 		// Build View에 포커스 복원
 		setTimeout(async () => {
@@ -1155,26 +1151,20 @@ async function executeFwdnReadDump(
 	}
 	
 	try {
-		axonLog(`🔧 로컬 PowerShell에서 배치 파일로 FWDN Read 실행`);
-		
-		// 배치 파일 경로 생성 (익스텐션 설치 경로 기준)
-		const batchFilePath = path.join(extensionPath, 'fwdn_read_partition.bat');
-		axonLog(`📝 배치 파일 경로: ${batchFilePath}`);
-		
-		// PowerShell에서 배치 파일 실행
-		// 인자: <boot_firmware_path> <fwdn_exe_path> <output_file> <storage_type> <partition_name>
-		const psCommand = `& "${batchFilePath}" "${config.bootFirmwarePath}" "${config.fwdnExePath}" "${outputPath}" "${storageType}" "${partition.name}"`;
-		
-		axonLog(`📋 실행 명령: ${psCommand}`);
-		
-		// PowerShell 실행 파일 경로 결정 (PowerShell 7 우선)
-		const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
-		const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-		
-		const psExe = fs.existsSync(ps7) ? ps7 : (fs.existsSync(ps5) ? ps5 : null);
-		if (!psExe) {
-			throw new Error('로컬 PC에서 PowerShell 실행 파일을 찾지 못했습니다.');
-		}
+		axonLog(`🔧 로컬 PowerShell에서 PS1로 FWDN Read 실행`);
+
+		const psExe = getLocalPowerShellExe();
+		const ps1Path = path.join(extensionPath, 'fwdn_read_partition.ps1');
+		axonLog(`📝 PS1 파일 경로: ${ps1Path}`);
+
+		const psCommand =
+			`& "${psExe}" -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}" ` +
+			`-BootFirmwarePath "${config.bootFirmwarePath}" ` +
+			`-FwdnExe "${config.fwdnExePath}" ` +
+			`-OutputFile "${outputPath}" ` +
+			`-StorageType "${storageType}" ` +
+			`-PartitionName "${partition.name}"`;
+		axonLog(`📋 실행 명령(PowerShell-ps1): ${psCommand}`);
 		
 		// 환경 감지 및 터미널 생성
 		const isRemote = vscode.env.remoteName !== undefined;
@@ -1207,7 +1197,7 @@ async function executeFwdnReadDump(
 			}
 		}
 		
-		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
+		terminal.sendText(psCommand, true);
 		terminal.show();
 		
 		axonSuccess(`✅ FWDN Read Dump 명령이 실행되었습니다!\n\n` +

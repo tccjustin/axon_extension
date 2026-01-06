@@ -23,6 +23,7 @@
     "onCommand:axon.mcuBuildMake",
     "onCommand:axon.mcuBuildAll",
     "onCommand:axon.mcuClean",
+    "onCommand:axon.createProject",
     "onCommand:axon.createMcuStandaloneProject",
     "onCommand:axon.createYoctoProject",
     "onCommand:axon.createAutolinuxProject",
@@ -80,6 +81,11 @@
       {
         "command": "axon.buildOptionExtraction",
         "title": "Build Option Extraction",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.createProject",
+        "title": "Create Project",
         "category": "Axon"
       },
       {
@@ -191,12 +197,22 @@
     "views": {
       "axon": [
         {
-          "id": "axonSidebar",
-          "type": "webview",
-          "name": "Control Panel",
+          "id": "axonProjectCreationView",
+          "name": "Project Control",
           "icon": "resources/axon-icon.svg",
-          "contextualTitle": "Axon Controls",
-          "retainContextWhenHidden": true
+          "contextualTitle": "Axon Project Control"
+        },
+        {
+          "id": "axonBuildView",
+          "name": "Build",
+          "icon": "resources/axon-icon.svg",
+          "contextualTitle": "Axon Build"
+        },
+        {
+          "id": "axonFwdnView",
+          "name": "FWDN",
+          "icon": "resources/axon-icon.svg",
+          "contextualTitle": "Axon FWDN"
         }
       ]
     },
