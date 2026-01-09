@@ -1,18 +1,14 @@
 {
-  "name": "axon",
-  "displayName": "Axon",
-  "publisher": "justin-lee",
-  "description": "A powerful VS Code extension for enhanced development experience",
-  "version": "0.4.8",
+  "name": "axon-dev",
+  "displayName": "Axon Dev",
+  "publisher": "JustinLee-tcc",
+  "description": "A powerful VS Code extension for MCU and Yocto firmware development",
+  "version": "0.6.2",
   "icon": "icon.png",
   "extensionKind": [
     "ui",
     "workspace"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/tccjustin/axon_extension.git"
-  },
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -23,11 +19,20 @@
     "onCommand:axon.FWDN_ALL",
     "onCommand:axon.FWDN_LOW_FORMAT",
     "onCommand:axon.FWDN_AVAILABLE_IMAGE",
+    "onCommand:axon.FWDN_READ_PARTITION",
     "onCommand:axon.mcuBuildMake",
     "onCommand:axon.mcuBuildAll",
     "onCommand:axon.mcuClean",
+    "onCommand:axon.createProject",
     "onCommand:axon.createMcuStandaloneProject",
     "onCommand:axon.createYoctoProject",
+    "onCommand:axon.createAutolinuxProject",
+    "onCommand:axon.buildAutolinux",
+    "onCommand:axon.autolinuxUpdate",
+    "onCommand:axon.autolinuxClean",
+    "onCommand:axon.autolinuxMakeFai",
+    "onCommand:axon.autolinuxInfo",
+    "onCommand:axon.autolinuxMakeUpdateDir",
     "onCommand:axon.buildYoctoAp",
     "onCommand:axon.buildYoctoMcu",
     "onCommand:axon.devtoolCreateModify",
@@ -54,6 +59,11 @@
         "category": "Axon"
       },
       {
+        "command": "axon.FWDN_READ_PARTITION",
+        "title": "FWDN Read Partition (Dump)",
+        "category": "Axon"
+      },
+      {
         "command": "axon.mcuBuildMake",
         "title": "MCU Build Make",
         "category": "Axon"
@@ -74,6 +84,11 @@
         "category": "Axon"
       },
       {
+        "command": "axon.createProject",
+        "title": "Create Project",
+        "category": "Axon"
+      },
+      {
         "command": "axon.createMcuStandaloneProject",
         "title": "Create MCU Standalone Project",
         "category": "Axon"
@@ -81,6 +96,41 @@
       {
         "command": "axon.createYoctoProject",
         "title": "Create Yocto Project",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.createAutolinuxProject",
+        "title": "Create Yocto Project (autolinux)",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.buildAutolinux",
+        "title": "Build Autolinux Image",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.autolinuxUpdate",
+        "title": "Autolinux: Update Sources",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.autolinuxClean",
+        "title": "Autolinux: Clean Build",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.autolinuxMakeFai",
+        "title": "Autolinux: Make FAI",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.autolinuxInfo",
+        "title": "Autolinux: Show Info",
+        "category": "Axon"
+      },
+      {
+        "command": "axon.autolinuxMakeUpdateDir",
+        "title": "Autolinux: Make Update Directory",
         "category": "Axon"
       },
       {
@@ -147,12 +197,22 @@
     "views": {
       "axon": [
         {
-          "id": "axonSidebar",
-          "type": "webview",
-          "name": "Control Panel",
+          "id": "axonProjectCreationView",
+          "name": "Project Control",
           "icon": "resources/axon-icon.svg",
-          "contextualTitle": "Axon Controls",
-          "retainContextWhenHidden": true
+          "contextualTitle": "Axon Project Control"
+        },
+        {
+          "id": "axonBuildView",
+          "name": "Build",
+          "icon": "resources/axon-icon.svg",
+          "contextualTitle": "Axon Build"
+        },
+        {
+          "id": "axonFwdnView",
+          "name": "FWDN",
+          "icon": "resources/axon-icon.svg",
+          "contextualTitle": "Axon FWDN"
         }
       ]
     },
@@ -254,6 +314,18 @@
           "default": "",
           "description": "MCU Build Tools Path (optional, for faster setup)",
           "scope": "machine"
+        },
+        "axon.yocto.apBuildScript": {
+          "type": "string",
+          "default": "poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh",
+          "description": "AP Build Script path (relative to project root)",
+          "scope": "window"
+        },
+        "axon.yocto.apImageName": {
+          "type": "string",
+          "default": "telechips-cgw-image",
+          "description": "AP Image name for bitbake build",
+          "scope": "window"
         }
       }
     },
@@ -295,14 +367,21 @@
     "precompile": "node -e \"try{const fs=require('fs'),crypto=require('crypto');const lock='package-lock.json';const nm='node_modules';const mark=nm+'/.depshash';if(!fs.existsSync(nm)||!fs.existsSync(lock)||!fs.existsSync(mark)){process.exit(1);}const h=crypto.createHash('sha256').update(fs.readFileSync(lock,'utf8')).digest('hex');process.exit(fs.readFileSync(mark,'utf8')===h?0:1);}catch(e){process.exit(1)}\" || (npm ci --prefer-offline --no-audit --progress=false && node -e \"const fs=require('fs'),crypto=require('crypto');const h=crypto.createHash('sha256').update(fs.readFileSync('package-lock.json','utf8')).digest('hex');fs.mkdirSync('node_modules',{recursive:true});fs.writeFileSync('node_modules/.depshash',h)\")",
     "copy-webview": "node -e \"const fs=require('fs'),path=require('path');const src='src/webview',dst='out/webview';fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).forEach(f=>{if(f.endsWith('.html')||f.endsWith('.css')||f.endsWith('.js')){fs.copyFileSync(path.join(src,f),path.join(dst,f));}});\"",
     "compile": "tsc -p ./ && npm run copy-webview",
+    "compile:fast": "tsc -p ./ --incremental && npm run copy-webview",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package",
-    "package:patch": "vsce package --patch",
-    "package:minor": "vsce package --minor",
-    "package:major": "vsce package --major",
-    "build": "npm run compile && npm run package:auto",
-    "package:auto": "vsce package",
-    "build:clean": "npm run compile && echo y | vsce package --out axon-$(date +%Y%m%d-%H%M%S).vsix"
+    "package": "vsce package --allow-missing-repository",
+    "package:no-deps": "vsce package --no-dependencies --allow-missing-repository",
+    "package:patch": "vsce package --patch --allow-missing-repository",
+    "package:minor": "vsce package --minor --allow-missing-repository",
+    "package:major": "vsce package --major --allow-missing-repository",
+    "build": "npm run compile:fast && npm run package:no-deps",
+    "build:full": "npm run compile && npm run package",
+    "package:auto": "vsce package --allow-missing-repository",
+    "build:clean": "npm run compile && echo y | vsce package --out axon-$(date +%Y%m%d-%H%M%S).vsix --allow-missing-repository",
+    "publish": "vsce publish --allow-missing-repository",
+    "publish:patch": "npm run build:full && vsce publish patch --allow-missing-repository",
+    "publish:minor": "npm run build:full && vsce publish minor --allow-missing-repository",
+    "publish:major": "npm run build:full && vsce publish major --allow-missing-repository"
   },
   "devDependencies": {
     "@types/node": "16.x",

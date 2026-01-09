@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
 import { initializeLogger, axonLog, axonError, axonSuccess } from './logger';
-import { executeFwdnCommand, executeFwdnLowFormat, executeFwdnAvailableImage } from './fwdn';
+import { executeFwdnCommand, executeFwdnLowFormat, executeFwdnAvailableImage, executeFwdnReadPartition } from './fwdn';
 import { 
 	getAxonConfig, 
 	EXCLUDE_FOLDERS, 
@@ -21,7 +21,6 @@ import { YoctoProjectDialog } from './projects/yocto/dialog';
 import { YoctoProjectBuilder } from './projects/yocto/builder';
 import { AutolinuxProjectDialog } from './projects/yocto/autolinux-dialog';
 import { executeShellTask } from './projects/common/shell-utils';
-import { AxonSidebarProvider } from './AxonSidebarProvider';
 
 
 // MCU Project Creation Dialog - 이제 projects/mcu/dialog.ts에 있음
@@ -213,10 +212,7 @@ async function executeDevtoolCreateModify(extensionPath: string, recipeName?: st
 	await DevToolManager.createAndModify(
 		extensionPath,
 		(recipeName: string) => {
-			if (globalBuildProvider) {
-				globalBuildProvider.addDevtoolRecipe(recipeName);
-				vscode.commands.executeCommand('axonBuildView.focus').then(() => {}, () => {});
-			}
+			// TreeView는 자동으로 업데이트되므로 별도 처리 불필요
 		},
 		recipeName
 	);
@@ -243,8 +239,7 @@ async function executeDevtoolFinish(recipeName: string, layerPath?: string): Pro
 	await DevToolManager.finish(recipeName, layerPath);
 }
 
-// 전역 SidebarProvider (devtool modify 후 레시피 추가를 위해 필요)
-let globalBuildProvider: AxonSidebarProvider | undefined;
+// TreeView로 완전 전환 완료 - WebView 사이드바 제거됨
 
 
 
@@ -263,11 +258,41 @@ export async function activate(context: vscode.ExtensionContext) {
 	axonLog('===========================================');
 	axonOutputChannel.show();
 
-	// Axon Sidebar Provider 등록 (Webview)
-	const axonSidebarProvider = new AxonSidebarProvider(context.extensionUri);
-	globalBuildProvider = axonSidebarProvider; // 전역 변수 호환성 유지 (이름은 BuildProvider지만 실제로는 SidebarProvider)
+	// Axon TreeView Providers 등록 (네이티브 - 3개 패널로 분리)
+	const { AxonProjectCreationProvider } = await import('./AxonProjectCreationProvider');
+	const { AxonBuildProvider } = await import('./AxonBuildProvider');
+	const { AxonFwdnProvider } = await import('./AxonFwdnProvider');
 	
-    vscode.window.registerWebviewViewProvider(AxonSidebarProvider.viewType, axonSidebarProvider);
+	const projectCreationProvider = new AxonProjectCreationProvider();
+	const buildProvider = new AxonBuildProvider();
+	const fwdnProvider = new AxonFwdnProvider();
+	
+	const projectCreationView = vscode.window.createTreeView('axonProjectCreationView', {
+		treeDataProvider: projectCreationProvider,
+		showCollapseAll: false
+	});
+	
+	const buildView = vscode.window.createTreeView('axonBuildView', {
+		treeDataProvider: buildProvider,
+		showCollapseAll: true
+	});
+	
+	const fwdnView = vscode.window.createTreeView('axonFwdnView', {
+		treeDataProvider: fwdnProvider,
+		showCollapseAll: false
+	});
+	
+	context.subscriptions.push(projectCreationView, buildView, fwdnView);
+
+	// 프로젝트 타입 변경 시 TreeView 새로고침
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('axon.projectType')) {
+				buildProvider.refresh();
+				fwdnProvider.refresh();
+			}
+		})
+	);
 
 	// MCU Project Dialog Provider 등록
 	const mcuProjectDialog = new McuProjectDialog(context);
@@ -294,6 +319,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	const runFwdnAvailableImageDisposable = vscode.commands.registerCommand(
 		'axon.FWDN_AVAILABLE_IMAGE',
 		async () => executeFwdnAvailableImage(context.extensionPath)
+	);
+
+	// FWDN Read Partition 실행 명령
+	const runFwdnReadPartitionDisposable = vscode.commands.registerCommand(
+		'axon.FWDN_READ_PARTITION',
+		async () => executeFwdnReadPartition(context.extensionPath)
 	);
 
 	// MCU Build Make 실행 명령
@@ -327,6 +358,49 @@ export async function activate(context: vscode.ExtensionContext) {
 		async () => await McuProjectBuilder.buildOptionExtraction()
 	);
 
+	// Create Project (QuickPick) 명령
+	const createProjectDisposable = vscode.commands.registerCommand(
+		'axon.createProject',
+		async () => {
+			const selected = await vscode.window.showQuickPick([
+				{ 
+					label: '$(file-code) MCU Standalone Project', 
+					value: 'mcu',
+					description: 'Create a new MCU standalone project'
+				},
+				{ 
+					label: '$(package) Yocto Project', 
+					value: 'yocto',
+					description: 'Create a new Yocto project'
+				},
+				{ 
+					label: '$(package) Yocto Project (autolinux)', 
+					value: 'autolinux',
+					description: 'Create a new Yocto project with autolinux'
+				}
+			], {
+				placeHolder: 'Select project type to create',
+				title: 'Create New Project'
+			});
+
+			if (!selected) {
+				return;
+			}
+
+			switch (selected.value) {
+				case 'mcu':
+					await mcuProjectDialog.showProjectCreationWebView();
+					break;
+				case 'yocto':
+					await yoctoProjectDialog.showProjectCreationWebView();
+					break;
+				case 'autolinux':
+					await autolinuxProjectDialog.showProjectCreationWebView();
+					break;
+			}
+		}
+	);
+
 	// Create MCU Standalone Project 명령
 	const createMcuStandaloneProjectDisposable = vscode.commands.registerCommand(
 		'axon.createMcuStandaloneProject',
@@ -357,6 +431,51 @@ export async function activate(context: vscode.ExtensionContext) {
 		async () => {
 			const { AutolinuxProjectBuilder } = await import('./projects/yocto/autolinux-builder');
 			await AutolinuxProjectBuilder.buildAutolinux();
+		}
+	);
+
+	// Autolinux Update 명령
+	const autolinuxUpdateDisposable = vscode.commands.registerCommand(
+		'axon.autolinuxUpdate',
+		async () => {
+			const { AutolinuxProjectManager } = await import('./projects/yocto/autolinux-manager');
+			await AutolinuxProjectManager.updateSources();
+		}
+	);
+
+	// Autolinux Clean 명령
+	const autolinuxCleanDisposable = vscode.commands.registerCommand(
+		'axon.autolinuxClean',
+		async () => {
+			const { AutolinuxProjectManager } = await import('./projects/yocto/autolinux-manager');
+			await AutolinuxProjectManager.cleanBuild();
+		}
+	);
+
+	// Autolinux Make FAI 명령
+	const autolinuxMakeFaiDisposable = vscode.commands.registerCommand(
+		'axon.autolinuxMakeFai',
+		async () => {
+			const { AutolinuxProjectManager } = await import('./projects/yocto/autolinux-manager');
+			await AutolinuxProjectManager.makeFai();
+		}
+	);
+
+	// Autolinux Info 명령
+	const autolinuxInfoDisposable = vscode.commands.registerCommand(
+		'axon.autolinuxInfo',
+		async () => {
+			const { AutolinuxProjectManager } = await import('./projects/yocto/autolinux-manager');
+			await AutolinuxProjectManager.showInfo();
+		}
+	);
+
+	// Autolinux Make Update Directory 명령
+	const autolinuxMakeUpdateDirDisposable = vscode.commands.registerCommand(
+		'axon.autolinuxMakeUpdateDir',
+		async () => {
+			const { AutolinuxProjectManager } = await import('./projects/yocto/autolinux-manager');
+			await AutolinuxProjectManager.makeUpdateDir();
 		}
 	);
 
@@ -461,7 +580,25 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Set Project Type 명령
 	const setProjectTypeDisposable = vscode.commands.registerCommand(
 		'axon.setProjectType',
-		async (projectType: string) => {
+		async (projectType?: string) => {
+			// projectType이 없으면 QuickPick으로 선택
+			if (!projectType) {
+				const selected = await vscode.window.showQuickPick([
+					{ label: 'MCU Project', value: 'mcu_project', description: 'MCU Standalone Project' },
+					{ label: 'Yocto Project', value: 'yocto_project', description: 'Yocto Project' },
+					{ label: 'Yocto Project (autolinux)', value: 'yocto_project_autolinux', description: 'Yocto Project with autolinux' }
+				], {
+					placeHolder: 'Select project type',
+					title: 'Set Project Type'
+				});
+				
+				if (!selected) {
+					return;
+				}
+				
+				projectType = selected.value;
+			}
+			
 			if (projectType !== 'mcu_project' && 
 			    projectType !== 'yocto_project' && 
 			    projectType !== 'yocto_autolinux' &&
@@ -482,6 +619,22 @@ export async function activate(context: vscode.ExtensionContext) {
 			const config = vscode.workspace.getConfiguration('axon');
 			await config.update('projectType', normalizedProjectType, vscode.ConfigurationTarget.Workspace);
 			
+		// Yocto 프로젝트 타입인 경우 apBuildScript, apImageName 기본값 저장
+		if (normalizedProjectType === 'yocto_project' || normalizedProjectType === 'yocto_project_autolinux') {
+			const yoctoConfig = vscode.workspace.getConfiguration('axon.yocto');
+			await yoctoConfig.update(
+				'apBuildScript', 
+				'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh',
+				vscode.ConfigurationTarget.Workspace
+			);
+			await yoctoConfig.update(
+				'apImageName',
+				'telechips-cgw-image',
+				vscode.ConfigurationTarget.Workspace
+			);
+			console.log(`[Axon] apBuildScript, apImageName 기본값 저장 완료`);
+		}
+			
 			const displayMap: { [key: string]: string } = { 
 				mcu_project: 'MCU Project', 
 				yocto_project: 'Yocto Project',
@@ -494,10 +647,9 @@ export async function activate(context: vscode.ExtensionContext) {
 				`프로젝트 타입이 설정되었습니다: ${displayMap[normalizedProjectType] || normalizedProjectType}`
 			);
 			
-			// webview에 상태 동기화
-			if (globalBuildProvider) {
-				globalBuildProvider.sendProjectType();
-			}
+			// TreeView 새로고침 (프로젝트 타입 변경 시)
+			buildProvider.refresh();
+			fwdnProvider.refresh();
 		}
 	);
 
@@ -505,11 +657,13 @@ export async function activate(context: vscode.ExtensionContext) {
 		runFwdnAllDisposable,
 		runFwdnLowFormatDisposable,
 		runFwdnAvailableImageDisposable,
+		runFwdnReadPartitionDisposable,
 		mcuBuildMakeDisposable,
 		mcuBuildAllDisposable,
 		mcuCleanDisposable,
 		buildOptionExtractionDisposable,
 		// 새로운 프로젝트 생성 명령어들
+		createProjectDisposable,
 		createMcuStandaloneProjectDisposable,
 		createYoctoProjectDisposable,
 		createAutolinuxProjectDisposable,
@@ -518,6 +672,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		buildYoctoMcuDisposable,
 		buildYoctoKernelDisposable,
 		buildAutolinuxDisposable,
+		// Autolinux 관리 명령어들
+		autolinuxUpdateDisposable,
+		autolinuxCleanDisposable,
+		autolinuxMakeFaiDisposable,
+		autolinuxInfoDisposable,
+		autolinuxMakeUpdateDirDisposable,
 		// DevTool 명령어들
 		devtoolCreateModifyDisposable,
 		devtoolBuildDisposable,

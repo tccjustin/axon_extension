@@ -6,6 +6,19 @@ import { axonLog, axonError, axonSuccess, getAxonOutputChannel } from './logger'
 import { convertRemotePathToSamba } from './utils';
 import { findProjectRootByShell } from './projects/common/shell-utils';
 
+function escapeForSingleQuotedPowerShellString(value: string): string {
+	// In PowerShell single-quoted strings, escape a single quote by doubling it.
+	return value.replace(/'/g, "''");
+}
+
+function getLocalPowerShellExe(): string {
+	const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+	const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+	if (fs.existsSync(ps7)) return ps7;
+	if (fs.existsSync(ps5)) return ps5;
+	throw new Error('로컬 PC에서 PowerShell 실행 파일을 찾지 못했습니다.');
+}
+
 // FWDN 설정 인터페이스
 export interface FwdnConfig {
 	fwdnExePath: string;
@@ -406,28 +419,16 @@ export async function executeFwdnCommand(extensionPath: string): Promise<void> {
 	try {
 		axonLog(`🔧 로컬 PowerShell에서 직접 실행`);
 
-		// 배치 파일 경로 생성 (익스텐션 설치 경로 기준)
-		const batchFilePath = path.join(extensionPath, 'fwdn_all.bat');
-		axonLog(`📝 배치 파일 경로: ${batchFilePath}`);
-
-		// UNC 경로 처리 (Remote-SSH 환경에서 로컬 파일 접근용)
-		const isUncPath = config.fwdnExePath.startsWith('\\\\tsclient\\');
-		const processedFwdnExePath = isUncPath ? config.fwdnExePath : `"${config.fwdnExePath}"`;
-
-		// PowerShell에서 배치 파일 실행 (ALL 모드로 고정)
-		// 현재 터미널은 PowerShell이므로, & 연산자를 사용해 .bat 파일을 직접 호출합니다.
-		const psCommand = `& "${batchFilePath}" all "${config.bootFirmwarePath}" "${config.fwdnExePath}"`;
-
-		axonLog(`📋 실행 명령: ${psCommand}`);
-
-		// PowerShell 실행 파일 경로 결정 (PowerShell 7 우선)
-		const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
-		const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-
-		const psExe = fs.existsSync(ps7) ? ps7 : (fs.existsSync(ps5) ? ps5 : null);
-		if (!psExe) {
-			throw new Error('로컬 PC에서 PowerShell 실행 파일을 찾지 못했습니다.');
-		}
+		// ps1로 실행 (배치 대비 따옴표/파싱 안정성 개선)
+		const psExe = getLocalPowerShellExe();
+		const ps1Path = path.join(extensionPath, 'fwdn_all.ps1');
+		axonLog(`📝 PS1 파일 경로: ${ps1Path}`);
+		const psCommand =
+			`& "${psExe}" -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}" ` +
+			`-Mode "all" ` +
+			`-BootFirmwarePath "${config.bootFirmwarePath}" ` +
+			`-FwdnExe "${config.fwdnExePath}"`;
+		axonLog(`📋 실행 명령(PowerShell-ps1): ${psCommand}`);
 
 		// 환경 감지 및 터미널 생성
 		const isRemote = vscode.env.remoteName !== undefined;
@@ -460,7 +461,7 @@ export async function executeFwdnCommand(extensionPath: string): Promise<void> {
 			}
 		}
 
-		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
+		terminal.sendText(psCommand, true);
 
 		// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
 		setTimeout(async () => {
@@ -534,23 +535,16 @@ export async function executeFwdnLowFormat(extensionPath: string): Promise<void>
 	try {
 		axonLog(`🔧 로컬 PowerShell에서 직접 실행`);
 
-		// 배치 파일 경로 생성 (익스텐션 설치 경로 기준)
-		const batchFilePath = path.join(extensionPath, 'fwdn_all.bat');
-		axonLog(`📝 배치 파일 경로: ${batchFilePath}`);
-
-		// PowerShell에서 배치 파일 실행 (low-format 모드)
-		const psCommand = `& "${batchFilePath}" low-format "${config.bootFirmwarePath}" "${config.fwdnExePath}"`;
-
-		axonLog(`📋 실행 명령: ${psCommand}`);
-
-		// PowerShell 실행 파일 경로 결정 (PowerShell 7 우선)
-		const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
-		const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-
-		const psExe = fs.existsSync(ps7) ? ps7 : (fs.existsSync(ps5) ? ps5 : null);
-		if (!psExe) {
-			throw new Error('로컬 PC에서 PowerShell 실행 파일을 찾지 못했습니다.');
-		}
+		// ps1로 실행 (배치 대비 따옴표/파싱 안정성 개선)
+		const psExe = getLocalPowerShellExe();
+		const ps1Path = path.join(extensionPath, 'fwdn_all.ps1');
+		axonLog(`📝 PS1 파일 경로: ${ps1Path}`);
+		const psCommand =
+			`& "${psExe}" -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}" ` +
+			`-Mode "low-format" ` +
+			`-BootFirmwarePath "${config.bootFirmwarePath}" ` +
+			`-FwdnExe "${config.fwdnExePath}"`;
+		axonLog(`📋 실행 명령(PowerShell-ps1): ${psCommand}`);
 
 		// 환경 감지 및 터미널 생성
 		const isRemote = vscode.env.remoteName !== undefined;
@@ -583,7 +577,7 @@ export async function executeFwdnLowFormat(extensionPath: string): Promise<void>
 			}
 		}
 
-		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
+		terminal.sendText(psCommand, true);
 
 		// Build View에 포커스 복원 (딜레이 후 실행하여 확실하게 포커스 이동)
 		setTimeout(async () => {
@@ -699,24 +693,26 @@ async function executeFwdnDownloadPartition(
 	
 	try {
 		axonLog(`🔧 로컬 PowerShell에서 직접 실행`);
-		
-		// 배치 파일 경로 생성 (익스텐션 설치 경로 기준)
-		const batchFilePath = path.join(extensionPath, 'fwdn_download_partition.bat');
-		axonLog(`📝 배치 파일 경로: ${batchFilePath}`);
-		
-		// PowerShell에서 배치 파일 실행
-		const psCommand = `& "${batchFilePath}" "${config.bootFirmwarePath}" "${config.fwdnExePath}" "${windowsFilePath}" "${partition.name}"`;
-		
-		axonLog(`📋 실행 명령: ${psCommand}`);
-		
-		// PowerShell 실행 파일 경로 결정 (PowerShell 7 우선)
+
+		// 배치(.bat) 파일 대신 ps1 스크립트를 실행 (따옴표/파싱 이슈 최소화)
 		const ps7 = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
 		const ps5 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-		
 		const psExe = fs.existsSync(ps7) ? ps7 : (fs.existsSync(ps5) ? ps5 : null);
 		if (!psExe) {
 			throw new Error('로컬 PC에서 PowerShell 실행 파일을 찾지 못했습니다.');
 		}
+
+		const ps1Path = path.join(extensionPath, 'fwdn_download_partition.ps1');
+		axonLog(`📝 PS1 파일 경로: ${ps1Path}`);
+
+		const psCommand =
+			`& "${psExe}" -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}" ` +
+			`-BootFirmwarePath "${config.bootFirmwarePath}" ` +
+			`-FwdnExe "${config.fwdnExePath}" ` +
+			`-FilePath "${windowsFilePath}" ` +
+			`-PartitionName "${partition.name}" ` +
+			`-RetryCount 3 -DelaySec 1`;
+		axonLog(`📋 실행 명령(PowerShell-ps1): ${psCommand}`);
 		
 		// 환경 감지 및 터미널 생성
 		const isRemote = vscode.env.remoteName !== undefined;
@@ -749,7 +745,7 @@ async function executeFwdnDownloadPartition(
 			}
 		}
 		
-		terminal.sendText(psCommand, true);  // PS 문법 그대로 실행
+		terminal.sendText(psCommand, true);
 		
 		// Build View에 포커스 복원
 		setTimeout(async () => {
@@ -949,6 +945,271 @@ export async function executeFwdnAvailableImage(extensionPath: string): Promise<
 		const errorMsg = `FWDN Specific Image File 실행 중 오류가 발생했습니다: ${error}`;
 		axonError(errorMsg);
 		vscode.window.showErrorMessage(errorMsg);
+	}
+}
+
+/**
+ * FWDN Read Partition (Dump)
+ * partition.list에서 파티션 크기를 읽어서 자동으로 덤프
+ */
+export async function executeFwdnReadPartition(extensionPath: string): Promise<void> {
+	axonLog('🔧 FWDN Read Partition 시작');
+	
+	try {
+		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		if (!workspaceFolder) {
+			vscode.window.showErrorMessage('워크스페이스 폴더를 찾을 수 없습니다.');
+			return;
+		}
+		
+		// 이미지 디렉토리 찾기
+		let imagesDir = vscode.workspace.getConfiguration('axon.yocto').get<string>('imagesDir');
+		
+		if (!imagesDir) {
+			axonLog('⚠️ 이미지 디렉토리가 설정되지 않았습니다. 자동 탐색을 시작합니다...');
+			
+			// SD_Data.gpt 파일 찾기
+			const files = await vscode.workspace.findFiles('**/SD_Data.gpt', '**/node_modules/**', 1);
+			
+			if (files.length === 0) {
+				const errorMsg = `SD_Data.gpt 파일을 찾을 수 없습니다.\n\n` +
+					`Yocto AP 빌드를 먼저 실행하여 이미지 파일을 생성해주세요.`;
+				axonError(errorMsg);
+				vscode.window.showErrorMessage(errorMsg);
+				return;
+			}
+			
+			// SD_Data.gpt가 있는 디렉토리 = 이미지 디렉토리
+			const sdDataPath = files[0].path;
+			imagesDir = path.dirname(sdDataPath);
+			
+			if (!imagesDir) {
+				const errorMsg = `이미지 디렉토리를 찾을 수 없습니다.`;
+				axonError(errorMsg);
+				vscode.window.showErrorMessage(errorMsg);
+				return;
+			}
+			
+			axonLog(`✅ 이미지 디렉토리 발견: ${imagesDir}`);
+			
+			// settings.json에 저장
+			try {
+				await updateSettingsJson(workspaceFolder, { 'axon.yocto.imagesDir': imagesDir });
+				axonLog(`✅ 이미지 디렉토리를 settings.json에 저장했습니다.`);
+			} catch (error) {
+				axonLog(`⚠️ settings.json 저장 실패: ${error}`);
+			}
+		}
+		
+		const partitionListPath = `${imagesDir}/partition.list`;
+		axonLog(`📁 partition.list 경로: ${partitionListPath}`);
+		
+		// partition.list 파일 읽기
+		const partitionListUri = vscode.Uri.from({
+			scheme: workspaceFolder.uri.scheme,
+			authority: workspaceFolder.uri.authority,
+			path: partitionListPath
+		});
+		
+		let partitionListContent: string;
+		try {
+			const content = await vscode.workspace.fs.readFile(partitionListUri);
+			partitionListContent = Buffer.from(content).toString('utf8');
+			axonLog(`✅ partition.list 파일 읽기 성공`);
+		} catch (error) {
+			const errorMsg = `partition.list 파일을 찾을 수 없습니다.\n\n` +
+				`경로: ${partitionListPath}\n\n` +
+				`Yocto AP 빌드를 먼저 실행하여 이미지 파일을 생성해주세요.`;
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			return;
+		}
+		
+		// 파티션 목록 파싱
+		const partitions = parsePartitionList(partitionListContent);
+		axonLog(`📋 파싱된 파티션 개수: ${partitions.length}`);
+		
+		if (partitions.length === 0) {
+			const errorMsg = `사용 가능한 파티션이 없습니다.\n\n` +
+				`partition.list 파일에 유효한 파티션 정보가 없거나, 모든 파티션이 필터링되었습니다.`;
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			return;
+		}
+		
+		// 파티션 선택 메뉴 생성
+		const items = partitions.map(p => ({
+			label: `${p.name}`,
+			description: `Size: ${p.size}`,
+			detail: `Read dump from ${p.name} partition`,
+			partition: p
+		}));
+		
+		const selected = await vscode.window.showQuickPick(items, {
+			placeHolder: 'Select partition to read (dump)',
+			title: 'FWDN Read Partition'
+		});
+		
+		if (!selected) {
+			axonLog('❌ 파티션 선택이 취소되었습니다.');
+			return;
+		}
+		
+		axonLog(`✅ 선택된 파티션: ${selected.partition.name} (${selected.partition.size})`);
+		
+	// 저장할 파일명 입력
+	const defaultFileName = `${selected.partition.name}_dump.bin`;
+	const outputFileName = await vscode.window.showInputBox({
+		prompt: 'Enter output file name',
+		value: defaultFileName,
+		placeHolder: 'e.g., system_a_dump.bin'
+	});
+	
+	if (!outputFileName) {
+		axonLog('❌ 파일명 입력이 취소되었습니다.');
+		return;
+	}
+	
+	// 저장 위치 선택
+	const saveUri = await vscode.window.showSaveDialog({
+		defaultUri: vscode.Uri.file(path.join(os.homedir(), outputFileName)),
+		filters: {
+			'Binary files': ['bin'],
+			'All files': ['*']
+		}
+	});
+	
+	if (!saveUri) {
+		axonLog('❌ 저장 위치 선택이 취소되었습니다.');
+		return;
+	}
+	
+	axonLog(`💾 저장 경로: ${saveUri.fsPath}`);
+	
+	// 스토리지 타입 선택 (기본값: emmc)
+	const storageType = await vscode.window.showQuickPick(
+		[
+			{ label: 'emmc', description: 'eMMC storage (GPT format, user area only)' },
+			{ label: 'ufs', description: 'UFS storage (GPT format, user area only)' }
+		],
+		{
+			placeHolder: 'Select storage type',
+			title: 'Storage Type'
+		}
+	);
+	
+	if (!storageType) {
+		axonLog('❌ 스토리지 타입 선택이 취소되었습니다.');
+		return;
+	}
+	
+	// 선택한 파티션 읽기 실행 (--part 옵션 사용)
+	await executeFwdnReadDump(
+		extensionPath,
+		selected.partition,
+		saveUri.fsPath,
+		storageType.label
+	);
+		
+	} catch (error) {
+		const errorMsg = `FWDN Read Partition 실행 중 오류가 발생했습니다: ${error}`;
+		axonError(errorMsg);
+		vscode.window.showErrorMessage(errorMsg);
+	}
+}
+
+/**
+ * FWDN Read Dump 실행 (GPT format, --part 옵션 사용)
+ */
+async function executeFwdnReadDump(
+	extensionPath: string,
+	partition: PartitionInfo,
+	outputPath: string,
+	storageType: string
+): Promise<void> {
+	axonLog(`🔧 FWDN Read Dump 실행: ${partition.name}`);
+	
+	// FWDN 설정 가져오기
+	let config: FwdnConfig;
+	try {
+		config = await getFwdnConfig(extensionPath);
+		axonLog(`📋 설정 - FWDN 경로: ${config.fwdnExePath}, Boot Firmware 경로: ${config.bootFirmwarePath}`);
+	} catch (error) {
+		axonError(`설정 오류: ${error}`);
+		const errorMsg = `Boot Firmware 폴더를 찾을 수 없습니다.\n\n` +
+			`prebuilt 폴더가 워크스페이스 또는 그 하위 4단계까지 있는지 확인하세요.`;
+		vscode.window.showErrorMessage(errorMsg);
+		return;
+	}
+	
+	// 설정 검증
+	const validationError = validateConfig(config);
+	if (validationError) {
+		axonError(validationError);
+		vscode.window.showErrorMessage(validationError);
+		return;
+	}
+	
+	try {
+		axonLog(`🔧 로컬 PowerShell에서 PS1로 FWDN Read 실행`);
+
+		const psExe = getLocalPowerShellExe();
+		const ps1Path = path.join(extensionPath, 'fwdn_read_partition.ps1');
+		axonLog(`📝 PS1 파일 경로: ${ps1Path}`);
+
+		const psCommand =
+			`& "${psExe}" -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}" ` +
+			`-BootFirmwarePath "${config.bootFirmwarePath}" ` +
+			`-FwdnExe "${config.fwdnExePath}" ` +
+			`-OutputFile "${outputPath}" ` +
+			`-StorageType "${storageType}" ` +
+			`-PartitionName "${partition.name}"`;
+		axonLog(`📋 실행 명령(PowerShell-ps1): ${psCommand}`);
+		
+		// 환경 감지 및 터미널 생성
+		const isRemote = vscode.env.remoteName !== undefined;
+		let terminal: vscode.Terminal;
+		
+		if (isRemote) {
+			// 원격 환경: 로컬 터미널 생성 명령 사용
+			await vscode.commands.executeCommand('workbench.action.terminal.newLocal');
+			const term = vscode.window.activeTerminal;
+			if (!term) {
+				throw new Error('로컬 터미널 생성에 실패했습니다.');
+			}
+			terminal = term;
+		} else {
+			// 로컬 환경: 기본 터미널 생성 시도
+			try {
+				await vscode.commands.executeCommand('workbench.action.terminal.new');
+				const basicTerminal = vscode.window.activeTerminal;
+				if (basicTerminal) {
+					terminal = basicTerminal;
+				} else {
+					throw new Error('기본 터미널 생성에 실패했습니다.');
+				}
+			} catch {
+				// 폴백: 직접 터미널 생성
+				terminal = vscode.window.createTerminal({
+					name: `FWDN Read: ${partition.name}`,
+					isTransient: true
+				});
+			}
+		}
+		
+		terminal.sendText(psCommand, true);
+		terminal.show();
+		
+		axonSuccess(`✅ FWDN Read Dump 명령이 실행되었습니다!\n\n` +
+			`파티션: ${partition.name}\n` +
+			`크기: ${partition.size}\n` +
+			`출력 파일: ${outputPath}\n` +
+			`스토리지: ${storageType} (GPT format, user area only)`);
+		
+	} catch (error) {
+		const errorMsg = `FWDN Read Dump 실행 중 오류가 발생했습니다: ${error}`;
+		axonError(errorMsg);
+		throw error;
 	}
 }
 

@@ -8,6 +8,7 @@ yarn-error.log*
 out/
 dist/
 *.vsix
+*.tsbuildinfo
 
 # IDE files
 

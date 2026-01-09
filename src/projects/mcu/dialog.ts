@@ -364,19 +364,22 @@ export class McuProjectDialog {
 				// 빌드 설정 실패는 치명적이지 않으므로 계속 진행
 			}
 
-			axonLog(`✅ MCU 프로젝트 생성 완료`);
-			
-			// 성공 메시지
-			panel.webview.postMessage({
-				command: 'projectCreated',
-				success: true
-			});
-			
-			// 성공 알림
-			vscode.window.showInformationMessage(`MCU 프로젝트가 생성되었습니다: ${data.projectName}`);
-			
-			// 잠시 후 패널 닫기
-			setTimeout(() => panel.dispose(), 1000);
+		axonLog(`✅ MCU 프로젝트 생성 완료`);
+		
+		// 성공 메시지
+		panel.webview.postMessage({
+			command: 'projectCreated',
+			success: true
+		});
+		
+		// 성공 알림
+		vscode.window.showInformationMessage(`MCU 프로젝트가 생성되었습니다: ${data.projectName}`);
+		
+		// 생성된 프로젝트 폴더를 VS Code에서 열기
+		await vscode.commands.executeCommand('vscode.openFolder', projectUri, { forceNewWindow: true });
+		
+		// 잠시 후 패널 닫기
+		setTimeout(() => panel.dispose(), 1000);
 		} catch (error) {
 			axonLog(`❌ MCU 프로젝트 생성 실패: ${error}`);
 			

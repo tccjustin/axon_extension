@@ -121,20 +121,36 @@ export async function ensureProjectType(): Promise<ProjectType | undefined> {
 			return undefined;
 		}
 		
-		projectType = selected.value;
-		
-		// 프로젝트 타입에 따른 폴더명 가져오기
-		const folders = PROJECT_TYPE_FOLDERS[projectType];
-		
-		// settings.json에 저장 (buildAxonFolderName은 제외)
-		await config.update('projectType', projectType, vscode.ConfigurationTarget.Workspace);
-		
-		axonLog(`💾 프로젝트 타입 설정 저장: ${projectType}`);
-		
-		vscode.window.showInformationMessage(
-			`프로젝트 타입이 설정되었습니다: ${selected.label}`
+	projectType = selected.value;
+	
+	// 프로젝트 타입에 따른 폴더명 가져오기
+	const folders = PROJECT_TYPE_FOLDERS[projectType];
+	
+	// settings.json에 저장 (buildAxonFolderName은 제외)
+	await config.update('projectType', projectType, vscode.ConfigurationTarget.Workspace);
+	
+	// Yocto 프로젝트 타입인 경우 apBuildScript, apImageName 기본값 저장
+	if (projectType === 'yocto_project') {
+		const yoctoConfig = vscode.workspace.getConfiguration('axon.yocto');
+		await yoctoConfig.update(
+			'apBuildScript', 
+			'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh',
+			vscode.ConfigurationTarget.Workspace
 		);
+		await yoctoConfig.update(
+			'apImageName',
+			'telechips-cgw-image',
+			vscode.ConfigurationTarget.Workspace
+		);
+		axonLog(`💾 apBuildScript, apImageName 기본값 저장 완료`);
 	}
+	
+	axonLog(`💾 프로젝트 타입 설정 저장: ${projectType}`);
+	
+	vscode.window.showInformationMessage(
+		`프로젝트 타입이 설정되었습니다: ${selected.label}`
+	);
+}
 	
 	return projectType;
 }

@@ -88,16 +88,18 @@ export class AutolinuxProjectCreator {
 			axonSuccess(`✅ Autolinux Configuration이 완료되었습니다.`);
 		}
 
-		// .vscode/settings.json 생성
-		axonLog(`⚙️ Autolinux 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
-		await createVscodeSettingsUtil(projectFullUri, {
-			'axon.projectType': 'yocto_project_autolinux',
-			'axon.yocto.projectRoot': projectPath,
-			'axon.yocto.autolinux.sdk': sdkTemplate,
-			'axon.yocto.autolinux.machine': machine,
-			'axon.yocto.autolinux.buildVersion': buildVersion
-		});
-		axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
+	// .vscode/settings.json 생성
+	axonLog(`⚙️ Autolinux 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
+	await createVscodeSettingsUtil(projectFullUri, {
+		'axon.projectType': 'yocto_project_autolinux',
+		'axon.yocto.projectRoot': projectPath,
+		'axon.yocto.autolinux.sdk': sdkTemplate,
+		'axon.yocto.autolinux.machine': machine,
+		'axon.yocto.autolinux.buildVersion': buildVersion,
+		'axon.yocto.apBuildScript': 'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh',  // AP 빌드 스크립트 기본값
+		'axon.yocto.apImageName': 'telechips-cgw-image'  // AP 이미지 이름 기본값
+	});
+	axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 
 		// 생성된 프로젝트 폴더를 VS Code에서 열기
 		await vscode.commands.executeCommand('vscode.openFolder', projectFullUri, { forceNewWindow: true });
@@ -548,7 +550,7 @@ except Exception as e:
 	}
 
 	/**
-	 * SDK 템플릿에서 MainImages/SubImages 로딩
+	 * SDK 템플릿에서 MainImages/SubImages 로딩 (Python 파일 직접 파싱)
 	 */
 	static async loadImages(projectPath: vscode.Uri, sdk: string, machine: string): Promise<{
 		mainImages: Array<{ name: string; date: string }>;
@@ -560,123 +562,46 @@ except Exception as e:
 			
 			axonLog(`📋 이미지 목록 로딩: ${sdkTemplateFile}`);
 			
-			// 경로 처리 (원격 환경 지원)
-			const projectPathForPython = projectPath.scheme === 'file' ? projectPath.fsPath : projectPath.path;
-			const templatePath = `${projectPathForPython}/build-autolinux/template`;
+			// Python 파일 읽기
+			const fileContent = await vscode.workspace.fs.readFile(templateUri);
+			const pythonCode = Buffer.from(fileContent).toString('utf-8');
 			
-			// Python 스크립트 생성
-			const pythonScript = `
-import sys
-import json
-import os
-
-# 템플릿 경로 추가
-template_path = '${templatePath}'
-if template_path not in sys.path:
-    sys.path.insert(0, template_path)
-
-try:
-    # SDK 모듈 import
-    tmp = __import__('${sdk}')
-    
-    main_images = []
-    sub_images = []
-    
-    # MainImages 파싱
-    if hasattr(tmp, 'MainImages'):
-        for item in tmp.MainImages:
-            if isinstance(item, list) and len(item) >= 2:
-                main_images.append({'name': item[0], 'date': item[1]})
-    
-    # SubImages 파싱
-    if hasattr(tmp, 'SubImages'):
-        for item in tmp.SubImages:
-            if isinstance(item, list) and len(item) >= 2:
-                sub_images.append({'name': item[0], 'date': item[1]})
-    
-    result = {
-        'mainImages': main_images,
-        'subImages': sub_images
-    }
-    
-    print(json.dumps(result))
-except Exception as e:
-    import traceback
-    error_info = {
-        'error': str(e),
-        'traceback': traceback.format_exc(),
-        'template_path': template_path,
-        'sdk': '${sdk}'
-    }
-    print(json.dumps(error_info), file=sys.stderr)
-    sys.exit(1)
-`;
+			axonLog(`📄 파일 크기: ${pythonCode.length} bytes`);
 			
-			// 임시 파일 생성 및 실행
-			const tempScriptUri = vscode.Uri.joinPath(projectPath, 'build-autolinux', '.temp_load_images.py');
-			const tempOutputUri = vscode.Uri.joinPath(projectPath, 'build-autolinux', '.temp_images_output.json');
-			
-			await vscode.workspace.fs.writeFile(tempScriptUri, Buffer.from(pythonScript, 'utf-8'));
-			
-			// Python 실행
-			const projectPathStr = projectPath.scheme === 'file' ? projectPath.fsPath : projectPath.path;
-			const tempScriptPath = tempScriptUri.scheme === 'file' ? tempScriptUri.fsPath : tempScriptUri.path;
-			const tempOutputPath = tempOutputUri.scheme === 'file' ? tempOutputUri.fsPath : tempOutputUri.path;
-			
-			try {
-				await executeShellTask({
-					command: `python3 ${tempScriptPath} > ${tempOutputPath} 2>&1`,
-					cwd: projectPathStr,
-					taskName: 'Load Autolinux Images',
-					taskId: 'loadAutolinuxImages',
-					showTerminal: false
-				});
-			} catch (execError) {
-				// Python 실행 실패 시 출력 파일 읽어서 에러 확인
-				try {
-					const errorContent = await vscode.workspace.fs.readFile(tempOutputUri);
-					const errorText = Buffer.from(errorContent).toString('utf-8');
-					axonError(`Python 실행 에러:\n${errorText}`);
-					throw new Error(`Python script failed: ${errorText}`);
-				} catch {
-					throw new Error(`Python script execution failed: ${execError}`);
+			// MainImages 파싱 (다음 변수 선언 전까지만 매칭)
+			const mainImages: Array<{ name: string; date: string }> = [];
+			const mainImagesMatch = pythonCode.match(/^MainImages\s*=\s*\[([\s\S]*?)\]\s*$/m);
+			if (mainImagesMatch) {
+				// [['name', 'date'], ...] 형식 파싱 (작은따옴표 또는 큰따옴표 지원)
+				const imagePattern = /\[\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\]/g;
+				let match;
+				while ((match = imagePattern.exec(mainImagesMatch[1])) !== null) {
+					mainImages.push({
+						name: match[1],
+						date: match[2]
+					});
 				}
 			}
 			
-			// 결과 읽기
-			let outputText = '';
-			try {
-				const outputContent = await vscode.workspace.fs.readFile(tempOutputUri);
-				outputText = Buffer.from(outputContent).toString('utf-8');
-			} catch (readError) {
-				axonError(`출력 파일 읽기 실패: ${readError}`);
-				throw new Error(`Failed to read output file: ${readError}`);
+			// SubImages 파싱 (다음 변수 선언 전까지만 매칭)
+			const subImages: Array<{ name: string; date: string }> = [];
+			const subImagesMatch = pythonCode.match(/^SubImages\s*=\s*\[([\s\S]*?)\]\s*$/m);
+			if (subImagesMatch) {
+				const imagePattern = /\[\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\]/g;
+				let match;
+				while ((match = imagePattern.exec(subImagesMatch[1])) !== null) {
+					subImages.push({
+						name: match[1],
+						date: match[2]
+					});
+				}
 			}
 			
-			// 임시 파일 삭제
-			try {
-				await vscode.workspace.fs.delete(tempScriptUri);
-				await vscode.workspace.fs.delete(tempOutputUri);
-			} catch {}
-			
-			// JSON 파싱
-			let data: any;
-			try {
-				data = JSON.parse(outputText);
-			} catch (parseError) {
-				axonError(`JSON 파싱 실패. 출력:\n${outputText}`);
-				throw new Error(`Failed to parse JSON: ${outputText}`);
-			}
-			
-			if (data.error) {
-				throw new Error(data.error);
-			}
-			
-			axonLog(`✅ Main Images: ${data.mainImages.length}개, Sub Images: ${data.subImages.length}개`);
+			axonLog(`✅ Main Images: ${mainImages.length}개, Sub Images: ${subImages.length}개`);
 			
 			return {
-				mainImages: data.mainImages || [],
-				subImages: data.subImages || []
+				mainImages,
+				subImages
 			};
 			
 		} catch (error) {

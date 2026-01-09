@@ -136,7 +136,9 @@ export class YoctoProjectCreator {
 	await createVscodeSettingsUtil(projectFullUri, {
 		'axon.projectType': 'yocto_project',
 		'axon.buildAxonFolderName': 'build-axon',
-		'axon.yocto.projectRoot': projectPath  // Yocto 프로젝트 루트 경로 저장
+		'axon.yocto.projectRoot': projectPath,  // Yocto 프로젝트 루트 경로 저장
+		'axon.yocto.apBuildScript': 'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh',  // AP 빌드 스크립트 기본값
+		'axon.yocto.apImageName': 'telechips-cgw-image'  // AP 이미지 이름 기본값
 	});
 	axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 
