@@ -27,58 +27,8 @@ import { axonLog, axonError } from './logger';
  * ============================================================================
  */
 
-// 제외할 폴더 패턴 (검색에서 제외할 폴더들)
-export const EXCLUDE_PATTERNS = '**/{node_modules,.git,.cache,build,dist,out,tmp,buildtools,fwdn-v8,mktcimg,poky,source-mirror,tools}/**';
-
-// 제외할 폴더명들 (EXCLUDE_PATTERNS에서 추출)
-export const EXCLUDE_FOLDERS = [
-	'node_modules',
-	'.git',
-	'.cache',
-	'build',
-	'dist',
-	'out',
-	'tmp',
-	'buildtools',
-	'fwdn-v8',
-	'mktcimg',
-	'poky',
-	'source-mirror',
-	'tools'
-];
-
 // 프로젝트 타입
 export type ProjectType = 'mcu_project' | 'yocto_project' | '';
-
-// Axon 설정 인터페이스
-export interface AxonConfig {
-	fwdnExePath: string;
-	projectType: ProjectType;
-	buildAxonFolderName: string;
-}
-
-// 전체 Axon 설정 가져오기 함수
-export function getAxonConfig(): AxonConfig {
-	const config = vscode.workspace.getConfiguration('axon');
-
-	return {
-		fwdnExePath: config.get<string>('fwdn.exePath', 'C:\\Users\\jhlee17\\work\\FWDN\\fwdn.exe'),
-		projectType: config.get<ProjectType>('projectType', ''),
-		buildAxonFolderName: config.get<string>('buildAxonFolderName', '')
-	};
-}
-
-/**
- * 프로젝트 타입에 따른 폴더명 매핑
- */
-export const PROJECT_TYPE_FOLDERS = {
-	mcu_project: {
-		buildFolder: 'mcu-tcn100x'
-	},
-	yocto_project: {
-		buildFolder: 'build-axon'
-	}
-} as const;
 
 /**
  * 프로젝트 타입 선택 및 자동 설정
@@ -123,10 +73,7 @@ export async function ensureProjectType(): Promise<ProjectType | undefined> {
 		
 	projectType = selected.value;
 	
-	// 프로젝트 타입에 따른 폴더명 가져오기
-	const folders = PROJECT_TYPE_FOLDERS[projectType];
-	
-	// settings.json에 저장 (buildAxonFolderName은 제외)
+	// settings.json에 저장
 	await config.update('projectType', projectType, vscode.ConfigurationTarget.Workspace);
 	
 	// Yocto 프로젝트 타입인 경우 apBuildScript, apImageName 기본값 저장
@@ -163,10 +110,7 @@ export async function ensureProjectType(): Promise<ProjectType | undefined> {
 export async function setProjectType(projectType: 'mcu_project' | 'yocto_project'): Promise<void> {
 	const config = vscode.workspace.getConfiguration('axon');
 	
-	// 프로젝트 타입에 따른 폴더명 가져오기
-	const folders = PROJECT_TYPE_FOLDERS[projectType];
-	
-	// settings.json에 저장 (buildAxonFolderName은 제외)
+	// settings.json에 저장
 	await config.update('projectType', projectType, vscode.ConfigurationTarget.Workspace);
 	
 	const displayMap: { [key in 'mcu_project' | 'yocto_project']: string } = { 
@@ -178,31 +122,6 @@ export async function setProjectType(projectType: 'mcu_project' | 'yocto_project
 	vscode.window.showInformationMessage(
 		`프로젝트 타입이 설정되었습니다: ${displayMap[projectType]}`
 	);
-}
-
-/**
- * URI에서 특정 폴더명까지의 상위 폴더 URI를 반환 (스킴 보존)
- */
-export function uriUpToFolderName(uri: vscode.Uri, folderName: string): vscode.Uri {
-	// 스킴을 유지한 채로 경로만 잘라서 상위 폴더 URI를 만든다.
-	const segments = uri.path.split('/').filter(Boolean); // POSIX 경로로 취급 (remote 포함)
-	const index = segments.lastIndexOf(folderName);
-
-	if (index >= 0) {
-		const newPath = '/' + segments.slice(0, index + 1).join('/');
-		return uri.with({ path: newPath });
-	} else {
-		// 폴더명을 찾지 못하면 원래 경로 반환
-		return uri;
-	}
-}
-
-/**
- * 로깅용 디스플레이 경로 반환 (원격 환경 대응)
- */
-export function dirToDisplay(uri: vscode.Uri): string {
-	// 로깅용: 로컬이면 fsPath, 아니면 POSIX path
-	return uri.scheme === 'file' ? uri.fsPath : `${uri.scheme}:${uri.path}`;
 }
 
 /**

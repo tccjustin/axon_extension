@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "name": "Autolinux Build Commands",
+  "description": "Autolinux 빌드에 필요한 커맨드 그룹 정의",
+  "env": {
+    "sdk": "${config:axon.yocto.autolinux.sdk}",
+    "machine": "${config:axon.yocto.autolinux.machine}",
+    "buildVersion": "${config:axon.yocto.autolinux.buildVersion}"
+  },
+  "groups": {
+    "configure": [
+      "cd build-autolinux",
+      "./autolinux -c configure --sdk ${env:sdk} --machine ${env:machine} --buildversion ${env:buildVersion}"
+    ],
+    "build": [
+      "cd build-autolinux",
+      "./autolinux -c build ${config:axon.yocto.apImageName}"
+    ],
+    "update": [
+      "cd build-autolinux",
+      "./autolinux -c update"
+    ],
+    "clean": [
+      "cd build-autolinux",
+      "./autolinux -c clean"
+    ],
+    "clean old": [
+      "cd build-autolinux",
+      "./autolinux -c clean old"
+    ],
+    "make_fai": [
+      "cd build-autolinux",
+      "./autolinux -c make_fai"
+    ],
+    "make_updatedir": [
+      "cd build-autolinux",
+      "./autolinux -c make_updatedir"
+    ],
+    "make_updatedir main": [
+      "cd build-autolinux",
+      "./autolinux -c make_updatedir main"
+    ],
+    "make_updatedir sub": [
+      "cd build-autolinux",
+      "./autolinux -c make_updatedir sub"
+    ],
+    "info": [
+      "cd build-autolinux",
+      "./autolinux -c info"
+    ]
+  }
+}
+

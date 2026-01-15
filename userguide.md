@@ -570,26 +570,6 @@ DevTool Build가 성공적으로 완료되었습니다!
 
 ---
 
-### Build 폴더명 설정
-
-**설정 위치**: `.vscode/settings.json`
-
-```json
-{
-  "axon.buildAxonFolderName": "build-axon"
-}
-```
-
-**선택 가능한 값**:
-- `mcu-tcn100x`: MCU Standalone 프로젝트
-- `build-axon`: Yocto 프로젝트
-
-**자동 설정**:
-- 프로젝트 생성 시 자동으로 설정됩니다.
-- FWDN 실행 시 자동으로 감지됩니다.
-
----
-
 ### Boot Firmware 폴더명 설정
 
 **설정 위치**: `.vscode/settings.json`

@@ -135,7 +135,6 @@ export class YoctoProjectCreator {
 	axonLog(`⚙️ Yocto 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
 	await createVscodeSettingsUtil(projectFullUri, {
 		'axon.projectType': 'yocto_project',
-		'axon.buildAxonFolderName': 'build-axon',
 		'axon.yocto.projectRoot': projectPath,  // Yocto 프로젝트 루트 경로 저장
 		'axon.yocto.apBuildScript': 'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh',  // AP 빌드 스크립트 기본값
 		'axon.yocto.apImageName': 'telechips-cgw-image'  // AP 이미지 이름 기본값

@@ -6,12 +6,6 @@ import { spawn } from 'child_process';
 import { initializeLogger, axonLog, axonError, axonSuccess } from './logger';
 import { executeFwdnCommand, executeFwdnLowFormat, executeFwdnAvailableImage, executeFwdnReadPartition } from './fwdn';
 import { 
-	getAxonConfig, 
-	EXCLUDE_FOLDERS, 
-	EXCLUDE_PATTERNS,
-	AxonConfig,
-	uriUpToFolderName,
-	dirToDisplay,
 	convertRemotePathToSamba,
 	setProjectType
 } from './utils';
@@ -294,6 +288,22 @@ export async function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+	// yocto.commands.json 변경 시 Build View 새로고침
+	const workspaceFolders = vscode.workspace.workspaceFolders || [];
+	for (const folder of workspaceFolders) {
+		const patterns = [
+			new vscode.RelativePattern(folder, 'vsebuildscript/yocto.commands.json'),
+			new vscode.RelativePattern(folder, 'buildscript/yocto.commands.json')
+		];
+		for (const pattern of patterns) {
+			const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+			watcher.onDidChange(() => buildProvider.refresh());
+			watcher.onDidCreate(() => buildProvider.refresh());
+			watcher.onDidDelete(() => buildProvider.refresh());
+			context.subscriptions.push(watcher);
+		}
+	}
+
 	// MCU Project Dialog Provider 등록
 	const mcuProjectDialog = new McuProjectDialog(context);
 	
@@ -479,27 +489,224 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
-	// Build Yocto AP 명령
-	const buildYoctoApDisposable = vscode.commands.registerCommand(
-		'axon.buildYoctoAp',
-		async () => {
-			await YoctoProjectBuilder.buildAp();
+	// Yocto 빌드 명령은 JSON 기반 시스템 (runYoctoJsonGroup)으로 통합됨
+
+	// Build Yocto (JSON group runner) 명령
+	const runYoctoJsonGroupDisposable = vscode.commands.registerCommand(
+		'axon.runYoctoJsonGroup',
+		async (groupName?: string) => {
+			if (!groupName) {
+				vscode.window.showErrorMessage('Yocto commands groupName이 필요합니다.');
+				return;
+			}
+			await YoctoProjectBuilder.runYoctoJsonGroup(groupName);
 		}
 	);
 
-	// Build Yocto MCU 명령
-	const buildYoctoMcuDisposable = vscode.commands.registerCommand(
-		'axon.buildYoctoMcu',
-		async () => {
-			await YoctoProjectBuilder.buildMcu();
+	const runAutolinuxJsonGroupDisposable = vscode.commands.registerCommand(
+		'axon.runAutolinuxJsonGroup',
+		async (groupName?: string) => {
+			if (!groupName) {
+				vscode.window.showErrorMessage('Autolinux commands groupName이 필요합니다.');
+				return;
+			}
+			const { AutolinuxProjectBuilder } = await import('./projects/yocto/autolinux-builder');
+			await AutolinuxProjectBuilder.runAutolinuxJsonGroup(groupName);
 		}
 	);
 
-	// Build Yocto Kernel 명령
-	const buildYoctoKernelDisposable = vscode.commands.registerCommand(
-		'axon.buildYoctoKernel',
+	const runMcuJsonGroupDisposable = vscode.commands.registerCommand(
+		'axon.runMcuJsonGroup',
+		async (groupName?: string) => {
+			if (!groupName) {
+				vscode.window.showErrorMessage('MCU commands groupName이 필요합니다.');
+				return;
+			}
+			const { McuProjectBuilder } = await import('./projects/mcu/builder');
+			await McuProjectBuilder.runMcuJsonGroup(groupName);
+		}
+	);
+
+	// Yocto commands.json 생성/열기 명령 (워크스페이스 루트에 생성)
+	const createYoctoCommandsJsonDisposable = vscode.commands.registerCommand(
+		'axon.createYoctoCommandsJson',
 		async () => {
-			await YoctoProjectBuilder.buildKernel();
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+			if (!workspaceFolder) {
+				vscode.window.showErrorMessage('워크스페이스 폴더를 찾을 수 없습니다.');
+				return;
+			}
+
+			const dirUri = vscode.Uri.joinPath(workspaceFolder.uri, 'vsebuildscript');
+			const fileUri = vscode.Uri.joinPath(dirUri, 'yocto.commands.json');
+
+			// 폴더 생성
+			await vscode.workspace.fs.createDirectory(dirUri);
+
+			// 파일 존재 확인
+			let exists = true;
+			try {
+				await vscode.workspace.fs.stat(fileUri);
+			} catch {
+				exists = false;
+			}
+
+			if (!exists) {
+				const template = `{
+  "version": 1,
+  "name": "Yocto Build Commands",
+  "description": "Build > Yocto 메뉴를 JSON으로 정의 (env/source + 실행 커맨드 그룹). machine/version은 projectRoot의 config.json에서 로드된다는 전제를 둠.",
+  "env": {
+    "projectRoot": "\${config:axon.yocto.projectRoot}",
+    "setup": "buildtools/environment-setup-x86_64-pokysdk-linux",
+    "apBuildScript": "\${config:axon.yocto.apBuildScript}",
+    "apMachine": "\${configJson:machine}",
+    "apVersion": "\${configJson:version}",
+    "mcuMachine": "\${configJson:mcu_machine}",
+    "mcuVersion": "\${configJson:mcu_version}",
+    "mcuBuildScript": "poky/meta-telechips/meta-dev/meta-mcu-dev/mcu-build.sh"
+  },
+  "groups": {
+    "build AP": [
+      "cd \\"\${env:projectRoot}\\"",
+      "source \\"\${env:projectRoot}/\${env:setup}\\"",
+      "source \\"\${env:projectRoot}/\${env:apBuildScript}\\" \${env:apMachine} \${env:apVersion}",
+      "bitbake \${config:axon.yocto.apImageName}",
+      "bitbake -f -c make_fai \${config:axon.yocto.apImageName}"
+    ],
+    "build MCU": [
+      "cd \\"\${env:projectRoot}\\"",
+      "source \\"\${env:projectRoot}/\${env:setup}\\"",
+      "source \\"\${env:projectRoot}/\${env:mcuBuildScript}\\" \${env:mcuMachine} \${env:mcuVersion}",
+      "bitbake m7-0 m7-1 m7-2 m7-np -f -c compile"
+    ],
+    "build Kernel": [
+      "cd \\"\${env:projectRoot}\\"",
+      "source \\"\${env:projectRoot}/\${env:setup}\\"",
+      "source \\"\${env:projectRoot}/\${env:apBuildScript}\\" \${env:apMachine} \${env:apVersion}",
+      "bitbake linux-telechips -f -c compile",
+      "bitbake linux-telechips -c deploy"
+    ],
+    "clean AP": [
+      "cd \\"\${env:projectRoot}/build/tcn1000\\"",
+      "echo \\"Cleaning Yocto AP build directory (except conf/downloads/sstate-cache)...\\"",
+      "find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} +"
+    ],
+    "clean MCU": [
+      "cd \\"\${env:projectRoot}/build/tcn1000-mcu\\"",
+      "echo \\"Cleaning Yocto MCU build directory (except conf/downloads/sstate-cache)...\\"",
+      "find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} +"
+    ],
+    "clean All": [
+      "for d in \\"\${env:projectRoot}/build/tcn1000\\" \\"\${env:projectRoot}/build/tcn1000-mcu\\"; do cd \\"$d\\" && echo \\"Cleaning Yocto build directory (except conf/downloads/sstate-cache)...\\" && find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} + ; done"
+    ]
+  }
+}`;
+
+				await vscode.workspace.fs.writeFile(fileUri, Buffer.from(template, 'utf8'));
+				vscode.window.showInformationMessage('vsebuildscript/yocto.commands.json을 생성했습니다.');
+			}
+
+			// 열기
+			const doc = await vscode.workspace.openTextDocument(fileUri);
+			await vscode.window.showTextDocument(doc);
+
+			// UI 갱신
+			buildProvider.refresh();
+		}
+	);
+
+	// Autolinux commands.json 생성 명령
+	const createAutolinuxCommandsJsonDisposable = vscode.commands.registerCommand(
+		'axon.createAutolinuxCommandsJson',
+		async () => {
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+			if (!workspaceFolder) {
+				vscode.window.showErrorMessage('워크스페이스 폴더를 찾을 수 없습니다.');
+				return;
+			}
+
+			const dirUri = vscode.Uri.joinPath(workspaceFolder.uri, 'vsebuildscript');
+			const fileUri = vscode.Uri.joinPath(dirUri, 'autolinux.commands.json');
+
+			// 폴더 생성
+			await vscode.workspace.fs.createDirectory(dirUri);
+
+			// 파일 존재 확인
+			let exists = true;
+			try {
+				await vscode.workspace.fs.stat(fileUri);
+			} catch {
+				exists = false;
+			}
+
+			if (!exists) {
+				// buildscript/autolinux.commands.json을 템플릿으로 읽기
+				const extensionPath = context.extensionPath;
+				const templateUri = vscode.Uri.file(`${extensionPath}/buildscript/autolinux.commands.json`);
+				try {
+					const templateContent = await vscode.workspace.fs.readFile(templateUri);
+					await vscode.workspace.fs.writeFile(fileUri, templateContent);
+					vscode.window.showInformationMessage('vsebuildscript/autolinux.commands.json을 생성했습니다.');
+				} catch (error) {
+					vscode.window.showErrorMessage(`템플릿 파일 복사 실패: ${error}`);
+					return;
+				}
+			}
+
+			// 열기
+			const doc = await vscode.workspace.openTextDocument(fileUri);
+			await vscode.window.showTextDocument(doc);
+
+			// UI 갱신
+			buildProvider.refresh();
+		}
+	);
+
+	// MCU commands.json 생성 명령
+	const createMcuCommandsJsonDisposable = vscode.commands.registerCommand(
+		'axon.createMcuCommandsJson',
+		async () => {
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+			if (!workspaceFolder) {
+				vscode.window.showErrorMessage('워크스페이스 폴더를 찾을 수 없습니다.');
+				return;
+			}
+
+			const dirUri = vscode.Uri.joinPath(workspaceFolder.uri, 'vsebuildscript');
+			const fileUri = vscode.Uri.joinPath(dirUri, 'mcu.commands.json');
+
+			// 폴더 생성
+			await vscode.workspace.fs.createDirectory(dirUri);
+
+			// 파일 존재 확인
+			let exists = true;
+			try {
+				await vscode.workspace.fs.stat(fileUri);
+			} catch {
+				exists = false;
+			}
+
+			if (!exists) {
+				// buildscript/mcu.commands.json을 템플릿으로 읽기
+				const extensionPath = context.extensionPath;
+				const templateUri = vscode.Uri.file(`${extensionPath}/buildscript/mcu.commands.json`);
+				try {
+					const templateContent = await vscode.workspace.fs.readFile(templateUri);
+					await vscode.workspace.fs.writeFile(fileUri, templateContent);
+					vscode.window.showInformationMessage('vsebuildscript/mcu.commands.json을 생성했습니다.');
+				} catch (error) {
+					vscode.window.showErrorMessage(`템플릿 파일 복사 실패: ${error}`);
+					return;
+				}
+			}
+
+			// 열기
+			const doc = await vscode.workspace.openTextDocument(fileUri);
+			await vscode.window.showTextDocument(doc);
+
+			// UI 갱신
+			buildProvider.refresh();
 		}
 	);
 
@@ -509,29 +716,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		async (recipeName?: string) => executeDevtoolCreateModify(context.extensionPath, recipeName)
 	);
 
-	// Clean Yocto AP 명령
-	const cleanYoctoApDisposable = vscode.commands.registerCommand(
-		'axon.cleanYoctoAp',
-		async () => {
-			await YoctoProjectBuilder.cleanApBuild();
-		}
-	);
-
-	// Clean Yocto MCU 명령
-	const cleanYoctoMcuDisposable = vscode.commands.registerCommand(
-		'axon.cleanYoctoMcu',
-		async () => {
-			await YoctoProjectBuilder.cleanMcuBuild();
-		}
-	);
-
-	// Clean Yocto All 명령
-	const cleanYoctoAllDisposable = vscode.commands.registerCommand(
-		'axon.cleanYoctoAll',
-		async () => {
-			await YoctoProjectBuilder.cleanAllBuild();
-		}
-	);
+	// Yocto 클린 명령은 JSON 기반 시스템 (runYoctoJsonGroup)으로 통합됨
 
 	// Edit AP local.conf 명령
 	const editApLocalConfDisposable = vscode.commands.registerCommand(
@@ -668,9 +853,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		createYoctoProjectDisposable,
 		createAutolinuxProjectDisposable,
 		// 빌드 명령어들
-		buildYoctoApDisposable,
-		buildYoctoMcuDisposable,
-		buildYoctoKernelDisposable,
+		runYoctoJsonGroupDisposable,
+		runAutolinuxJsonGroupDisposable,
+		runMcuJsonGroupDisposable,
+		createYoctoCommandsJsonDisposable,
+		createAutolinuxCommandsJsonDisposable,
+		createMcuCommandsJsonDisposable,
 		buildAutolinuxDisposable,
 		// Autolinux 관리 명령어들
 		autolinuxUpdateDisposable,
@@ -683,10 +871,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		devtoolBuildDisposable,
 		devtoolFinishDisposable,
 		vscodeExcludeFoldersDisposable,
-		// 클린 명령어들
-		cleanYoctoApDisposable,
-		cleanYoctoMcuDisposable,
-		cleanYoctoAllDisposable,
+		// 클린 명령어들은 JSON 기반 시스템으로 통합됨
 		// 설정 편집 명령어들
 		editApLocalConfDisposable,
 		editMcuLocalConfDisposable,

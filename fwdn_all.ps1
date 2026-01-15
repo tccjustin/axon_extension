@@ -7,6 +7,9 @@ param(
     [string]$BootFirmwarePath,
 
     [Parameter(Mandatory = $true)]
+    [string]$ConfigFilePath,
+
+    [Parameter(Mandatory = $true)]
     [string]$FwdnExe
 )
 
@@ -21,6 +24,7 @@ function Write-Header {
 
 Write-Header ("FWDN {0}" -f $Mode.ToUpper())
 Write-Host "Boot Firmware Path: $BootFirmwarePath"
+Write-Host "Config File Path:   $ConfigFilePath"
 Write-Host "FWDN Executable:    $FwdnExe"
 Write-Host ""
 
@@ -28,7 +32,8 @@ if (-not (Test-Path -LiteralPath $FwdnExe)) {
     throw "FWDN executable not found: $FwdnExe"
 }
 
-$fwdnJson = Join-Path $BootFirmwarePath 'tcn100x_fwdn.json'
+# Step 1~3: Use Config File Path
+$fwdnJson = Join-Path $ConfigFilePath 'tcn100x_fwdn.json'
 if (-not (Test-Path -LiteralPath $fwdnJson)) {
     throw "FWDN json not found: $fwdnJson"
 }
@@ -54,9 +59,9 @@ if ($Mode -eq 'low-format') {
 
     Write-Header "FWDN Low Level Format completed successfully!"
 } else {
-    # Step 2. Download SNOR rom file
+    # Step 2. Download SNOR rom file (Use Config File Path)
     Write-Host "Step 2. Download SNOR rom file"
-    $snorRom = Join-Path $BootFirmwarePath 'tcn100x_snor.rom'
+    $snorRom = Join-Path $ConfigFilePath 'tcn100x_snor.rom'
     if (-not (Test-Path -LiteralPath $snorRom)) {
         throw "SNOR rom not found: $snorRom"
     }
@@ -65,9 +70,9 @@ if ($Mode -eq 'low-format') {
     Write-Host "Step 2 completed successfully!"
     Write-Host ""
 
-    # Step 3. Download boot partition images to eMMC
+    # Step 3. Download boot partition images to eMMC (Use Config File Path)
     Write-Host "Step 3. Download boot partition images to eMMC"
-    $bootJson = Join-Path $BootFirmwarePath 'tcn100x_boot.json'
+    $bootJson = Join-Path $ConfigFilePath 'tcn100x_boot.json'
     if (-not (Test-Path -LiteralPath $bootJson)) {
         throw "Boot json not found: $bootJson"
     }

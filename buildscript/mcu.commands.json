@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "MCU Build Commands",
+  "description": "MCU 빌드에 필요한 커맨드 그룹 정의",
+  "groups": {
+    "setup & build": [
+      "cd mcu-tcn100x",
+      "make tcn100x_defconfig",
+      "make bootfw"
+    ],
+    "build bootfw": [
+      "cd mcu-tcn100x",
+      "make bootfw"
+    ],
+    "clean": [
+      "cd mcu-tcn100x",
+      "make clean"
+    ]
+  }
+}
+

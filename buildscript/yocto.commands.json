@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "name": "Yocto Build Commands",
+  "description": "Yocto 빌드에 필요한 env(source) + bitbake 커맨드 그룹 정의",
+  "env": {
+    "setup": "buildtools/environment-setup-x86_64-pokysdk-linux",
+    "apBuildScript": "${config:axon.yocto.apBuildScript}"
+  },
+  "groups": {
+    "build AP": [
+      "bitbake ${config:axon.yocto.apImageName}",
+      "bitbake -f -c make_fai ${config:axon.yocto.apImageName}"
+    ],
+    "compile & deploy kernel": [
+      "bitbake -f -c compile linux-telechips",
+      "bitbake -f -c deploy linux-telechips"
+    ]
+  }
+}
+

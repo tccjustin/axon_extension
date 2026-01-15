@@ -116,25 +116,25 @@ function setupEventListeners() {
             return;
         }
 
-        // 프로젝트 경로에서 프로젝트 이름 자동 추출 (전역 변수에 저장)
-        selectedPath = fullPath;
-        projectName = fullPath.split('/').filter(p => p).pop() || 'autolinux-project';
+    // 프로젝트 경로에서 프로젝트 이름 자동 추출 (전역 변수에 저장)
+    selectedPath = fullPath;
+    projectName = fullPath.split('/').filter(p => p).pop() || 'autolinux-project';
 
-        // Load 버튼 비활성화
-        loadBtn.disabled = true;
-        loadBtn.textContent = '로딩 중...';
+    // Load 버튼 비활성화
+    loadBtn.disabled = true;
+    loadBtn.textContent = '로딩 중...';
 
-        // 입력 필드 비활성화 (Load 시작 시점부터)
-        projectPathInput.disabled = true;
-        browseBtn.disabled = true;
-        autolinuxGitUrlInput.disabled = true;
+    // 입력 필드 비활성화 (Load 시작 시점부터)
+    projectPathInput.disabled = true;
+    browseBtn.disabled = true;
+    autolinuxGitUrlInput.disabled = true;
 
-        vscode.postMessage({
-            command: 'loadAutolinux',
-            autolinuxGitUrl: autolinuxGitUrl,
-            projectPath: selectedPath + '/' + projectName,
-            projectName: projectName
-        });
+    vscode.postMessage({
+        command: 'loadAutolinux',
+        autolinuxGitUrl: autolinuxGitUrl,
+        projectPath: selectedPath,  // 중복 제거: fullPath를 그대로 사용
+        projectName: projectName
+    });
     };
 
     browseBtn.onclick = () => {
@@ -168,7 +168,7 @@ function setupEventListeners() {
             command: 'createProject',
                 data: {
                 projectName: projectName,
-                projectPath: selectedPath + '/' + projectName,
+                projectPath: selectedPath,  // 중복 제거
                 autolinuxGitUrl: autolinuxGitUrlInput.value.trim(),
                 // Configuration 데이터
                 platform: platform.value,
@@ -199,7 +199,7 @@ function setupEventListeners() {
             vscode.postMessage({
                 command: 'loadManifestsAndMachines',
                 sdkTemplate: sdkTemplate.value,
-                projectPath: selectedPath + '/' + projectName,
+                projectPath: selectedPath,  // 중복 제거
                 projectName: projectName
             });
         }
@@ -216,7 +216,7 @@ function setupEventListeners() {
                 sdkTemplate: sdkTemplate.value,
                 manifest: manifest.value,
                 machine: machine.value,
-                projectPath: selectedPath + '/' + projectName,
+                projectPath: selectedPath,  // 중복 제거
                 projectName: projectName
             });
         }
@@ -295,7 +295,7 @@ window.addEventListener('message', e => {
         // 자동으로 Platform과 SDK 목록 로드
         vscode.postMessage({
             command: 'refreshPlatformsAndSdks',
-            projectPath: selectedPath + '/' + projectName,
+            projectPath: selectedPath,  // 중복 제거
             projectName: projectName
         });
         
