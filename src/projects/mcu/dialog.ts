@@ -275,94 +275,140 @@ export class McuProjectDialog {
 		try {
 			axonLog(`🔄 MCU 프로젝트 생성 시작: ${data.projectName}`);
 			
-			// projectPath를 projectUri로 변환
-			let projectUri: vscode.Uri;
-			if (typeof data.projectPath === 'string') {
-				if (data.projectPath.includes('://')) {
-					projectUri = vscode.Uri.parse(data.projectPath);
+		// projectPath를 projectUri로 변환 (원격 환경 지원)
+		let projectUri: vscode.Uri;
+		if (typeof data.projectPath === 'string') {
+			if (data.projectPath.includes('://')) {
+				// 이미 URI 형식
+				projectUri = vscode.Uri.parse(data.projectPath);
+			} else {
+				// 일반 경로 → 현재 워크스페이스의 scheme/authority 사용
+				const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+				if (workspaceFolder) {
+					projectUri = vscode.Uri.from({
+						scheme: workspaceFolder.uri.scheme,
+						authority: workspaceFolder.uri.authority,
+						path: data.projectPath
+					});
+					axonLog(`🌐 원격 환경 감지: scheme=${workspaceFolder.uri.scheme}, authority=${workspaceFolder.uri.authority}`);
 				} else {
+					// 워크스페이스가 없으면 로컬로 fallback
 					projectUri = vscode.Uri.file(data.projectPath);
 				}
-			} else {
-				projectUri = data.projectPath;
 			}
+		} else {
+			projectUri = data.projectPath;
+		}
 
-			// Git clone 실행
-			const gitUrl = data.gitUrl || 'ssh://git@bitbucket.telechips.com:7999/linux_yp4_0_cgw/mcu-tcn100x.git';
-			const projectPath = projectUri.path;
-			const parentPath = projectUri.path.substring(0, projectUri.path.lastIndexOf('/'));
-			const cloneCommand = `git clone ${gitUrl} "${projectPath}"`;
-			
-			axonLog(`📦 Git Clone 실행: ${cloneCommand}`);
-			axonLog(`📂 작업 디렉토리: ${parentPath}`);
-			
-			const { executeShellTask } = await import('../common/shell-utils');
-			await executeShellTask({
-				command: cloneCommand,
-				cwd: parentPath,
-				taskName: 'Clone MCU Project',
-				taskId: 'cloneMcuProject',
-				showTerminal: true
-			});
+		// 1. 사용자가 입력한 프로젝트 폴더 생성
+		axonLog(`📂 프로젝트 폴더 생성: ${projectUri.toString()}`);
+		try {
+			await vscode.workspace.fs.createDirectory(projectUri);
+			axonLog(`✅ 프로젝트 폴더 생성 완료`);
+		} catch (error) {
+			throw new Error(`프로젝트 폴더 생성 실패: ${error}`);
+		}
 
-			// Build Tools Path가 설정되어 있으면 심볼릭 링크 생성
-			if (data.buildtool && data.buildtool.trim() !== '') {
-				const buildtoolPath = data.buildtool.trim();
-				const toolsPath = `${projectPath}/tools`;
-				
-				// buildtoolPath에서 폴더 이름 추출
-				const buildtoolName = buildtoolPath.split('/').filter((p: string) => p).pop() || 'buildtools';
-				const symlinkTarget = `${toolsPath}/${buildtoolName}`;
-				
-				axonLog(`🔗 Build Tools 심볼릭 링크 생성 중...`);
-				axonLog(`📂 Build Tools 소스 경로: ${buildtoolPath}`);
-				axonLog(`📂 대상 경로: ${symlinkTarget}`);
-				axonLog(`📂 작업 디렉토리: ${projectPath}`);
-				
-				// tools 폴더를 만들고 그 안에 buildtool 폴더 자체를 심볼릭 링크로 생성
-				const symlinkCommand = `mkdir -p "${toolsPath}" && ln -sf "${buildtoolPath}" "${symlinkTarget}"`;
-				
-				axonLog(`🔧 실행 명령: ${symlinkCommand}`);
-				
-				try {
-					await executeShellTask({
-						command: symlinkCommand,
-						cwd: projectPath,
-						taskName: 'Create Build Tools Symlink',
-						taskId: 'createBuildToolsSymlink',
-						showTerminal: true
-					});
-					axonLog(`✅ Build Tools 심볼릭 링크 생성 완료`);
-				} catch (linkError) {
-					axonLog(`⚠️ Build Tools 심볼릭 링크 생성 실패: ${linkError}`);
-					vscode.window.showWarningMessage(`Build Tools 심볼릭 링크 생성 실패: ${linkError}`);
-					// 심볼릭 링크 실패는 치명적이지 않으므로 계속 진행
-				}
-			} else {
-				axonLog(`ℹ️ Build Tools Path가 설정되지 않아 심볼릭 링크를 생성하지 않습니다.`);
-			}
-
-			// MCU 빌드 설정 실행 (make tcn100x_defconfig && make bootfw)
-			axonLog(`🔧 MCU 빌드 설정 시작...`);
-			axonLog(`📂 작업 디렉토리: ${projectPath}`);
+		// 2. Git clone 실행 (생성된 폴더 안에서)
+		const gitUrl = data.gitUrl || 'ssh://git@bitbucket.telechips.com:7999/linux_yp4_0_cgw/mcu-tcn100x.git';
+		const projectPath = projectUri.path;
+		const cloneCommand = `git clone ${gitUrl}`;
+		
+		// git clone으로 생성될 실제 폴더 이름 (repository 이름)
+		const repoName = gitUrl.split('/').pop()?.replace('.git', '') || 'mcu-tcn100x';
+		const actualProjectPath = `${projectPath}/${repoName}`;
+		
+		axonLog(`📦 Git Clone 실행: ${cloneCommand}`);
+		axonLog(`📂 작업 디렉토리: ${projectPath}`);
+		axonLog(`📁 생성될 repository 폴더: ${repoName}`);
 			
-			const buildSetupCommand = `make tcn100x_defconfig && make bootfw`;
-			axonLog(`🔧 실행 명령: ${buildSetupCommand}`);
+		const { executeShellTask } = await import('../common/shell-utils');
+		await executeShellTask({
+			command: cloneCommand,
+			cwd: projectPath,
+			taskName: 'Clone MCU Project',
+			taskId: 'cloneMcuProject',
+			showTerminal: true
+		});
+
+		// Build Tools Path가 설정되어 있으면 심볼릭 링크 생성
+		if (data.buildtool && data.buildtool.trim() !== '') {
+			const buildtoolPath = data.buildtool.trim();
+			const toolsPath = `${actualProjectPath}/tools`;
+			
+			// buildtoolPath에서 폴더 이름 추출
+			const buildtoolName = buildtoolPath.split('/').filter((p: string) => p).pop() || 'buildtools';
+			const symlinkTarget = `${toolsPath}/${buildtoolName}`;
+			
+			axonLog(`🔗 Build Tools 심볼릭 링크 생성 중...`);
+			axonLog(`📂 Build Tools 소스 경로: ${buildtoolPath}`);
+			axonLog(`📂 대상 경로: ${symlinkTarget}`);
+			axonLog(`📂 작업 디렉토리: ${actualProjectPath}`);
+			
+			// tools 폴더를 만들고 그 안에 buildtool 폴더 자체를 심볼릭 링크로 생성
+			const symlinkCommand = `mkdir -p "${toolsPath}" && ln -sf "${buildtoolPath}" "${symlinkTarget}"`;
+			
+			axonLog(`🔧 실행 명령: ${symlinkCommand}`);
 			
 			try {
 				await executeShellTask({
-					command: buildSetupCommand,
-					cwd: projectPath,
-					taskName: 'MCU Build Setup',
-					taskId: 'mcuBuildSetup',
+					command: symlinkCommand,
+					cwd: actualProjectPath,
+					taskName: 'Create Build Tools Symlink',
+					taskId: 'createBuildToolsSymlink',
 					showTerminal: true
 				});
-				axonLog(`✅ MCU 빌드 설정 완료`);
-			} catch (buildError) {
-				axonLog(`⚠️ MCU 빌드 설정 실패: ${buildError}`);
-				vscode.window.showWarningMessage(`MCU 빌드 설정 실패: ${buildError}`);
-				// 빌드 설정 실패는 치명적이지 않으므로 계속 진행
+				axonLog(`✅ Build Tools 심볼릭 링크 생성 완료`);
+			} catch (linkError) {
+				axonLog(`⚠️ Build Tools 심볼릭 링크 생성 실패: ${linkError}`);
+				vscode.window.showWarningMessage(`Build Tools 심볼릭 링크 생성 실패: ${linkError}`);
+				// 심볼릭 링크 실패는 치명적이지 않으므로 계속 진행
 			}
+		} else {
+			axonLog(`ℹ️ Build Tools Path가 설정되지 않아 심볼릭 링크를 생성하지 않습니다.`);
+		}
+
+		// MCU 빌드 설정 실행 (make tcn100x_defconfig && make bootfw)
+		axonLog(`🔧 MCU 빌드 설정 시작...`);
+		axonLog(`📂 작업 디렉토리: ${actualProjectPath}`);
+		
+		const buildSetupCommand = `make tcn100x_defconfig && make bootfw`;
+		axonLog(`🔧 실행 명령: ${buildSetupCommand}`);
+		
+		try {
+			await executeShellTask({
+				command: buildSetupCommand,
+				cwd: actualProjectPath,
+				taskName: 'MCU Build Setup',
+				taskId: 'mcuBuildSetup',
+				showTerminal: true
+			});
+			axonLog(`✅ MCU 빌드 설정 완료`);
+		} catch (buildError) {
+			axonLog(`⚠️ MCU 빌드 설정 실패: ${buildError}`);
+			vscode.window.showWarningMessage(`MCU 빌드 설정 실패: ${buildError}`);
+			// 빌드 설정 실패는 치명적이지 않으므로 계속 진행
+		}
+
+			// 실제 생성된 프로젝트 폴더의 URI 생성
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+			const actualProjectUri = workspaceFolder ? vscode.Uri.from({
+				scheme: workspaceFolder.uri.scheme,
+				authority: workspaceFolder.uri.authority,
+				path: actualProjectPath
+			}) : vscode.Uri.file(actualProjectPath);
+			
+			axonLog(`📁 사용자 입력 폴더: ${projectPath}`);
+			axonLog(`📁 실제 프로젝트 경로: ${actualProjectPath}`);
+
+			// .vscode/settings.json 생성
+			axonLog(`⚙️ 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
+			const { createVscodeSettings } = await import('../common/vscode-utils');
+			await createVscodeSettings(actualProjectUri, {
+				'axon.projectType': 'mcu_project',
+				'axon.mcu.projectRoot': actualProjectPath
+			});
+			axonLog(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 
 		axonLog(`✅ MCU 프로젝트 생성 완료`);
 		
@@ -376,7 +422,7 @@ export class McuProjectDialog {
 		vscode.window.showInformationMessage(`MCU 프로젝트가 생성되었습니다: ${data.projectName}`);
 		
 		// 생성된 프로젝트 폴더를 VS Code에서 열기
-		await vscode.commands.executeCommand('vscode.openFolder', projectUri, { forceNewWindow: true });
+		await vscode.commands.executeCommand('vscode.openFolder', actualProjectUri, { forceNewWindow: true });
 		
 		// 잠시 후 패널 닫기
 		setTimeout(() => panel.dispose(), 1000);

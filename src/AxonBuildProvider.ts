@@ -652,26 +652,16 @@ export class AxonBuildProvider implements vscode.TreeDataProvider<AxonTreeItem> 
 						title: 'Build All'
 					}
 				),
-				new AxonTreeItem(
-					'🗑️ Clean',
-					'trash',
-					vscode.TreeItemCollapsibleState.None,
-					'mcuClean',
-					{
-						command: 'axon.mcuClean',
-						title: 'Clean'
-					}
-				),
-				new AxonTreeItem(
-					'🔧 Build Option Extraction',
-					'tools',
-					vscode.TreeItemCollapsibleState.None,
-					'mcuAction',
-					{
-						command: 'axon.mcuBuildOptionExtraction',
-						title: 'Build Option Extraction'
-					}
-				)
+			new AxonTreeItem(
+				'🗑️ Clean',
+				'trash',
+				vscode.TreeItemCollapsibleState.None,
+				'mcuClean',
+				{
+					command: 'axon.mcuClean',
+					title: 'Clean'
+				}
+			)
 			];
 		}
 

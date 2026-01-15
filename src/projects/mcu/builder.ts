@@ -593,8 +593,8 @@ bear --version
 				return;
 			}
 
-			// bear make 실행
-			const command = `
+		// bear make 실행 (clean 후 빌드)
+		const command = `
 #set -x
 cd "${projectRoot}"
 
@@ -602,7 +602,10 @@ echo "=========================================="
 echo "🔧 Build Option Extraction 시작"
 echo "=========================================="
 echo ""
-echo "Bear를 사용하여 compile_commands.json 생성 중..."
+echo "🧹 기존 빌드 파일 정리 중..."
+make clean
+echo ""
+echo "📦 Bear를 사용하여 compile_commands.json 생성 중..."
 echo ""
 
 bear make

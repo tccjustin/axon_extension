@@ -1,19 +1,62 @@
 {
   "version": 1,
   "name": "MCU Build Commands",
-  "description": "MCU 빌드에 필요한 커맨드 그룹 정의",
+  "description": "MCU Standalone 프로젝트 빌드 커맨드 그룹 정의",
+  "env": {
+    "projectRoot": "${config:axon.mcu.projectRoot}",
+    "core": "${config:axon.mcu.core}"
+  },
   "groups": {
-    "setup & build": [
-      "cd mcu-tcn100x",
-      "make tcn100x_defconfig",
-      "make bootfw"
+    "Build m7-np": [
+      "cd \"${env:projectRoot}\"",
+      "make tcn100x_m7-np_defconfig",
+      "make"
     ],
-    "build bootfw": [
-      "cd mcu-tcn100x",
-      "make bootfw"
+    "Build m7-0": [
+      "cd \"${env:projectRoot}\"",
+      "make tcn100x_m7-0_defconfig",
+      "make"
+    ],
+    "Build m7-1": [
+      "cd \"${env:projectRoot}\"",
+      "make tcn100x_m7-1_defconfig",
+      "make"
+    ],
+    "Build m7-2": [
+      "cd \"${env:projectRoot}\"",
+      "make tcn100x_m7-2_defconfig",
+      "make"
+    ],
+    "Build All": [
+      "cd \"${env:projectRoot}\"",
+      "echo '=========================================='",
+      "echo '🔨 MCU Build All 시작'",
+      "echo '=========================================='",
+      "echo ''",
+      "echo '1/4: Building m7-np...'",
+      "make tcn100x_m7-np_defconfig",
+      "make",
+      "echo ''",
+      "echo '2/4: Building m7-0...'",
+      "make tcn100x_m7-0_defconfig",
+      "make",
+      "echo ''",
+      "echo '3/4: Building m7-2...'",
+      "make tcn100x_m7-2_defconfig",
+      "make",
+      "echo ''",
+      "echo '4/4: Building m7-1...'",
+      "make tcn100x_m7-1_defconfig",
+      "make",
+      "echo ''",
+      "echo '=========================================='",
+      "echo '✅ MCU Build All이 완료되었습니다!'",
+      "echo '   빌드된 코어: m7-np, m7-0, m7-2, m7-1'",
+      "echo '=========================================='",
+      "echo ''"
     ],
     "clean": [
-      "cd mcu-tcn100x",
+      "cd \"${env:projectRoot}\"",
       "make clean"
     ]
   }

@@ -252,14 +252,16 @@ export async function activate(context: vscode.ExtensionContext) {
 	axonLog('===========================================');
 	axonOutputChannel.show();
 
-	// Axon TreeView Providers 등록 (네이티브 - 3개 패널로 분리)
+	// Axon TreeView Providers 등록 (네이티브 - 4개 패널로 분리)
 	const { AxonProjectCreationProvider } = await import('./AxonProjectCreationProvider');
 	const { AxonBuildProvider } = await import('./AxonBuildProvider');
 	const { AxonFwdnProvider } = await import('./AxonFwdnProvider');
+	const { AxonOptionsProvider } = await import('./AxonOptionsProvider');
 	
 	const projectCreationProvider = new AxonProjectCreationProvider();
 	const buildProvider = new AxonBuildProvider();
 	const fwdnProvider = new AxonFwdnProvider();
+	const optionsProvider = new AxonOptionsProvider();
 	
 	const projectCreationView = vscode.window.createTreeView('axonProjectCreationView', {
 		treeDataProvider: projectCreationProvider,
@@ -276,14 +278,21 @@ export async function activate(context: vscode.ExtensionContext) {
 		showCollapseAll: false
 	});
 	
-	context.subscriptions.push(projectCreationView, buildView, fwdnView);
+	const optionsView = vscode.window.createTreeView('axonOptionsView', {
+		treeDataProvider: optionsProvider,
+		showCollapseAll: false
+	});
+	
+	context.subscriptions.push(projectCreationView, buildView, fwdnView, optionsView);
 
 	// 프로젝트 타입 변경 시 TreeView 새로고침
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration('axon.projectType')) {
+				projectCreationProvider.refresh();
 				buildProvider.refresh();
 				fwdnProvider.refresh();
+				optionsProvider.refresh();
 			}
 		})
 	);
@@ -552,59 +561,17 @@ export async function activate(context: vscode.ExtensionContext) {
 			}
 
 			if (!exists) {
-				const template = `{
-  "version": 1,
-  "name": "Yocto Build Commands",
-  "description": "Build > Yocto 메뉴를 JSON으로 정의 (env/source + 실행 커맨드 그룹). machine/version은 projectRoot의 config.json에서 로드된다는 전제를 둠.",
-  "env": {
-    "projectRoot": "\${config:axon.yocto.projectRoot}",
-    "setup": "buildtools/environment-setup-x86_64-pokysdk-linux",
-    "apBuildScript": "\${config:axon.yocto.apBuildScript}",
-    "apMachine": "\${configJson:machine}",
-    "apVersion": "\${configJson:version}",
-    "mcuMachine": "\${configJson:mcu_machine}",
-    "mcuVersion": "\${configJson:mcu_version}",
-    "mcuBuildScript": "poky/meta-telechips/meta-dev/meta-mcu-dev/mcu-build.sh"
-  },
-  "groups": {
-    "build AP": [
-      "cd \\"\${env:projectRoot}\\"",
-      "source \\"\${env:projectRoot}/\${env:setup}\\"",
-      "source \\"\${env:projectRoot}/\${env:apBuildScript}\\" \${env:apMachine} \${env:apVersion}",
-      "bitbake \${config:axon.yocto.apImageName}",
-      "bitbake -f -c make_fai \${config:axon.yocto.apImageName}"
-    ],
-    "build MCU": [
-      "cd \\"\${env:projectRoot}\\"",
-      "source \\"\${env:projectRoot}/\${env:setup}\\"",
-      "source \\"\${env:projectRoot}/\${env:mcuBuildScript}\\" \${env:mcuMachine} \${env:mcuVersion}",
-      "bitbake m7-0 m7-1 m7-2 m7-np -f -c compile"
-    ],
-    "build Kernel": [
-      "cd \\"\${env:projectRoot}\\"",
-      "source \\"\${env:projectRoot}/\${env:setup}\\"",
-      "source \\"\${env:projectRoot}/\${env:apBuildScript}\\" \${env:apMachine} \${env:apVersion}",
-      "bitbake linux-telechips -f -c compile",
-      "bitbake linux-telechips -c deploy"
-    ],
-    "clean AP": [
-      "cd \\"\${env:projectRoot}/build/tcn1000\\"",
-      "echo \\"Cleaning Yocto AP build directory (except conf/downloads/sstate-cache)...\\"",
-      "find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} +"
-    ],
-    "clean MCU": [
-      "cd \\"\${env:projectRoot}/build/tcn1000-mcu\\"",
-      "echo \\"Cleaning Yocto MCU build directory (except conf/downloads/sstate-cache)...\\"",
-      "find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} +"
-    ],
-    "clean All": [
-      "for d in \\"\${env:projectRoot}/build/tcn1000\\" \\"\${env:projectRoot}/build/tcn1000-mcu\\"; do cd \\"$d\\" && echo \\"Cleaning Yocto build directory (except conf/downloads/sstate-cache)...\\" && find . -mindepth 1 -maxdepth 1 -not -name 'conf' -a -not -name 'downloads' -a -not -name 'sstate-cache' -exec rm -rf {} + ; done"
-    ]
-  }
-}`;
-
-				await vscode.workspace.fs.writeFile(fileUri, Buffer.from(template, 'utf8'));
-				vscode.window.showInformationMessage('vsebuildscript/yocto.commands.json을 생성했습니다.');
+				// buildscript/yocto.commands.json을 템플릿으로 읽기
+				const extensionPath = context.extensionPath;
+				const templateUri = vscode.Uri.file(`${extensionPath}/buildscript/yocto.commands.json`);
+				try {
+					const templateContent = await vscode.workspace.fs.readFile(templateUri);
+					await vscode.workspace.fs.writeFile(fileUri, templateContent);
+					vscode.window.showInformationMessage('vsebuildscript/yocto.commands.json을 생성했습니다.');
+				} catch (error) {
+					vscode.window.showErrorMessage(`템플릿 파일 복사 실패: ${error}`);
+					return;
+				}
 			}
 
 			// 열기
@@ -828,15 +795,17 @@ export async function activate(context: vscode.ExtensionContext) {
 			
 			console.log(`[Axon] projectType 저장 완료: ${normalizedProjectType}`);
 			
-			vscode.window.showInformationMessage(
-				`프로젝트 타입이 설정되었습니다: ${displayMap[normalizedProjectType] || normalizedProjectType}`
-			);
-			
-			// TreeView 새로고침 (프로젝트 타입 변경 시)
-			buildProvider.refresh();
-			fwdnProvider.refresh();
-		}
-	);
+		vscode.window.showInformationMessage(
+			`프로젝트 타입이 설정되었습니다: ${displayMap[normalizedProjectType] || normalizedProjectType}`
+		);
+		
+		// TreeView 새로고침 (프로젝트 타입 변경 시)
+		projectCreationProvider.refresh();
+		buildProvider.refresh();
+		fwdnProvider.refresh();
+		optionsProvider.refresh();
+	}
+);
 
 	context.subscriptions.push(
 		runFwdnAllDisposable,
