@@ -3,7 +3,7 @@
   "displayName": "Axon Dev",
   "publisher": "JustinLee-tcc",
   "description": "A powerful VS Code extension for MCU and Yocto firmware development",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "icon": "icon.png",
   "extensionKind": [
     "ui",
@@ -242,13 +242,8 @@
         },
         "axon.projectType": {
           "type": "string",
-          "enum": [
-            "mcu_project",
-            "yocto_project",
-            "yocto_project_autolinux"
-          ],
           "default": "",
-          "description": "Project type"
+          "description": "Project type (예: mcu_project-dev, mcu_project-rel-upto04, yocto_project-dev-dev, yocto_project-rel-later10, yocto_project_autolinux-dev 등)"
         },
         "axon.yocto.projectRoot": {
           "type": "string",

@@ -5,9 +5,11 @@ console.log('[Performance] Script start:', scriptStartTime);
 const vscode = acquireVsCodeApi();
 let selectedPath = '';
 let projectName = '';
+let folderCreated = false;
 
 // DOM이 준비되면 엘리먼트 참조 설정
 let projectPathInput, gitUrlInput, buildtoolInput, createBtn;
+let createFolderBtn;
 
 // DOMContentLoaded 이벤트 측정
 document.addEventListener('DOMContentLoaded', () => {
@@ -30,6 +32,7 @@ function initializeUI() {
     gitUrlInput = document.getElementById('gitUrl');
     buildtoolInput = document.getElementById('buildtool');
     createBtn = document.getElementById('createBtn');
+    createFolderBtn = document.getElementById('createFolderBtn');
     
     // 이벤트 리스너 설정
     setupEventListeners();
@@ -72,13 +75,14 @@ function validate() {
     
     const projectPathValid = projectPathInput.value.trim() !== '';
     const gitUrlValid = gitUrlInput.value.trim() !== '';
+    const folderValid = folderCreated === true;
     
     console.log('[MCU Validate] projectPath:', projectPathInput.value);
     console.log('[MCU Validate] gitUrl:', gitUrlInput.value);
     console.log('[MCU Validate] projectPathValid:', projectPathValid, 'gitUrlValid:', gitUrlValid);
     
-    // 생성 버튼 활성화 조건: 프로젝트 경로 + Git URL
-    const shouldEnable = projectPathValid && gitUrlValid;
+    // 생성 버튼 활성화 조건: 폴더 생성 완료 + 프로젝트 경로 + Git URL
+    const shouldEnable = projectPathValid && gitUrlValid && folderValid;
     createBtn.disabled = !shouldEnable;
     console.log('[MCU Validate] Should enable:', shouldEnable, '-> Create button disabled:', createBtn.disabled);
     console.log('[MCU Validate] === END ===');
@@ -88,6 +92,12 @@ function setupEventListeners() {
     projectPathInput.oninput = () => {
         // 사용자가 경로를 수정할 때마다 selectedPath와 projectName 업데이트
         const fullPath = projectPathInput.value.trim();
+        // 경로가 바뀌면 폴더 생성 상태 초기화
+        folderCreated = false;
+        if (createFolderBtn) {
+            createFolderBtn.disabled = false;
+            createFolderBtn.textContent = 'Create Folder';
+        }
         if (fullPath) {
             const pathParts = fullPath.split('/');
             projectName = pathParts[pathParts.length - 1];
@@ -97,8 +107,12 @@ function setupEventListeners() {
         validate();
     };
 
-    document.getElementById('browseBtn').onclick = () => {
-        vscode.postMessage({ command: 'browseFolder' });
+    document.getElementById('createFolderBtn').onclick = () => {
+        // 버튼 상태 변경
+        createFolderBtn.disabled = true;
+        createFolderBtn.textContent = 'Creating...';
+
+        vscode.postMessage({ command: 'createFolder' });
     };
 
     document.getElementById('browseBuildtoolBtn').onclick = () => {
@@ -188,23 +202,31 @@ window.addEventListener('message', e => {
     } else if (msg.command === 'setBuildtoolPath') {
         console.log('[MCU Dialog] Buildtool path set to:', msg.path);
         buildtoolInput.value = msg.path;
-    } else if (msg.command === 'setFolderPath') {
-        console.log('[MCU Dialog] Folder path set to:', msg.path);
-        // 선택된 경로를 input에 설정 (사용자가 마지막 폴더명을 수정할 수 있음)
-        projectPathInput.value = msg.path;
-        
-        // selectedPath와 projectName 업데이트
-        const pathParts = msg.path.split('/');
-        projectName = pathParts[pathParts.length - 1];
-        selectedPath = pathParts.slice(0, -1).join('/');
-        
-        console.log('[MCU Dialog] Updated selectedPath:', selectedPath);
-        console.log('[MCU Dialog] Updated projectName:', projectName);
-        
-        // 커서를 input 필드의 마지막으로 이동
-        projectPathInput.focus();
-        projectPathInput.setSelectionRange(msg.path.length, msg.path.length);
-        
+    } else if (msg.command === 'folderCreated') {
+        if (msg.success) {
+            folderCreated = true;
+            if (msg.path) {
+                // 생성된 경로를 input에 반영
+                projectPathInput.value = msg.path;
+                // selectedPath와 projectName 업데이트
+                const pathParts = msg.path.split('/').filter(p => p);
+                projectName = pathParts[pathParts.length - 1] || '';
+                selectedPath = '/' + pathParts.slice(0, -1).join('/');
+            }
+            if (createFolderBtn) {
+                createFolderBtn.disabled = true;
+                createFolderBtn.textContent = 'Created';
+            }
+        } else {
+            folderCreated = false;
+            if (createFolderBtn) {
+                createFolderBtn.disabled = false;
+                createFolderBtn.textContent = 'Create Folder';
+            }
+            if (!msg.cancelled && msg.error) {
+                alert('폴더 생성 실패: ' + msg.error);
+            }
+        }
         validate();
     } else if (msg.command === 'projectCreated') {
         if (msg.success) {

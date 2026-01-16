@@ -180,19 +180,20 @@ async function getBootFirmwarePath(): Promise<{ bootFirmwarePath: string, config
 	}
 	
 	// ==================================================================================
-	// Step 1: 워크스페이스에서 prebuilt 폴더 검색 (기존 방식)
+	// Step 1: 워크스페이스에서 tcn100x_boot.json 파일 검색 (boot-firmware 루트 탐색)
 	// ==================================================================================
-	axonLog('🔍 [Step 1] prebuilt 디렉토리 검색 중...');
+	axonLog('🔍 [Step 1] tcn100x_boot.json 파일 검색 중...');
 	const prebuiltRoot = await findProjectRootByShell({
 		workspaceFolder,
-		findPattern: 'prebuilt',
+		findPattern: 'tcn100x_boot.json',
 		maxDepth: 4,
-		findType: 'd',
+		findType: 'f',
+		// 상위 폴더가 아니라, 파일이 존재하는 "현재 폴더"가 필요하므로 dirname 1회 적용
 		parentLevels: 1,
 		followSymlinks: true,  // 심볼릭 링크 따라가기
-		taskName: 'Find Boot Firmware Folder (prebuilt)',
-		taskId: 'find-boot-firmware-prebuilt',
-		resultFilePrefix: 'axon_boot_firmware_prebuilt'
+		taskName: 'Find Boot Firmware Folder (tcn100x_boot.json)',
+		taskId: 'find-boot-firmware-boot-json',
+		resultFilePrefix: 'axon_boot_firmware_boot_json'
 	});
 	
 	if (prebuiltRoot) {

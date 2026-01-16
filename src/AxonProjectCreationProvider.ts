@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { getProjectFamilyFromProjectType } from './projects/common/project-type-registry';
 
 /**
  * Axon Project Creation TreeView Provider
@@ -37,12 +38,13 @@ export class AxonProjectCreationProvider implements vscode.TreeDataProvider<Axon
 	private getProjectCreationItems(): AxonTreeItem[] {
 		// 현재 프로젝트 타입 표시
 		let projectTypeDescription = 'Not set';
-		if (this.projectType === 'mcu_project') {
-			projectTypeDescription = 'Current: MCU';
-		} else if (this.projectType === 'yocto_project') {
-			projectTypeDescription = 'Current: Yocto';
-		} else if (this.projectType === 'yocto_project_autolinux') {
-			projectTypeDescription = 'Current: Yocto (autolinux)';
+		const family = getProjectFamilyFromProjectType(this.projectType);
+		if (family === 'mcu') {
+			projectTypeDescription = `Current: MCU (${this.projectType})`;
+		} else if (family === 'yocto') {
+			projectTypeDescription = `Current: Yocto (${this.projectType})`;
+		} else if (family === 'autolinux') {
+			projectTypeDescription = `Current: Yocto (autolinux) (${this.projectType})`;
 		}
 
 		return [

@@ -28,7 +28,7 @@ import { axonLog, axonError } from './logger';
  */
 
 // 프로젝트 타입
-export type ProjectType = 'mcu_project' | 'yocto_project' | '';
+export type ProjectType = string;
 
 /**
  * 프로젝트 타입 선택 및 자동 설정
@@ -43,60 +43,16 @@ export async function ensureProjectType(): Promise<ProjectType | undefined> {
 	// 설정이 없거나 빈 문자열이면 사용자에게 선택 요청
 	if (!projectType || projectType.trim() === '') {
 		axonLog(`⚠️ projectType 설정이 없습니다. 사용자 선택 요청...`);
-		
-		const selected = await vscode.window.showQuickPick(
-			[
-				{ 
-					label: 'MCU Standalone Project', 
-					value: 'mcu_project' as const,
-					description: 'MCU 단독 프로젝트 (mcu-tcn100x + boot-firmware-tcn100x)',
-					detail: '빌드 폴더: mcu-tcn100x, Boot Firmware: boot-firmware-tcn100x'
-				},
-				{ 
-					label: 'Yocto Project', 
-					value: 'yocto_project' as const,
-					description: 'Yocto 프로젝트 (build-axon + boot-firmware_tcn1000)',
-					detail: '빌드 폴더: build-axon, Boot Firmware: boot-firmware_tcn1000'
-				}
-			],
-			{
-				placeHolder: '프로젝트 타입을 선택하세요',
-				title: 'Axon Project Type 선택',
-				ignoreFocusOut: true
-			}
-		);
-		
-		if (!selected) {
+
+		// setProjectType 명령이 JSON 트리 기반 UI/패치를 담당 (단일 소스)
+		await vscode.commands.executeCommand('axon.setProjectType');
+
+		// 다시 읽기
+		projectType = config.get<ProjectType>('projectType', '');
+		if (!projectType || projectType.trim() === '') {
 			axonLog(`ℹ️ 사용자가 프로젝트 타입 선택을 취소했습니다.`);
 			return undefined;
 		}
-		
-	projectType = selected.value;
-	
-	// settings.json에 저장
-	await config.update('projectType', projectType, vscode.ConfigurationTarget.Workspace);
-	
-	// Yocto 프로젝트 타입인 경우 apBuildScript, apImageName 기본값 저장
-	if (projectType === 'yocto_project') {
-		const yoctoConfig = vscode.workspace.getConfiguration('axon.yocto');
-		await yoctoConfig.update(
-			'apBuildScript', 
-			'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh',
-			vscode.ConfigurationTarget.Workspace
-		);
-		await yoctoConfig.update(
-			'apImageName',
-			'telechips-cgw-image',
-			vscode.ConfigurationTarget.Workspace
-		);
-		axonLog(`💾 apBuildScript, apImageName 기본값 저장 완료`);
-	}
-	
-	axonLog(`💾 프로젝트 타입 설정 저장: ${projectType}`);
-	
-	vscode.window.showInformationMessage(
-		`프로젝트 타입이 설정되었습니다: ${selected.label}`
-	);
 }
 	
 	return projectType;

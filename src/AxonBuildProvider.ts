@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { axonLog } from './logger';
+import { getProjectFamilyFromProjectType } from './projects/common/project-type-registry';
 
 /**
  * Axon Build TreeView Provider
@@ -36,7 +37,7 @@ export class AxonBuildProvider implements vscode.TreeDataProvider<AxonTreeItem> 
 	}
 
 	private async getRootItems(): Promise<AxonTreeItem[]> {
-		if (!this.projectType) {
+		if (!this.projectType || this.projectType.trim() === '') {
 			return [
 				new AxonTreeItem(
 					'No project configured',
@@ -51,16 +52,17 @@ export class AxonBuildProvider implements vscode.TreeDataProvider<AxonTreeItem> 
 			];
 		}
 
-	switch (this.projectType) {
-		case 'yocto_project':
-			return await this.getBuildYoctoItems();
-		case 'yocto_project_autolinux':
-			return await this.getBuildYoctoAutolinuxItems();
-		case 'mcu_project':
-			return await this.getBuildMcuItems();
-		default:
-			return [];
-	}
+		const family = getProjectFamilyFromProjectType(this.projectType);
+		switch (family) {
+			case 'yocto':
+				return await this.getBuildYoctoItems();
+			case 'autolinux':
+				return await this.getBuildYoctoAutolinuxItems();
+			case 'mcu':
+				return await this.getBuildMcuItems();
+			default:
+				return [];
+		}
 	}
 
 	private async getChildItems(element: AxonTreeItem): Promise<AxonTreeItem[]> {
@@ -87,9 +89,10 @@ export class AxonBuildProvider implements vscode.TreeDataProvider<AxonTreeItem> 
 	private getConfigurationItems(): AxonTreeItem[] {
 		const items: AxonTreeItem[] = [];
 
-		const currentType = this.projectType === 'yocto_project' ? 'Yocto' :
-							this.projectType === 'yocto_project_autolinux' ? 'Autolinux' :
-							this.projectType === 'mcu_project' ? 'MCU' : 'None';
+		const family = getProjectFamilyFromProjectType(this.projectType);
+		const currentType = family === 'yocto' ? 'Yocto' :
+							family === 'autolinux' ? 'Autolinux' :
+							family === 'mcu' ? 'MCU' : 'None';
 		
 		items.push(new AxonTreeItem(
 			`Project Type: ${currentType}`,
@@ -102,7 +105,7 @@ export class AxonBuildProvider implements vscode.TreeDataProvider<AxonTreeItem> 
 			}
 		));
 
-		if (this.projectType === 'yocto_project') {
+		if (family === 'yocto') {
 			items.push(new AxonTreeItem(
 				'Yocto Configuration',
 				'settings-gear',
@@ -111,7 +114,7 @@ export class AxonBuildProvider implements vscode.TreeDataProvider<AxonTreeItem> 
 			));
 		}
 
-		if (this.projectType === 'mcu_project') {
+		if (family === 'mcu') {
 			items.push(new AxonTreeItem(
 				'Build Option Extraction',
 				'search',
@@ -165,7 +168,9 @@ export class AxonBuildProvider implements vscode.TreeDataProvider<AxonTreeItem> 
 	private getBuildItems(): AxonTreeItem[] {
 		const items: AxonTreeItem[] = [];
 
-		if (this.projectType === 'yocto_project') {
+		const family = getProjectFamilyFromProjectType(this.projectType);
+
+		if (family === 'yocto') {
 			items.push(new AxonTreeItem(
 				'Yocto',
 				'package',
@@ -181,7 +186,7 @@ export class AxonBuildProvider implements vscode.TreeDataProvider<AxonTreeItem> 
 			));
 		}
 
-		if (this.projectType === 'yocto_project_autolinux') {
+		if (family === 'autolinux') {
 			items.push(new AxonTreeItem(
 				'Yocto (autolinux)',
 				'package',

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { YoctoProjectCreator } from './creator';
 import { axonLog } from '../../logger';
+import type { ProjectTypeLeaf } from '../common/project-type-registry';
 
 const fsp = fs.promises; // 비동기 파일 I/O
 
@@ -11,6 +12,9 @@ const fsp = fs.promises; // 비동기 파일 I/O
  */
 export class YoctoProjectDialog {
 	private webview?: vscode.WebviewPanel;
+
+	private createLeaf?: ProjectTypeLeaf;
+	private createBreadcrumb?: string;
 	
 	// 캐싱: 원본 파일 (템플릿) 및 최종 HTML
 	private rawHtml?: string;
@@ -108,7 +112,10 @@ export class YoctoProjectDialog {
 	/**
 	 * 프로젝트 생성 WebView 표시
 	 */
-	async showProjectCreationWebView(): Promise<void> {
+	async showProjectCreationWebView(leaf?: ProjectTypeLeaf, breadcrumb?: string): Promise<void> {
+		this.createLeaf = leaf;
+		this.createBreadcrumb = breadcrumb;
+
 		// 이미 열린 패널이 있으면 재사용
 		if (this.webview) {
 			this.webview.reveal(vscode.ViewColumn.One);
@@ -137,8 +144,11 @@ export class YoctoProjectDialog {
 
 		// Settings에서 설정값 가져오기 및 WebView로 전송
 		const config = vscode.workspace.getConfiguration('axon.yocto');
-		const manifestGitUrl = config.get<string>('manifestGitUrl') || 
-		                       'ssh://git@bitbucket.telechips.com:7999/manifest/manifest-cgw.git';
+		const presetManifestGitUrl = this.createLeaf?.createPreset?.yoctoManifestGitUrl;
+		const manifestGitUrl =
+			presetManifestGitUrl ||
+			config.get<string>('manifestGitUrl') ||
+			'ssh://git@bitbucket.telechips.com:7999/manifest/manifest-cgw.git';
 		const sourceMirrorPath = config.get<string>('sourceMirror', '');
 		const buildtoolPath = config.get<string>('buildtool', '');
 		
@@ -178,8 +188,8 @@ export class YoctoProjectDialog {
 	 */
 	private async handleWebViewMessage(message: any, panel: vscode.WebviewPanel): Promise<void> {
 		switch (message.command) {
-			case 'browseFolder':
-				await this.browseFolderForWebView(panel);
+			case 'createFolder':
+				await this.createFolderForWebView(panel);
 				break;
 			case 'browseSourceMirror':
 				await this.browseSourceMirrorForWebView(panel);
@@ -200,22 +210,57 @@ export class YoctoProjectDialog {
 	}
 
 	/**
-	 * 폴더 선택 다이얼로그
+	 * 프로젝트 폴더 생성 (WebView에서 입력한 경로 기준)
 	 */
-	private async browseFolderForWebView(panel: vscode.WebviewPanel): Promise<void> {
-		const folders = await vscode.window.showOpenDialog({
-			canSelectFiles: false,
-			canSelectFolders: true,
-			canSelectMany: false,
-			openLabel: '프로젝트 생성 위치 선택',
-			title: 'Yocto 프로젝트를 생성할 폴더를 선택하세요'
-		});
+	private async createFolderForWebView(panel: vscode.WebviewPanel): Promise<void> {
+		try {
+			// 1) 상위 폴더 선택
+			const picked = await vscode.window.showOpenDialog({
+				canSelectFiles: false,
+				canSelectFolders: true,
+				canSelectMany: false,
+				openLabel: '상위 폴더 선택',
+				title: 'Yocto 프로젝트를 생성할 상위 폴더를 선택하세요'
+			});
+			if (!picked || picked.length === 0) {
+				panel.webview.postMessage({ command: 'folderCreated', success: false, cancelled: true });
+				return;
+			}
 
-		if (folders && folders.length > 0) {
-			const folderPath = folders[0].path; // Unix 경로 사용 (원격 환경 호환)
+			const parentUri = picked[0];
+
+			// 2) 새 폴더명 입력
+			const folderName = await vscode.window.showInputBox({
+				title: '프로젝트 폴더 이름',
+				prompt: '생성할 프로젝트 폴더 이름을 입력하세요',
+				ignoreFocusOut: true,
+				validateInput: (v) => {
+					const name = (v || '').trim();
+					if (!name) return '폴더 이름을 입력하세요.';
+					if (name.includes('/') || name.includes('\\')) return '폴더 이름에는 / 또는 \\ 를 사용할 수 없습니다.';
+					return null;
+				}
+			});
+			if (!folderName) {
+				panel.webview.postMessage({ command: 'folderCreated', success: false, cancelled: true });
+				return;
+			}
+
+			const folderUri = vscode.Uri.joinPath(parentUri, folderName.trim());
+
+			await vscode.workspace.fs.createDirectory(folderUri);
+
 			panel.webview.postMessage({
-				command: 'setFolderPath',
-				path: folderPath // Unix 경로를 웹뷰로 전달
+				command: 'folderCreated',
+				success: true,
+				path: folderUri.path
+			});
+		} catch (error) {
+			panel.webview.postMessage({
+				command: 'folderCreated',
+				success: false,
+				cancelled: false,
+				error: error instanceof Error ? error.message : String(error)
 			});
 		}
 	}
@@ -364,6 +409,8 @@ export class YoctoProjectDialog {
 			}
 
 			// 프로젝트 생성 (creator.ts에 위임)
+			// JSON leaf의 settingsPatch를 그대로 전달하여 settings.json이 하드코딩되지 않도록 함
+			data.axonSettingsPatch = this.createLeaf?.settingsPatch;
 			await YoctoProjectCreator.createYoctoProject(data);
 			
 			// 성공 메시지

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { axonLog, axonError, axonSuccess } from '../../logger';
 import { executeShellTask, findProjectRootByShell } from '../common/shell-utils';
+import { getProjectTypeLeafById } from '../common/project-type-registry';
 
 /**
  * Yocto 빌드 작업 설정 인터페이스
@@ -101,33 +102,54 @@ export class YoctoProjectBuilder {
 		if (!machine || !cgwVersion) {
 			axonLog('📋 빌드 설정을 선택해주세요...');
 
+		// projectType 기반 제약 로드 (있으면 우선 적용)
+		const projectType = vscode.workspace.getConfiguration('axon').get<string>('projectType') || '';
+		const leaf = projectType ? await getProjectTypeLeafById(projectType) : undefined;
+		const constraints = leaf?.yoctoBuildConstraints?.ap;
+		const allowedMachines = (constraints?.supportedMachines && constraints.supportedMachines.length > 0)
+			? constraints.supportedMachines
+			: ['tcn1000', 'tcn1000-main', 'tcn1000-sv'];
+		const allowedVersions = (constraints?.supportedVersions ? constraints.supportedVersions : ['dev', 'qa', 'release']);
+
 		// machine 선택
 		if (!machine) {
-			const supportedMachines = ['tcn1000', 'tcn1000-sv'];
-			machine = await vscode.window.showQuickPick(supportedMachines, {
-				placeHolder: 'AP MACHINE을 선택하세요',
-				title: 'Yocto AP Build Configuration'
-			});
+			if (allowedMachines.length === 1) {
+				machine = allowedMachines[0];
+				axonLog(`ℹ️ MACHINE 자동 선택: ${machine}`);
+			} else {
+				machine = await vscode.window.showQuickPick(allowedMachines, {
+					placeHolder: 'AP MACHINE을 선택하세요',
+					title: 'Yocto AP Build Configuration'
+				});
 
-			if (!machine) {
-				axonLog('❌ 사용자 취소: MACHINE 선택이 취소되었습니다.');
-				vscode.window.showInformationMessage('빌드가 취소되었습니다.');
-				return null;
+				if (!machine) {
+					axonLog('❌ 사용자 취소: MACHINE 선택이 취소되었습니다.');
+					vscode.window.showInformationMessage('빌드가 취소되었습니다.');
+					return null;
+				}
 			}
 		}
 
 			// version 선택
 			if (!cgwVersion) {
-				const supportedVersions = ['dev', 'qa', 'release'];
-				cgwVersion = await vscode.window.showQuickPick(supportedVersions, {
-					placeHolder: 'CGW SDK VERSION을 선택하세요',
-					title: 'Yocto AP Build Configuration'
-				});
+				// supportedVersions=[] 인 경우: 사용자에게 묻지 않고 더미 값(dev) 사용
+				if (Array.isArray(allowedVersions) && allowedVersions.length === 0) {
+					cgwVersion = 'dev';
+					axonLog(`ℹ️ VERSION 선택 생략 (dummy): ${cgwVersion}`);
+				} else if (Array.isArray(allowedVersions) && allowedVersions.length === 1) {
+					cgwVersion = allowedVersions[0];
+					axonLog(`ℹ️ VERSION 자동 선택: ${cgwVersion}`);
+				} else {
+					cgwVersion = await vscode.window.showQuickPick(allowedVersions, {
+						placeHolder: 'CGW SDK VERSION을 선택하세요',
+						title: 'Yocto AP Build Configuration'
+					});
 
-				if (!cgwVersion) {
-					axonLog('❌ 사용자 취소: VERSION 선택이 취소되었습니다.');
-					vscode.window.showInformationMessage('빌드가 취소되었습니다.');
-					return null;
+					if (!cgwVersion) {
+						axonLog('❌ 사용자 취소: VERSION 선택이 취소되었습니다.');
+						vscode.window.showInformationMessage('빌드가 취소되었습니다.');
+						return null;
+					}
 				}
 			}
 
@@ -191,33 +213,61 @@ export class YoctoProjectBuilder {
 		if (!mcuMachine || !mcuVersion) {
 			axonLog('📋 빌드 설정을 선택해주세요...');
 
+			// projectType 기반 제약 로드
+			const projectType = vscode.workspace.getConfiguration('axon').get<string>('projectType') || '';
+			const leaf = projectType ? await getProjectTypeLeafById(projectType) : undefined;
+			const constraints = leaf?.yoctoBuildConstraints?.mcu;
+
+			// dev-sv 타입처럼 mcu 제약이 아예 없으면: 입력/저장/선택 모두 생략 (더미 값 반환)
+			if (!constraints) {
+				axonLog('ℹ️ 이 projectType에서는 MCU machine/version 설정을 입력하지 않습니다. (dummy 사용)');
+				return { mcuMachine: 'tcn1000-mcu', mcuVersion: 'dev' };
+			}
+
+			const allowedMcuMachines = (constraints.supportedMachines && constraints.supportedMachines.length > 0)
+				? constraints.supportedMachines
+				: ['tcn1000-mcu'];
+			const allowedMcuVersions = (constraints.supportedVersions ? constraints.supportedVersions : ['dev', 'qa', 'release']);
+
 			// mcu_machine 선택
 			if (!mcuMachine) {
-				const supportedMcuMachines = ['tcn1000-mcu'];
-				mcuMachine = await vscode.window.showQuickPick(supportedMcuMachines, {
-					placeHolder: 'MCU MACHINE을 선택하세요',
-					title: 'Yocto MCU Build Configuration'
-				});
+				if (allowedMcuMachines.length === 1) {
+					mcuMachine = allowedMcuMachines[0];
+					axonLog(`ℹ️ MCU_MACHINE 자동 선택: ${mcuMachine}`);
+				} else {
+					mcuMachine = await vscode.window.showQuickPick(allowedMcuMachines, {
+						placeHolder: 'MCU MACHINE을 선택하세요',
+						title: 'Yocto MCU Build Configuration'
+					});
 
-				if (!mcuMachine) {
-					axonLog('❌ 사용자 취소: MCU MACHINE 선택이 취소되었습니다.');
-					vscode.window.showInformationMessage('빌드가 취소되었습니다.');
-					return null;
+					if (!mcuMachine) {
+						axonLog('❌ 사용자 취소: MCU MACHINE 선택이 취소되었습니다.');
+						vscode.window.showInformationMessage('빌드가 취소되었습니다.');
+						return null;
+					}
 				}
 			}
 
 			// mcu_version 선택
 			if (!mcuVersion) {
-				const supportedVersions = ['dev', 'qa', 'release'];
-				mcuVersion = await vscode.window.showQuickPick(supportedVersions, {
-					placeHolder: 'MCU SDK VERSION을 선택하세요',
-					title: 'Yocto MCU Build Configuration'
-				});
+				// supportedVersions=[] 인 경우: 사용자에게 묻지 않고 더미 값(dev) 사용
+				if (Array.isArray(allowedMcuVersions) && allowedMcuVersions.length === 0) {
+					mcuVersion = 'dev';
+					axonLog(`ℹ️ MCU_VERSION 선택 생략 (dummy): ${mcuVersion}`);
+				} else if (Array.isArray(allowedMcuVersions) && allowedMcuVersions.length === 1) {
+					mcuVersion = allowedMcuVersions[0];
+					axonLog(`ℹ️ MCU_VERSION 자동 선택: ${mcuVersion}`);
+				} else {
+					mcuVersion = await vscode.window.showQuickPick(allowedMcuVersions, {
+						placeHolder: 'MCU SDK VERSION을 선택하세요',
+						title: 'Yocto MCU Build Configuration'
+					});
 
-				if (!mcuVersion) {
-					axonLog('❌ 사용자 취소: MCU VERSION 선택이 취소되었습니다.');
-					vscode.window.showInformationMessage('빌드가 취소되었습니다.');
-					return null;
+					if (!mcuVersion) {
+						axonLog('❌ 사용자 취소: MCU VERSION 선택이 취소되었습니다.');
+						vscode.window.showInformationMessage('빌드가 취소되었습니다.');
+						return null;
+					}
 				}
 			}
 

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { McuProjectCreator } from './creator';
 import { axonLog } from '../../logger';
+import type { ProjectTypeLeaf } from '../common/project-type-registry';
 
 const fsp = fs.promises; // 비동기 파일 I/O
 
@@ -11,6 +12,10 @@ const fsp = fs.promises; // 비동기 파일 I/O
  */
 export class McuProjectDialog {
 	private webview?: vscode.WebviewPanel;
+
+	// Create Project에서 선택된 leaf (projectType/gitUrl 프리셋 등)
+	private createLeaf?: ProjectTypeLeaf;
+	private createBreadcrumb?: string;
 	
 	// 캐싱: 원본 파일 (템플릿) 및 최종 HTML
 	private rawHtml?: string;
@@ -108,7 +113,10 @@ export class McuProjectDialog {
 	/**
 	 * 프로젝트 생성 WebView 표시
 	 */
-	async showProjectCreationWebView(): Promise<void> {
+	async showProjectCreationWebView(leaf?: ProjectTypeLeaf, breadcrumb?: string): Promise<void> {
+		this.createLeaf = leaf;
+		this.createBreadcrumb = breadcrumb;
+
 		// 이미 열린 패널이 있으면 재사용
 		if (this.webview) {
 			this.webview.reveal(vscode.ViewColumn.One);
@@ -141,7 +149,8 @@ export class McuProjectDialog {
 		axonLog(`🔍 [MCU Settings Debug] Reading configuration...`);
 		axonLog(`🔍 [MCU Settings Debug] Configuration object: ${JSON.stringify(config)}`);
 		
-		const gitUrl = config.get<string>('gitUrl') || 
+		const presetGitUrl = this.createLeaf?.createPreset?.mcuGitUrl;
+		const gitUrl = presetGitUrl || config.get<string>('gitUrl') || 
 		               'ssh://git@bitbucket.telechips.com:7999/linux_yp4_0_cgw/mcu-tcn100x.git';
 		const buildtool = config.get<string>('buildtool') || '';
 		
@@ -193,8 +202,8 @@ export class McuProjectDialog {
 	 */
 	private async handleWebViewMessage(message: any, panel: vscode.WebviewPanel): Promise<void> {
 		switch (message.command) {
-			case 'browseFolder':
-				await this.browseFolderForWebView(panel);
+			case 'createFolder':
+				await this.createFolderForWebView(panel);
 				break;
 			case 'browseBuildtool':
 				await this.browseBuildtoolForWebView(panel);
@@ -209,22 +218,58 @@ export class McuProjectDialog {
 	}
 
 	/**
-	 * 폴더 선택 다이얼로그
+	 * 프로젝트 폴더 생성 (WebView에서 입력한 경로 기준)
 	 */
-	private async browseFolderForWebView(panel: vscode.WebviewPanel): Promise<void> {
-		const folders = await vscode.window.showOpenDialog({
-			canSelectFiles: false,
-			canSelectFolders: true,
-			canSelectMany: false,
-			openLabel: '프로젝트 생성 위치 선택',
-			title: '프로젝트를 생성할 폴더를 선택하세요'
-		});
+	private async createFolderForWebView(panel: vscode.WebviewPanel): Promise<void> {
+		try {
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+			// 1) 상위 폴더 선택
+			const picked = await vscode.window.showOpenDialog({
+				canSelectFiles: false,
+				canSelectFolders: true,
+				canSelectMany: false,
+				openLabel: '상위 폴더 선택',
+				title: '프로젝트를 생성할 상위 폴더를 선택하세요'
+			});
+			if (!picked || picked.length === 0) {
+				panel.webview.postMessage({ command: 'folderCreated', success: false, cancelled: true });
+				return;
+			}
 
-		if (folders && folders.length > 0) {
-			const folderPath = folders[0].path; // Unix 경로 사용 (원격 환경 호환)
+			const parentUri = picked[0];
+
+			// 2) 새 폴더명 입력
+			const folderName = await vscode.window.showInputBox({
+				title: '프로젝트 폴더 이름',
+				prompt: '생성할 프로젝트 폴더 이름을 입력하세요',
+				ignoreFocusOut: true,
+				validateInput: (v) => {
+					const name = (v || '').trim();
+					if (!name) return '폴더 이름을 입력하세요.';
+					if (name.includes('/') || name.includes('\\')) return '폴더 이름에는 / 또는 \\ 를 사용할 수 없습니다.';
+					return null;
+				}
+			});
+			if (!folderName) {
+				panel.webview.postMessage({ command: 'folderCreated', success: false, cancelled: true });
+				return;
+			}
+
+			const folderUri = vscode.Uri.joinPath(parentUri, folderName.trim());
+
+			await vscode.workspace.fs.createDirectory(folderUri);
+
 			panel.webview.postMessage({
-				command: 'setFolderPath',
-				path: folderPath // Unix 경로를 웹뷰로 전달
+				command: 'folderCreated',
+				success: true,
+				path: folderUri.path
+			});
+		} catch (error) {
+			panel.webview.postMessage({
+				command: 'folderCreated',
+				success: false,
+				cancelled: false,
+				error: error instanceof Error ? error.message : String(error)
 			});
 		}
 	}
@@ -303,19 +348,44 @@ export class McuProjectDialog {
 		// 1. 사용자가 입력한 프로젝트 폴더 생성
 		axonLog(`📂 프로젝트 폴더 생성: ${projectUri.toString()}`);
 		try {
-			await vscode.workspace.fs.createDirectory(projectUri);
-			axonLog(`✅ 프로젝트 폴더 생성 완료`);
+			// 이미 존재하면 허용 (사용자가 Create Folder 버튼으로 미리 생성했을 수 있음)
+			try {
+				const stat = await vscode.workspace.fs.stat(projectUri);
+				if (stat.type !== vscode.FileType.Directory) {
+					throw new Error(`프로젝트 경로가 디렉토리가 아닙니다: ${projectUri.toString()}`);
+				}
+				axonLog(`✅ 프로젝트 폴더가 이미 존재합니다. 그대로 진행합니다.`);
+			} catch {
+				await vscode.workspace.fs.createDirectory(projectUri);
+				axonLog(`✅ 프로젝트 폴더 생성 완료`);
+			}
 		} catch (error) {
 			throw new Error(`프로젝트 폴더 생성 실패: ${error}`);
 		}
 
 		// 2. Git clone 실행 (생성된 폴더 안에서)
-		const gitUrl = data.gitUrl || 'ssh://git@bitbucket.telechips.com:7999/linux_yp4_0_cgw/mcu-tcn100x.git';
+		const config = vscode.workspace.getConfiguration('axon.mcu');
+		const presetGitUrl = this.createLeaf?.createPreset?.mcuGitUrl;
+		const presetGitBranch = this.createLeaf?.createPreset?.mcuGitBranch;
+
+		const effectiveGitUrl =
+			(data.gitUrl && String(data.gitUrl).trim() !== '' ? String(data.gitUrl).trim() : '') ||
+			presetGitUrl ||
+			config.get<string>('gitUrl') ||
+			'ssh://git@bitbucket.telechips.com:7999/linux_yp4_0_cgw/mcu-tcn100x.git';
+
+		// WebView는 기본으로 gitUrl을 항상 보내므로, "사용자가 수정했는지"를 판단하려면 preset과 비교해야 함
+		const dataGitUrlTrimmed = (data.gitUrl && String(data.gitUrl).trim() !== '') ? String(data.gitUrl).trim() : '';
+		const shouldUsePresetBranch = !!presetGitBranch && (!dataGitUrlTrimmed || (presetGitUrl && dataGitUrlTrimmed === presetGitUrl));
+
 		const projectPath = projectUri.path;
-		const cloneCommand = `git clone ${gitUrl}`;
+		const cloneCommand = shouldUsePresetBranch
+			? `git clone -b "${presetGitBranch}" "${effectiveGitUrl}"`
+			: `git clone "${effectiveGitUrl}"`;
 		
 		// git clone으로 생성될 실제 폴더 이름 (repository 이름)
-		const repoName = gitUrl.split('/').pop()?.replace('.git', '') || 'mcu-tcn100x';
+		const urlToken = effectiveGitUrl.trim().split(/\s+/)[0]; // 혹시 사용자가 공백/옵션을 넣어도 repoName 파싱은 보호
+		const repoName = urlToken.split('/').filter((p: string) => p).pop()?.replace('.git', '') || 'mcu-tcn100x';
 		const actualProjectPath = `${projectPath}/${repoName}`;
 		
 		axonLog(`📦 Git Clone 실행: ${cloneCommand}`);
@@ -330,6 +400,36 @@ export class McuProjectDialog {
 			taskId: 'cloneMcuProject',
 			showTerminal: true
 		});
+
+		// 2-1. (Release 전용) boot-firmware 저장소 추가 clone
+		// 요구사항: MCU git clone 직후, 생성된 git 디렉토리(=actualProjectPath)로 이동한 후
+		// `git clone -b mcuGitBranch bootfirmwareGitUrl "boot-firmware-tcn100x"` 수행
+		const bootfirmwareGitUrl = this.createLeaf?.createPreset?.bootfirmwareGitUrl;
+		if (bootfirmwareGitUrl && bootfirmwareGitUrl.trim() !== '') {
+			if (!presetGitBranch || presetGitBranch.trim() === '') {
+				throw new Error(
+					'boot-firmware clone을 위해 preset mcuGitBranch가 필요하지만 설정되어 있지 않습니다.\n\n' +
+					`projectType: ${(this.createLeaf?.settingsPatch?.['axon.projectType'] as string) || '(unknown)'}`
+				);
+			}
+
+			const bootfwFolderName = 'boot-firmware-tcn100x';
+			const bootfwCloneCommand =
+				`test -d "${bootfwFolderName}" ` +
+				`&& echo "[SKIP] ${bootfwFolderName} already exists" ` +
+				`|| git clone -b "${presetGitBranch}" "${bootfirmwareGitUrl.trim()}" "${bootfwFolderName}"`;
+
+			axonLog(`📦 Boot Firmware Git Clone 실행: ${bootfwCloneCommand}`);
+			axonLog(`📂 작업 디렉토리(생성된 git directory): ${actualProjectPath}`);
+
+			await executeShellTask({
+				command: bootfwCloneCommand,
+				cwd: actualProjectPath,
+				taskName: 'Clone Boot Firmware (boot-firmware-tcn100x)',
+				taskId: 'cloneBootFirmware',
+				showTerminal: true
+			});
+		}
 
 		// Build Tools Path가 설정되어 있으면 심볼릭 링크 생성
 		if (data.buildtool && data.buildtool.trim() !== '') {
@@ -405,7 +505,7 @@ export class McuProjectDialog {
 			axonLog(`⚙️ 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
 			const { createVscodeSettings } = await import('../common/vscode-utils');
 			await createVscodeSettings(actualProjectUri, {
-				'axon.projectType': 'mcu_project',
+				'axon.projectType': (this.createLeaf?.settingsPatch?.['axon.projectType'] as string) || 'mcu_project-dev',
 				'axon.mcu.projectRoot': actualProjectPath
 			});
 			axonLog(`✅ 프로젝트 설정 파일이 생성되었습니다.`);

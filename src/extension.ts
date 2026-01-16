@@ -6,8 +6,7 @@ import { spawn } from 'child_process';
 import { initializeLogger, axonLog, axonError, axonSuccess } from './logger';
 import { executeFwdnCommand, executeFwdnLowFormat, executeFwdnAvailableImage, executeFwdnReadPartition } from './fwdn';
 import { 
-	convertRemotePathToSamba,
-	setProjectType
+	convertRemotePathToSamba
 } from './utils';
 import { McuProjectDialog } from './projects/mcu/dialog';
 import { McuProjectBuilder } from './projects/mcu/builder';
@@ -15,6 +14,7 @@ import { YoctoProjectDialog } from './projects/yocto/dialog';
 import { YoctoProjectBuilder } from './projects/yocto/builder';
 import { AutolinuxProjectDialog } from './projects/yocto/autolinux-dialog';
 import { executeShellTask } from './projects/common/shell-utils';
+import { applyProjectTypeLeafForSetMode, selectProjectTypeLeaf } from './projects/common/project-type-registry';
 
 
 // MCU Project Creation Dialog - 이제 projects/mcu/dialog.ts에 있음
@@ -57,6 +57,20 @@ async function configureVscodeExcludeFolders(): Promise<void> {
 			"**/build/tcn1000/sstate-cache/**",
 			"**/build/tcn1000/tmp/**",
 			"**/build/tcn1000/workspace/**",
+			// ===== tcn1000-main =====
+			"**/build/tcn1000-main/buildhistory/**",
+			"**/build/tcn1000-main/cache/**",
+			"**/build/tcn1000-main/downloads/**",
+			"**/build/tcn1000-main/sstate-cache/**",
+			"**/build/tcn1000-main/tmp/**",
+			"**/build/tcn1000-main/workspace/**",
+			// ===== tcn1000-sv =====
+			"**/build/tcn1000-sv/buildhistory/**",
+			"**/build/tcn1000-sv/cache/**",
+			"**/build/tcn1000-sv/downloads/**",
+			"**/build/tcn1000-sv/sstate-cache/**",
+			"**/build/tcn1000-sv/tmp/**",
+			"**/build/tcn1000-sv/workspace/**",
 			// ===== tcn1000-mcu =====
 			"**/build/tcn1000-mcu/buildhistory/**",
 			"**/build/tcn1000-mcu/cache/**",
@@ -81,6 +95,20 @@ async function configureVscodeExcludeFolders(): Promise<void> {
 			"**/build/tcn1000/sstate-cache/**",
 			"**/build/tcn1000/tmp/**",
 			"**/build/tcn1000/workspace/**",
+			// ===== tcn1000-main =====
+			"**/build/tcn1000-main/buildhistory/**",
+			"**/build/tcn1000-main/cache/**",
+			"**/build/tcn1000-main/downloads/**",
+			"**/build/tcn1000-main/sstate-cache/**",
+			"**/build/tcn1000-main/tmp/**",
+			"**/build/tcn1000-main/workspace/**",
+			// ===== tcn1000-sv =====
+			"**/build/tcn1000-sv/buildhistory/**",
+			"**/build/tcn1000-sv/cache/**",
+			"**/build/tcn1000-sv/downloads/**",
+			"**/build/tcn1000-sv/sstate-cache/**",
+			"**/build/tcn1000-sv/tmp/**",
+			"**/build/tcn1000-sv/workspace/**",
 			// ===== tcn1000-mcu =====
 			"**/build/tcn1000-mcu/bitbake-cookerdaemon.log",
 			"**/build/tcn1000-mcu/bitbake.lock",
@@ -109,6 +137,22 @@ async function configureVscodeExcludeFolders(): Promise<void> {
 			"**/build/tcn1000/sstate-cache/**",
 			"**/build/tcn1000/tmp/**",
 			"**/build/tcn1000/workspace/**",
+			// ===== tcn1000-main =====
+			"**/build/tcn1000-main/bitbake-cookerdaemon.log",
+			"**/build/tcn1000-main/buildhistory/**",
+			"**/build/tcn1000-main/cache/**",
+			"**/build/tcn1000-main/downloads/**",
+			"**/build/tcn1000-main/sstate-cache/**",
+			"**/build/tcn1000-main/tmp/**",
+			"**/build/tcn1000-main/workspace/**",
+			// ===== tcn1000-sv =====
+			"**/build/tcn1000-sv/bitbake-cookerdaemon.log",
+			"**/build/tcn1000-sv/buildhistory/**",
+			"**/build/tcn1000-sv/cache/**",
+			"**/build/tcn1000-sv/downloads/**",
+			"**/build/tcn1000-sv/sstate-cache/**",
+			"**/build/tcn1000-sv/tmp/**",
+			"**/build/tcn1000-sv/workspace/**",
 			// ===== tcn1000-mcu =====
 			"**/build/tcn1000-mcu/bitbake-cookerdaemon.log",
 			"**/build/tcn1000-mcu/bitbake.lock",
@@ -242,8 +286,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	const axonOutputChannel = vscode.window.createOutputChannel('Axon');
 	initializeLogger(axonOutputChannel);
 	
-	// 버전 정보 표시
-	const extension = vscode.extensions.getExtension('justin-lee.axon');
+	// 버전 정보 표시 (확장 ID 하드코딩 금지: publisher/name 변경에 대응)
+	const extension =
+		vscode.extensions.getExtension('JustinLee-tcc.axon-dev') ||
+		vscode.extensions.getExtension('justinlee-tcc.axon-dev') ||
+		vscode.extensions.getExtension('justin-lee.axon') ||
+		vscode.extensions.all.find(e => e.packageJSON?.name === 'axon-dev');
 	const version = extension?.packageJSON.version || 'not defined';
 	
 	axonLog('===========================================');
@@ -381,40 +429,18 @@ export async function activate(context: vscode.ExtensionContext) {
 	const createProjectDisposable = vscode.commands.registerCommand(
 		'axon.createProject',
 		async () => {
-			const selected = await vscode.window.showQuickPick([
-				{ 
-					label: '$(file-code) MCU Standalone Project', 
-					value: 'mcu',
-					description: 'Create a new MCU standalone project'
-				},
-				{ 
-					label: '$(package) Yocto Project', 
-					value: 'yocto',
-					description: 'Create a new Yocto project'
-				},
-				{ 
-					label: '$(package) Yocto Project (autolinux)', 
-					value: 'autolinux',
-					description: 'Create a new Yocto project with autolinux'
-				}
-			], {
-				placeHolder: 'Select project type to create',
-				title: 'Create New Project'
-			});
+			const selected = await selectProjectTypeLeaf('create');
+			if (!selected) return;
 
-			if (!selected) {
-				return;
-			}
-
-			switch (selected.value) {
+			switch (selected.leaf.family) {
 				case 'mcu':
-					await mcuProjectDialog.showProjectCreationWebView();
+					await mcuProjectDialog.showProjectCreationWebView(selected.leaf, selected.breadcrumb);
 					break;
 				case 'yocto':
-					await yoctoProjectDialog.showProjectCreationWebView();
+					await yoctoProjectDialog.showProjectCreationWebView(selected.leaf, selected.breadcrumb);
 					break;
 				case 'autolinux':
-					await autolinuxProjectDialog.showProjectCreationWebView();
+					await autolinuxProjectDialog.showProjectCreationWebView(selected.leaf, selected.breadcrumb);
 					break;
 			}
 		}
@@ -733,77 +759,31 @@ export async function activate(context: vscode.ExtensionContext) {
 	const setProjectTypeDisposable = vscode.commands.registerCommand(
 		'axon.setProjectType',
 		async (projectType?: string) => {
-			// projectType이 없으면 QuickPick으로 선택
-			if (!projectType) {
-				const selected = await vscode.window.showQuickPick([
-					{ label: 'MCU Project', value: 'mcu_project', description: 'MCU Standalone Project' },
-					{ label: 'Yocto Project', value: 'yocto_project', description: 'Yocto Project' },
-					{ label: 'Yocto Project (autolinux)', value: 'yocto_project_autolinux', description: 'Yocto Project with autolinux' }
-				], {
-					placeHolder: 'Select project type',
-					title: 'Set Project Type'
-				});
-				
-				if (!selected) {
-					return;
-				}
-				
-				projectType = selected.value;
-			}
-			
-			if (projectType !== 'mcu_project' && 
-			    projectType !== 'yocto_project' && 
-			    projectType !== 'yocto_autolinux' &&
-			    projectType !== 'yocto_project_autolinux') {
-				vscode.window.showErrorMessage(`잘못된 프로젝트 타입입니다: ${projectType}`);
+			// 외부 호출로 projectType이 직접 들어오면 기존 호환을 위해 저장만 수행
+			// (정식 UI는 JSON 트리 기반 선택 사용)
+			if (projectType && projectType.trim() !== '') {
+				await vscode.workspace.getConfiguration('axon').update('projectType', projectType, vscode.ConfigurationTarget.Workspace);
+				projectCreationProvider.refresh();
+				buildProvider.refresh();
+				fwdnProvider.refresh();
+				optionsProvider.refresh();
 				return;
 			}
-			
-			console.log(`[Axon] setProjectType 호출됨: ${projectType}`);
-			
-			// yocto_autolinux 또는 yocto_project_autolinux를 yocto_project_autolinux로 통일
-			let normalizedProjectType = projectType;
-			if (projectType === 'yocto_autolinux') {
-				normalizedProjectType = 'yocto_project_autolinux';
-			}
-			
-			// projectType을 직접 저장
-			const config = vscode.workspace.getConfiguration('axon');
-			await config.update('projectType', normalizedProjectType, vscode.ConfigurationTarget.Workspace);
-			
-		// Yocto 프로젝트 타입인 경우 apBuildScript, apImageName 기본값 저장
-		if (normalizedProjectType === 'yocto_project' || normalizedProjectType === 'yocto_project_autolinux') {
-			const yoctoConfig = vscode.workspace.getConfiguration('axon.yocto');
-			await yoctoConfig.update(
-				'apBuildScript', 
-				'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh',
-				vscode.ConfigurationTarget.Workspace
+
+			const selected = await selectProjectTypeLeaf('set');
+			if (!selected) return;
+
+			await applyProjectTypeLeafForSetMode(selected.leaf);
+
+			vscode.window.showInformationMessage(
+				`프로젝트 타입이 설정되었습니다: ${selected.breadcrumb} (${selected.leaf.settingsPatch['axon.projectType'] || selected.leaf.id})`
 			);
-			await yoctoConfig.update(
-				'apImageName',
-				'telechips-cgw-image',
-				vscode.ConfigurationTarget.Workspace
-			);
-			console.log(`[Axon] apBuildScript, apImageName 기본값 저장 완료`);
-		}
-			
-			const displayMap: { [key: string]: string } = { 
-				mcu_project: 'MCU Project', 
-				yocto_project: 'Yocto Project',
-				yocto_project_autolinux: 'Yocto Project (autolinux)'
-			};
-			
-			console.log(`[Axon] projectType 저장 완료: ${normalizedProjectType}`);
-			
-		vscode.window.showInformationMessage(
-			`프로젝트 타입이 설정되었습니다: ${displayMap[normalizedProjectType] || normalizedProjectType}`
-		);
-		
-		// TreeView 새로고침 (프로젝트 타입 변경 시)
-		projectCreationProvider.refresh();
-		buildProvider.refresh();
-		fwdnProvider.refresh();
-		optionsProvider.refresh();
+
+			// TreeView 새로고침 (프로젝트 타입 변경 시)
+			projectCreationProvider.refresh();
+			buildProvider.refresh();
+			fwdnProvider.refresh();
+			optionsProvider.refresh();
 	}
 );
 

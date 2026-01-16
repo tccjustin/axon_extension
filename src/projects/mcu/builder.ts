@@ -563,7 +563,7 @@ bear --version
 				return;
 			}
 
-			if (projectType !== 'mcu_project') {
+			if (!projectType.startsWith('mcu_project')) {
 				vscode.window.showErrorMessage('Build Option Extraction은 MCU 프로젝트에서만 사용할 수 있습니다.');
 				return;
 			}

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { getProjectFamilyFromProjectType } from './projects/common/project-type-registry';
 
 /**
  * Axon Options TreeView Provider
@@ -39,7 +40,8 @@ export class AxonOptionsProvider implements vscode.TreeDataProvider<AxonTreeItem
 		const items: AxonTreeItem[] = [];
 
 		// MCU 프로젝트인 경우 Build Option Extraction 추가
-		if (this.projectType === 'mcu_project') {
+		const family = getProjectFamilyFromProjectType(this.projectType);
+		if (family === 'mcu') {
 			items.push(
 				new AxonTreeItem(
 					'🔧 Build Option Extraction',

@@ -1,12 +1,13 @@
 const vscode = acquireVsCodeApi();
 let selectedPath = '';
 let projectName = '';
+let folderCreated = false;
 
 // DOM이 준비되면 엘리먼트 참조 설정
 let projectPathInput, createBtn;
 let manifestGitUrlInput, loadManifestsBtn, manifestSelectGroup, manifestSelect;
 let manifestList = [];
-let browseBtn, warningMessage;
+let createFolderBtn, warningMessage;
 let sourceMirrorPathInput, buildtoolPathInput, browseSourceMirrorBtn, browseBuildtoolBtn;
 
 // DOMContentLoaded 이벤트
@@ -27,7 +28,7 @@ function initializeUI() {
     manifestSelect = document.getElementById('manifestSelect');
     
     // 추가 요소
-    browseBtn = document.getElementById('browseBtn');
+    createFolderBtn = document.getElementById('createFolderBtn');
     
     // Build Tools 요소
     sourceMirrorPathInput = document.getElementById('sourceMirrorPath');
@@ -45,18 +46,27 @@ function validate() {
     const projectPathValid = projectPathInput.value.trim() !== '';
     const manifestGitUrlValid = manifestGitUrlInput.value.trim() !== '';
     const manifestSelected = manifestSelect.value !== '';
+    const folderValid = folderCreated === true;
     
-    // Load 버튼 활성화 조건: 프로젝트 경로 + Manifest Git URL
+    // Load 버튼 활성화 조건: 폴더 생성 완료 + 프로젝트 경로 + Manifest Git URL
     if (loadManifestsBtn) {
-        loadManifestsBtn.disabled = !(projectPathValid && manifestGitUrlValid);
+        loadManifestsBtn.disabled = !(projectPathValid && manifestGitUrlValid && folderValid);
     }
     
-    // 생성 버튼 활성화 조건: 모든 필드 + Manifest 선택
-    createBtn.disabled = !(projectPathValid && manifestGitUrlValid && manifestSelected);
+    // 생성 버튼 활성화 조건: 폴더 생성 완료 + 모든 필드 + Manifest 선택
+    createBtn.disabled = !(projectPathValid && manifestGitUrlValid && manifestSelected && folderValid);
 }
 
 function setupEventListeners() {
-    projectPathInput.oninput = validate;
+    projectPathInput.oninput = () => {
+        // 경로가 바뀌면 폴더 생성 상태 초기화
+        folderCreated = false;
+        if (createFolderBtn) {
+            createFolderBtn.disabled = false;
+            createFolderBtn.textContent = 'Create Folder';
+        }
+        validate();
+    };
     manifestSelect.onchange = validate;
 
     // Manifest 로드 버튼
@@ -90,7 +100,7 @@ function setupEventListeners() {
 
         // 입력 필드 비활성화 (Load 시작 시점부터)
         projectPathInput.disabled = true;
-        browseBtn.disabled = true;
+        createFolderBtn.disabled = true;
 
         vscode.postMessage({
             command: 'loadManifests',
@@ -100,8 +110,10 @@ function setupEventListeners() {
         });
     };
 
-    document.getElementById('browseBtn').onclick = () => {
-        vscode.postMessage({ command: 'browseFolder' });
+    document.getElementById('createFolderBtn').onclick = () => {
+        createFolderBtn.disabled = true;
+        createFolderBtn.textContent = 'Creating...';
+        vscode.postMessage({ command: 'createFolder' });
     };
 
     // Build Tools Browse 버튼
@@ -155,14 +167,26 @@ window.addEventListener('message', e => {
         sourceMirrorPathInput.value = msg.path;
     } else if (msg.command === 'setBuildtoolPath') {
         buildtoolPathInput.value = msg.path;
-    } else if (msg.command === 'setFolderPath') {
-        // 선택된 경로를 input에 설정 (사용자가 마지막 폴더명을 수정할 수 있음)
-        projectPathInput.value = msg.path;
-        
-        // 커서를 input 필드의 마지막으로 이동
-        projectPathInput.focus();
-        projectPathInput.setSelectionRange(msg.path.length, msg.path.length);
-        
+    } else if (msg.command === 'folderCreated') {
+        if (msg.success) {
+            folderCreated = true;
+            if (msg.path) {
+                projectPathInput.value = msg.path;
+            }
+            if (createFolderBtn) {
+                createFolderBtn.disabled = true;
+                createFolderBtn.textContent = 'Created';
+            }
+        } else {
+            folderCreated = false;
+            if (createFolderBtn) {
+                createFolderBtn.disabled = false;
+                createFolderBtn.textContent = 'Create Folder';
+            }
+            if (!msg.cancelled && msg.error) {
+                alert('폴더 생성 실패: ' + msg.error);
+            }
+        }
         validate();
     } else if (msg.command === 'manifestListLoaded') {
         manifestList = msg.manifests;
@@ -195,7 +219,8 @@ window.addEventListener('message', e => {
         
         // 에러 발생 시 입력 필드 다시 활성화 (사용자가 수정할 수 있도록)
         projectPathInput.disabled = false;
-        browseBtn.disabled = false;
+        createFolderBtn.disabled = false;
+        createFolderBtn.textContent = 'Create Folder';
     } else if (msg.command === 'projectCreated') {
         createBtn.disabled = false;
         createBtn.textContent = '생성';
