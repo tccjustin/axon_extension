@@ -1,0 +1,251 @@
+{
+  "schemaVersion": 1,
+  "tree": [
+    {
+      "label": "MCU Standalone Project",
+      "children": [
+        {
+          "label": "Dev",
+          "leaf": {
+            "id": "mcu_project-dev",
+            "family": "mcu",
+            "createPreset": {
+              "mcuGitUrl": "ssh://git@bitbucket.telechips.com:7999/linux_yp4_0_cgw/mcu-tcn100x.git"
+            },
+            "settingsPatch": {
+              "axon.projectType": "mcu_project-dev"
+            },
+            "projectRootFinder": {
+              "type": "shellFind",
+              "findPattern": "tcn100x_defconfig",
+              "findType": "f",
+              "maxDepth": 4,
+              "parentLevels": 3,
+              "settingKey": "axon.mcu.projectRoot"
+            }
+          }
+        },
+        {
+          "label": "Release",
+          "children": [
+            {
+              "label": "Versions up to 0.4",
+              "leaf": {
+                "id": "mcu_project-rel-upto04",
+                "family": "mcu",
+                "createPreset": {
+                  "mcuGitUrl": "ssh://git.telechips.com/axon/mcu-tcn100x",
+                  "mcuGitBranch": "tcn1000_0.4",
+                  "bootfirmwareGitUrl": "ssh://git.telechips.com/axon/bsp/boot-firmware"
+                },
+                "settingsPatch": {
+                  "axon.projectType": "mcu_project-rel-upto04"
+                },
+                "projectRootFinder": {
+                  "type": "shellFind",
+                  "findPattern": "tcn100x_defconfig",
+                  "findType": "f",
+                  "maxDepth": 4,
+                  "parentLevels": 3,
+                  "settingKey": "axon.mcu.projectRoot"
+                }
+              }
+            },
+            {
+              "label": "Version 1.0 and later",
+              "leaf": {
+                "id": "mcu_project-rel-later10",
+                "family": "mcu",
+                "createPreset": {
+                  "mcuGitUrl": "ssh://rgit.telechips.com/axon/linux_yp4.0_cgw/1.0.0/mcu-tcn100x",
+                  "mcuGitBranch": "tcn1000_1.0.0",
+                  "bootfirmwareGitUrl": "ssh://rgit.telechips.com/axon/linux_yp4.0_cgw/1.0.0/boot-firmware"
+                },
+                "settingsPatch": {
+                  "axon.projectType": "mcu_project-rel-later10"
+                },
+                "projectRootFinder": {
+                  "type": "shellFind",
+                  "findPattern": "tcn100x_defconfig",
+                  "findType": "f",
+                  "maxDepth": 4,
+                  "parentLevels": 3,
+                  "settingKey": "axon.mcu.projectRoot"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "Yocto Project",
+      "children": [
+        {
+          "label": "Dev",
+          "children": [
+            {
+              "label": "Dev",
+              "leaf": {
+                "id": "yocto_project-dev-dev",
+                "family": "yocto",
+                "createPreset": {
+                  "yoctoManifestGitUrl": "ssh://git@bitbucket.telechips.com:7999/manifest/manifest-cgw.git"
+                },
+                "yoctoBuildConstraints": {
+                  "ap": {
+                    "supportedMachines": ["tcn1000", "tcn1000-main"],
+                    "supportedVersions": ["dev", "qa"]
+                  },
+                  "mcu": {
+                    "supportedMachines": ["tcn1000-mcu"],
+                    "supportedVersions": ["dev", "qa"]
+                  }
+                },
+                "settingsPatch": {
+                  "axon.projectType": "yocto_project-dev-dev",
+                  "axon.yocto.apBuildScript": "poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh",
+                  "axon.yocto.apImageName": "telechips-cgw-image"
+                },
+                "projectRootFinder": {
+                  "type": "shellFind",
+                  "findPattern": "poky",
+                  "findType": "d",
+                  "maxDepth": 2,
+                  "parentLevels": 1,
+                  "excludePattern": "*/.repo/*",
+                  "settingKey": "axon.yocto.projectRoot"
+                }
+              }
+            },
+            {
+              "label": "SV",
+              "leaf": {
+                "id": "yocto_project-dev-sv",
+                "family": "yocto",
+                "createPreset": {
+                  "yoctoManifestGitUrl": "ssh://git@bitbucket.telechips.com:7999/manifest/manifest-cgw.git"
+                },
+                "yoctoBuildConstraints": {
+                  "ap": {
+                    "supportedMachines": ["tcn1000-sv"],
+                    "supportedVersions": ["dev"]
+                  }
+                },
+                "settingsPatch": {
+                  "axon.projectType": "yocto_project-dev-sv",
+                  "axon.yocto.apBuildScript": "poky/meta-telechips/meta-sv/sv-build.sh",
+                  "axon.yocto.apImageName": "telechips-sv-image"
+                },
+                "projectRootFinder": {
+                  "type": "shellFind",
+                  "findPattern": "poky",
+                  "findType": "d",
+                  "maxDepth": 2,
+                  "parentLevels": 1,
+                  "excludePattern": "*/.repo/*",
+                  "settingKey": "axon.yocto.projectRoot"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "label": "Release",
+          "children": [
+            {
+              "label": "Versions up to 0.4",
+              "leaf": {
+                "id": "yocto_project-rel-upto04",
+                "family": "yocto",
+                "createPreset": {
+                  "yoctoManifestGitUrl": "ssh://git.telechips.com/axon/manifest.git"
+                },
+                "yoctoBuildConstraints": {
+                  "ap": {
+                    "supportedMachines": ["tcn1000"],
+                    "supportedVersions": []
+                  },
+                  "mcu": {
+                    "supportedMachines": ["tcn1000-mcu"],
+                    "supportedVersions": []
+                  }
+                },
+                "settingsPatch": {
+                  "axon.projectType": "yocto_project-rel-upto04",
+                  "axon.yocto.apBuildScript": "poky/meta-telechips/meta-cgw/cgw-build.sh",
+                  "axon.yocto.apImageName": "telechips-cgw-image"
+                },
+                "projectRootFinder": {
+                  "type": "shellFind",
+                  "findPattern": "poky",
+                  "findType": "d",
+                  "maxDepth": 2,
+                  "parentLevels": 1,
+                  "excludePattern": "*/.repo/*",
+                  "settingKey": "axon.yocto.projectRoot"
+                }
+              }
+            },
+            {
+              "label": "Version 1.0 and later",
+              "leaf": {
+                "id": "yocto_project-rel-later10",
+                "family": "yocto",
+                "createPreset": {
+                  "yoctoManifestGitUrl": "ssh://rgit.telechips.com/axon/linux_yp4.0_cgw/1.0.0/manifest"
+                },
+                "yoctoBuildConstraints": {
+                  "ap": {
+                    "supportedMachines": ["tcn1000"],
+                    "supportedVersions": []
+                  },
+                  "mcu": {
+                    "supportedMachines": ["tcn1000-mcu"],
+                    "supportedVersions": []
+                  }
+                },
+                "settingsPatch": {
+                  "axon.projectType": "yocto_project-rel-later10",
+                  "axon.yocto.apBuildScript": "poky/meta-telechips/meta-cgw/cgw-build.sh",
+                  "axon.yocto.apImageName": "telechips-cgw-image"
+                },
+                "projectRootFinder": {
+                  "type": "shellFind",
+                  "findPattern": "poky",
+                  "findType": "d",
+                  "maxDepth": 2,
+                  "parentLevels": 1,
+                  "excludePattern": "*/.repo/*",
+                  "settingKey": "axon.yocto.projectRoot"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "Yocto Project (Autolinux)",
+      "children": [
+        {
+          "label": "Dev",
+          "leaf": {
+            "id": "yocto_project_autolinux-dev",
+            "family": "autolinux",
+            "settingsPatch": {
+              "axon.projectType": "yocto_project_autolinux-dev"
+            },
+            "projectRootFinder": {
+              "type": "workspaceChildDir",
+              "childDirName": "build-autolinux",
+              "settingKey": "axon.yocto.projectRoot"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+
+

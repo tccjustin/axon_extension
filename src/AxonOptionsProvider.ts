@@ -2,9 +2,10 @@ import * as vscode from 'vscode';
 import { getProjectFamilyFromProjectType } from './projects/common/project-type-registry';
 
 /**
- * Axon Project Creation TreeView Provider
+ * Axon Options TreeView Provider
+ * Build Option Extraction 등 옵션 관련 기능 제공
  */
-export class AxonProjectCreationProvider implements vscode.TreeDataProvider<AxonTreeItem> {
+export class AxonOptionsProvider implements vscode.TreeDataProvider<AxonTreeItem> {
 	private _onDidChangeTreeData: vscode.EventEmitter<AxonTreeItem | undefined | null | void> = new vscode.EventEmitter<AxonTreeItem | undefined | null | void>();
 	readonly onDidChangeTreeData: vscode.Event<AxonTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
@@ -30,48 +31,47 @@ export class AxonProjectCreationProvider implements vscode.TreeDataProvider<Axon
 
 	getChildren(element?: AxonTreeItem): Thenable<AxonTreeItem[]> {
 		if (!element) {
-			return Promise.resolve(this.getProjectCreationItems());
+			return Promise.resolve(this.getOptionsItems());
 		}
 		return Promise.resolve([]);
 	}
 
-	private getProjectCreationItems(): AxonTreeItem[] {
-		// 현재 프로젝트 타입 표시
-		let projectTypeDescription = 'Not set';
+	private getOptionsItems(): AxonTreeItem[] {
+		const items: AxonTreeItem[] = [];
+
+		// MCU 프로젝트인 경우 Build Option Extraction 추가
 		const family = getProjectFamilyFromProjectType(this.projectType);
 		if (family === 'mcu') {
-			projectTypeDescription = `Current: MCU (${this.projectType})`;
-		} else if (family === 'yocto') {
-			projectTypeDescription = `Current: Yocto (${this.projectType})`;
-		} else if (family === 'autolinux') {
-			projectTypeDescription = `Current: Yocto (autolinux) (${this.projectType})`;
+			items.push(
+				new AxonTreeItem(
+					'🔧 Build Option Extraction',
+					'tools',
+					vscode.TreeItemCollapsibleState.None,
+					'mcuBuildOptionExtraction',
+					{
+						command: 'axon.buildOptionExtraction',
+						title: 'Build Option Extraction'
+					},
+					'Extract build options for IntelliSense'
+				)
+			);
 		}
 
-		return [
-			// Create Project 버튼 (QuickPick)
-			new AxonTreeItem(
-				'➕ Create Project',
-				'add',
-				vscode.TreeItemCollapsibleState.None,
-				'createProjectButton',
-				{
-					command: 'axon.createProject',
-					title: 'Create Project'
-				}
-			),
-			// Set Project Type
-			new AxonTreeItem(
-				'⚙️ Set Project Type',
-				'settings-gear',
-				vscode.TreeItemCollapsibleState.None,
-				'configButton',
-				{
-					command: 'axon.setProjectType',
-					title: 'Set Project Type'
-				},
-				projectTypeDescription
-			)
-		];
+		// 프로젝트 타입이 설정되지 않은 경우
+		if (!this.projectType || this.projectType === '') {
+			items.push(
+				new AxonTreeItem(
+					'⚠️ 프로젝트 타입 미설정',
+					'warning',
+					vscode.TreeItemCollapsibleState.None,
+					'noProjectType',
+					undefined,
+					'먼저 Project Control에서 프로젝트 타입을 설정하세요'
+				)
+			);
+		}
+
+		return items;
 	}
 }
 

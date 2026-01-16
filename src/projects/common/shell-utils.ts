@@ -186,12 +186,14 @@ export async function executeShellTask(options: ShellTaskOptions): Promise<void>
  */
 export async function findProjectRootByShell(options: {
 	workspaceFolder: vscode.WorkspaceFolder;
-	findPattern: string;        // 찾을 파일/디렉토리 이름 (예: "poky", "tcn100x_defconfig")
+	findPattern: string;        // 찾을 파일/디렉토리 이름 (예: "poky", "tcn100x_defconfig") 또는 경로 패턴 (예: "*/tmp/deploy/fwdn")
 	maxDepth: number;           // 최대 탐색 깊이 (예: 3, 4)
 	findType: 'd' | 'f';        // 'd': directory, 'f': file
 	parentLevels: number;       // 상위 몇 단계로 올라갈지 (예: 1, 3)
 	excludePattern?: string;    // 제외할 패턴 (선택적, 예: "*/.repo/*")
 	searchPath?: string;        // 검색 시작 경로 (선택적, 기본값: "." = 워크스페이스 루트)
+	usePathPattern?: boolean;   // true면 -path 사용, false면 -name 사용 (기본값: false)
+	followSymlinks?: boolean;   // true면 심볼릭 링크 따라가기 (-L 옵션) (기본값: false)
 	taskName: string;           // 작업 이름 (예: "Find Yocto Project Root")
 	taskId: string;             // 작업 ID (예: "find-yocto-root")
 	resultFilePrefix: string;   // 결과 파일 접두사 (예: "axon_project_root")
@@ -204,6 +206,8 @@ export async function findProjectRootByShell(options: {
 		parentLevels,
 		excludePattern,
 		searchPath = '.',        // 기본값: 현재 디렉토리 (워크스페이스 루트)
+		usePathPattern = false,  // 기본값: -name 사용
+		followSymlinks = false,  // 기본값: 심볼릭 링크 따라가지 않음
 		taskName,
 		taskId,
 		resultFilePrefix
@@ -215,12 +219,18 @@ export async function findProjectRootByShell(options: {
 	
 	try {
 		// find 명령어 구성 (searchPath 사용)
-		let findCommand = `find ${searchPath} -maxdepth ${maxDepth} -name ${findPattern} -type ${findType}`;
+		// followSymlinks가 true면 -L 옵션 추가 (심볼릭 링크 따라가기)
+		const followOption = followSymlinks ? '-L' : '';
+		// usePathPattern이 true면 -path, false면 -name 사용
+		const matchOption = usePathPattern ? '-path' : '-name';
+		let findCommand = `find ${followOption} ${searchPath} -maxdepth ${maxDepth} ${matchOption} "${findPattern}" -type ${findType}`;
 		if (excludePattern) {
 			findCommand += ` -not -path "${excludePattern}"`;
 		}
 		// -print -quit: 첫 번째 결과를 찾으면 즉시 종료 (head -1보다 빠름)
 		findCommand += ` -print -quit`;
+		
+		axonLog(`🔍 실행할 find 명령: ${findCommand}`);
 		
 		// 상위 디렉토리로 올라가는 명령어 생성 (dirname 중첩)
 		// 예: parentLevels=1이면 dirname "$FOUND_PATH"
@@ -246,6 +256,8 @@ export async function findProjectRootByShell(options: {
 			`  cd "$WORKSPACE_ROOT" && ` +
 			`  echo "$PROJECT_ROOT" > "${resultFile}"; ` +
 			`fi`;
+		
+		axonLog(`📜 실행할 셸 스크립트:\n${shellScript}`);
 		
 		const task = new vscode.Task(
 			{ type: 'shell', task: taskId },

@@ -21,6 +21,8 @@ export interface AutolinuxProjectData {
 	// Build Tools 데이터
 	sourceMirror?: string;
 	buildtool?: string;
+	// Create/Set Project Type에서 내려주는 settingsPatch (full key 형태)
+	axonSettingsPatch?: Record<string, unknown>;
 }
 
 /**
@@ -31,7 +33,7 @@ export class AutolinuxProjectCreator {
 	 * Autolinux 프로젝트 생성 메인 함수
 	 */
 	static async createAutolinuxProject(data: AutolinuxProjectData): Promise<void> {
-		const { projectName, projectUri, autolinuxGitUrl, platform, sdkTemplate, manifest, machine, buildVersion, mainFeatures, subFeatures, sourceMirror, buildtool } = data;
+		const { projectName, projectUri, autolinuxGitUrl, platform, sdkTemplate, manifest, machine, buildVersion, mainFeatures, subFeatures, sourceMirror, buildtool, axonSettingsPatch } = data;
 
 		// projectUri는 이미 전체 경로 (projectPath + projectName)를 포함하고 있음
 		const projectFullUri = projectUri;
@@ -88,17 +90,24 @@ export class AutolinuxProjectCreator {
 			axonSuccess(`✅ Autolinux Configuration이 완료되었습니다.`);
 		}
 
-	// .vscode/settings.json 생성
+	// .vscode/settings.json 생성 (Autolinux는 apBuildScript/apImageName 불필요)
 	axonLog(`⚙️ Autolinux 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
-	await createVscodeSettingsUtil(projectFullUri, {
-		'axon.projectType': 'yocto_project_autolinux',
-		'axon.yocto.projectRoot': projectPath,
-		'axon.yocto.autolinux.sdk': sdkTemplate,
-		'axon.yocto.autolinux.machine': machine,
-		'axon.yocto.autolinux.buildVersion': buildVersion,
-		'axon.yocto.apBuildScript': 'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh',  // AP 빌드 스크립트 기본값
-		'axon.yocto.apImageName': 'telechips-cgw-image'  // AP 이미지 이름 기본값
-	});
+	const patch: Record<string, unknown> = {
+		...(axonSettingsPatch || {}),
+		'axon.yocto.projectRoot': projectPath
+	};
+
+	// Autolinux 전용 메타 정보는 가능하면 저장 (있을 때만)
+	if (sdkTemplate) patch['axon.yocto.autolinux.sdk'] = sdkTemplate;
+	if (machine) patch['axon.yocto.autolinux.machine'] = machine;
+	if (buildVersion) patch['axon.yocto.autolinux.buildVersion'] = buildVersion;
+
+	// 하위 호환: projectType이 없으면 기본값
+	if (!patch['axon.projectType']) {
+		patch['axon.projectType'] = 'yocto_project_autolinux-dev';
+	}
+
+	await createVscodeSettingsUtil(projectFullUri, patch);
 	axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 
 		// 생성된 프로젝트 폴더를 VS Code에서 열기

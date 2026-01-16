@@ -246,7 +246,7 @@ export class McuProjectBuilder {
 		axonLog(`🌐 환경 정보 - Remote-SSH: ${vscode.env.remoteName !== undefined}, Platform: ${process.platform}`);
 
 		try {
-			// 프로젝트 타입 확인 (자동으로 buildAxonFolderName도 설정됨)
+			// 프로젝트 타입 확인
 			const { ensureProjectType } = await import('../../utils');
 			const projectType = await ensureProjectType();
 			if (!projectType) {
@@ -431,39 +431,11 @@ echo ""
 	}
 
 	/**
-	 * MCU 클린 빌드 실행
+	 * MCU 클린 빌드 실행 (JSON 기반)
 	 */
 	static async cleanBuild(): Promise<void> {
-		await this.executeMcuTask({
-			taskName: 'MCU Clean',
-			taskId: 'mcuClean',
-			cancelMsg: 'Clean이 취소되었습니다.',
-			confirmButton: 'Clean 시작',
-			getCommand: (mcuBuildPath) => `
-#set -x
-cd "${mcuBuildPath}"
-make clean
-
-echo ""
-echo "=========================================="
-echo "✅ MCU Clean이 완료되었습니다!"
-echo "   빌드 파일들이 삭제되었습니다."
-echo "=========================================="
-echo ""
-`,
-			getConfigInfo: (mcuBuildPath) => [
-				'',
-				'==================================================',
-				'         MCU Clean Configuration',
-				'==================================================',
-				`  빌드 경로: ${mcuBuildPath}`,
-				`  명령: make clean`,
-				'==================================================',
-				''
-			].join('\n'),
-			getConfirmMsg: (mcuBuildPath) => 
-				`MCU Clean을 시작하시겠습니까?\n\n경로: ${mcuBuildPath}\n명령: make clean\n\n빌드된 파일들이 삭제됩니다.`
-		});
+		// mcu.commands.json의 'clean' 그룹 실행
+		await this.runMcuJsonGroup('clean');
 	}
 
 	/**
@@ -591,7 +563,7 @@ bear --version
 				return;
 			}
 
-			if (projectType !== 'mcu_project') {
+			if (!projectType.startsWith('mcu_project')) {
 				vscode.window.showErrorMessage('Build Option Extraction은 MCU 프로젝트에서만 사용할 수 있습니다.');
 				return;
 			}
@@ -621,8 +593,8 @@ bear --version
 				return;
 			}
 
-			// bear make 실행
-			const command = `
+		// bear make 실행 (clean 후 빌드)
+		const command = `
 #set -x
 cd "${projectRoot}"
 
@@ -630,7 +602,10 @@ echo "=========================================="
 echo "🔧 Build Option Extraction 시작"
 echo "=========================================="
 echo ""
-echo "Bear를 사용하여 compile_commands.json 생성 중..."
+echo "🧹 기존 빌드 파일 정리 중..."
+make clean
+echo ""
+echo "📦 Bear를 사용하여 compile_commands.json 생성 중..."
 echo ""
 
 bear make
@@ -905,4 +880,236 @@ print("✅ c_cpp_properties.json 업데이트가 완료되었습니다.")
 			throw error;
 		}
 	}
+
+	/**
+	 * commands.json 파일 1-depth 검색 (제외 폴더 스킵)
+	 */
+	private static async searchCommandsJsonInDirectory(
+		dir: vscode.Uri, 
+		fileName: string
+	): Promise<vscode.Uri | null> {
+		const excludeDirs = [
+			'node_modules', '.git', 'build', 'tmp', 'downloads', 'sstate-cache',
+			'.vscode', 'dist', 'out', '.next', 'target', 'bin', 'obj'
+		];
+
+		try {
+			const entries = await vscode.workspace.fs.readDirectory(dir);
+			
+			for (const [name, type] of entries) {
+				if (excludeDirs.includes(name)) {
+					continue;
+				}
+
+				if (type === vscode.FileType.Directory) {
+					if (name === 'vsebuildscript' || name === 'buildscript') {
+						const jsonPath = vscode.Uri.joinPath(dir, name, fileName);
+						try {
+							await vscode.workspace.fs.stat(jsonPath);
+							axonLog(`✅ ${fileName} 발견 (1-depth 검색): ${jsonPath.path}`);
+							return jsonPath;
+						} catch {
+							// 파일 없으면 계속
+						}
+					}
+				}
+			}
+		} catch (error) {
+			axonLog(`⚠️ 디렉토리 읽기 실패 (무시): ${dir.path}`);
+		}
+		
+		return null;
+	}
+
+	/**
+	 * commands.json 파일 찾기 (통합 유틸리티)
+	 */
+	private static async findCommandsJsonFile(fileName: string): Promise<vscode.Uri | null> {
+		const workspaceFolders = vscode.workspace.workspaceFolders;
+		
+		// 1단계: 정의된 workspace 폴더에서 검색
+		if (workspaceFolders && workspaceFolders.length > 0) {
+			for (const folder of workspaceFolders) {
+				// vsebuildscript/xxx.commands.json 확인
+				const vsebuildscriptPath = vscode.Uri.joinPath(folder.uri, 'vsebuildscript', fileName);
+				try {
+					await vscode.workspace.fs.stat(vsebuildscriptPath);
+					axonLog(`✅ ${fileName} 발견 (workspace folder/vsebuildscript): ${folder.name}`);
+					return vsebuildscriptPath;
+				} catch {
+					// 없으면 buildscript 확인
+				}
+
+				// buildscript/xxx.commands.json 확인
+				const buildscriptPath = vscode.Uri.joinPath(folder.uri, 'buildscript', fileName);
+				try {
+					await vscode.workspace.fs.stat(buildscriptPath);
+					axonLog(`✅ ${fileName} 발견 (workspace folder/buildscript): ${folder.name}`);
+					return buildscriptPath;
+				} catch {
+					continue;
+				}
+			}
+			
+			axonLog(`⚠️ Workspace 폴더에서 ${fileName}을 찾지 못함: ${workspaceFolders.map(f => f.name).join(', ')}`);
+		}
+
+		// 2단계: .code-workspace 파일 위치 기준 1-depth 검색
+		const workspaceFile = vscode.workspace.workspaceFile;
+		if (workspaceFile && workspaceFile.scheme === 'file') {
+			axonLog(`🔍 .code-workspace 파일 위치에서 ${fileName} 1-depth 검색 시작...`);
+			const workspaceDir = vscode.Uri.joinPath(workspaceFile, '..');
+			
+			const result = await this.searchCommandsJsonInDirectory(workspaceDir, fileName);
+			if (result) {
+				return result;
+			}
+			
+			axonLog(`⚠️ .code-workspace 위치에서도 ${fileName}을 찾지 못함: ${workspaceDir.path}`);
+		}
+
+		// 3단계: 못 찾았으면 null 반환
+		return null;
+	}
+
+	/**
+	 * buildscript/mcu.commands.json의 group을 실행
+	 * - Yocto와 동일한 패턴으로 JSON 기반 빌드 명령 실행
+	 */
+	static async runMcuJsonGroup(groupName: string): Promise<void> {
+		try {
+			axonLog(`🎯 [MCU JSON] runMcuJsonGroup 호출됨 - groupName: "${groupName}"`);
+
+			// MCU 프로젝트 루트 (Unix 경로)
+			const projectRoot = await this.getMcuProjectRoot();
+
+			// JSON 파일 로드 (통합 검색 로직 사용)
+			const jsonUri = await this.findCommandsJsonFile('mcu.commands.json');
+			
+			if (!jsonUri) {
+				throw new Error('mcu.commands.json을 찾을 수 없습니다. vsebuildscript/ 또는 buildscript/ 폴더에 파일을 생성하세요.');
+			}
+
+			const jsonBytes = await vscode.workspace.fs.readFile(jsonUri);
+			const spec = JSON.parse(Buffer.from(jsonBytes).toString('utf8'));
+			const loadedFrom = jsonUri;
+
+			const groups: Record<string, string[]> | undefined = spec?.groups;
+			if (!groups || typeof groups !== 'object') {
+				throw new Error('mcu.commands.json에 groups가 없습니다.');
+			}
+
+			const commands = groups[groupName];
+			if (!commands || !Array.isArray(commands)) {
+				throw new Error(`mcu.commands.json에 group이 없습니다: ${groupName}`);
+			}
+
+			// env 구성 (MCU는 간단하므로 기본 치환만)
+			const env: Record<string, string> = {
+				projectRoot: projectRoot
+			};
+
+			// commands 치환
+			const resolvedCommands: string[] = commands.map(line => {
+				if (typeof line !== 'string') return '';
+				return this.interpolate(line, env);
+			}).filter(Boolean);
+
+			if (resolvedCommands.length === 0) {
+				throw new Error(`실행할 commands가 비어있습니다: ${groupName}`);
+			}
+
+			const script = resolvedCommands.join('\n');
+
+			axonLog(`🚀 [MCU JSON] 실행: ${groupName} (from ${loadedFrom.toString()})`);
+			axonLog(`📋 [MCU JSON] 원본 commands (${commands.length}개):`);
+			commands.forEach((cmd, i) => axonLog(`  [${i}] ${cmd}`));
+			axonLog(`📋 [MCU JSON] 치환된 commands (${resolvedCommands.length}개):`);
+			resolvedCommands.forEach((cmd, i) => axonLog(`  [${i}] ${cmd}`));
+			
+			// 사용자 확인 팝업
+			const previewCommands = resolvedCommands.slice(0, 3).map(cmd => {
+				return cmd.length > 80 ? cmd.substring(0, 77) + '...' : cmd;
+			});
+			const moreCount = resolvedCommands.length > 3 ? `\n... 외 ${resolvedCommands.length - 3}개 명령` : '';
+			
+			const confirmMsg = 
+				`${groupName} 작업을 시작하시겠습니까?\n\n` +
+				`실행할 명령: ${resolvedCommands.length}개\n` +
+				`━━━━━━━━━━━━━━━━━━━━━━\n` +
+				`${previewCommands.join('\n')}${moreCount}\n` +
+				`━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+				`⚠️ 이 작업은 시간이 걸릴 수 있습니다.`;
+			
+			const confirm = await vscode.window.showWarningMessage(
+				confirmMsg,
+				{ modal: true },
+				'시작',
+				'취소'
+			);
+			
+			if (confirm !== '시작') {
+				axonLog('❌ 사용자 취소: 작업이 취소되었습니다.');
+				vscode.window.showInformationMessage('작업이 취소되었습니다.');
+				return;
+			}
+			
+			// 명령 실행 시작 메시지
+			const taskDisplayName = `MCU (JSON): ${groupName}`;
+			vscode.window.showInformationMessage(`${taskDisplayName}가 시작되었습니다. 터미널을 확인하세요.`);
+			
+			await executeShellTask({
+				command: script,
+				cwd: projectRoot,
+				taskName: taskDisplayName,
+				taskId: `mcuJson:${groupName}`,
+				showTerminal: true,
+				useScriptFile: true
+			});
+			
+			axonLog('✅ executeShellTask 완료됨!');
+
+			// Build View에 포커스 복원
+			setTimeout(async () => {
+				await vscode.commands.executeCommand('axonBuildView.focus');
+				axonLog(`🔄 Build View에 포커스를 복원했습니다`);
+			}, 100);
+			
+			// 완료 메시지 출력
+			axonLog('📢 빌드 완료 메시지 출력 시작...');
+			const successMsg = `✅ ${taskDisplayName}가 완료되었습니다!`;
+			axonSuccess(successMsg);
+			vscode.window.showInformationMessage(`${taskDisplayName}가 완료되었습니다!`);
+			
+			axonLog('🔔 터미널 닫기 팝업 표시 시작...');
+			await this.askToCloseTerminal(taskDisplayName);
+			axonLog('✅ 터미널 닫기 팝업 완료');
+			
+		} catch (error) {
+			const errorMsg = `MCU JSON group 실행 중 오류: ${error}`;
+			axonError(errorMsg);
+			vscode.window.showErrorMessage(errorMsg);
+			throw error;
+		}
+	}
+
+	private static interpolate(
+		input: string,
+		env: Record<string, string>
+	): string {
+		return input.replace(/\$\{([^}]+)\}/g, (_m, exprRaw) => {
+			const expr = String(exprRaw || '').trim();
+			if (expr.startsWith('env:')) {
+				const key = expr.slice('env:'.length).trim();
+				return env[key] ?? '';
+			}
+			if (expr.startsWith('config:')) {
+				const key = expr.slice('config:'.length).trim();
+				const v = vscode.workspace.getConfiguration().get<any>(key);
+				return v === undefined || v === null ? '' : String(v);
+			}
+			return '';
+		});
+	}
 }
+

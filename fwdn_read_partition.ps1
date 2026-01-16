@@ -3,6 +3,9 @@ param(
     [string]$BootFirmwarePath,
 
     [Parameter(Mandatory = $true)]
+    [string]$ConfigFilePath,
+
+    [Parameter(Mandatory = $true)]
     [string]$FwdnExe,
 
     [Parameter(Mandatory = $true)]
@@ -27,6 +30,7 @@ function Write-Header {
 
 Write-Header "FWDN Read Partition (Dump) (ps1)"
 Write-Host "Boot Firmware Path: $BootFirmwarePath"
+Write-Host "Config File Path:   $ConfigFilePath"
 Write-Host "FWDN Executable:    $FwdnExe"
 Write-Host "Output File:        $OutputFile"
 Write-Host "Storage Type:       $StorageType"
@@ -38,7 +42,8 @@ if (-not (Test-Path -LiteralPath $FwdnExe)) {
     throw "FWDN executable not found: $FwdnExe"
 }
 
-$fwdnJson = Join-Path $BootFirmwarePath 'tcn100x_fwdn.json'
+# Use Config File Path for fwdn.json
+$fwdnJson = Join-Path $ConfigFilePath 'tcn100x_fwdn.json'
 if (-not (Test-Path -LiteralPath $fwdnJson)) {
     throw "FWDN json not found: $fwdnJson"
 }

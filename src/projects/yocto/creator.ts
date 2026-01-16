@@ -15,6 +15,8 @@ export interface YoctoProjectData {
 	selectedManifest?: string;
 	sourceMirrorPath?: string;
 	buildtoolPath?: string;
+	// Create/Set Project Type에서 내려주는 settingsPatch (full key 형태: axon.projectType 등)
+	axonSettingsPatch?: Record<string, unknown>;
 }
 
 /**
@@ -25,7 +27,7 @@ export class YoctoProjectCreator {
 	 * Yocto 프로젝트 생성 메인 함수
 	 */
 	static async createYoctoProject(data: YoctoProjectData): Promise<void> {
-		const { projectName, projectUri, gitUrl, branchName, manifestGitUrl, selectedManifest, sourceMirrorPath, buildtoolPath } = data;
+		const { projectName, projectUri, gitUrl, branchName, manifestGitUrl, selectedManifest, sourceMirrorPath, buildtoolPath, axonSettingsPatch } = data;
 
 		const projectFullUri = vscode.Uri.joinPath(projectUri, projectName);
 
@@ -131,15 +133,26 @@ export class YoctoProjectCreator {
 			}
 		}
 
-	// .vscode/settings.json 생성
+	// .vscode/settings.json 생성 (JSON leaf 기반 patch 우선)
 	axonLog(`⚙️ Yocto 프로젝트 설정 파일을 생성합니다: .vscode/settings.json`);
-	await createVscodeSettingsUtil(projectFullUri, {
-		'axon.projectType': 'yocto_project',
-		'axon.buildAxonFolderName': 'build-axon',
-		'axon.yocto.projectRoot': projectPath,  // Yocto 프로젝트 루트 경로 저장
-		'axon.yocto.apBuildScript': 'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh',  // AP 빌드 스크립트 기본값
-		'axon.yocto.apImageName': 'telechips-cgw-image'  // AP 이미지 이름 기본값
-	});
+	const patch: Record<string, unknown> = {
+		...(axonSettingsPatch || {}),
+		// Create 단계에서는 projectRoot를 실제 생성 경로로 확정해서 저장
+		'axon.yocto.projectRoot': projectPath
+	};
+
+	// 하위 호환: projectType/apBuildScript/apImageName이 없으면 기본값 주입
+	if (!patch['axon.projectType']) {
+		patch['axon.projectType'] = 'yocto_project-dev-dev';
+	}
+	if (!patch['axon.yocto.apBuildScript']) {
+		patch['axon.yocto.apBuildScript'] = 'poky/meta-telechips/meta-dev/meta-cgw-dev/cgw-build.sh';
+	}
+	if (!patch['axon.yocto.apImageName']) {
+		patch['axon.yocto.apImageName'] = 'telechips-cgw-image';
+	}
+
+	await createVscodeSettingsUtil(projectFullUri, patch);
 	axonSuccess(`✅ 프로젝트 설정 파일이 생성되었습니다.`);
 
 		// 생성된 프로젝트 폴더를 VS Code에서 열기

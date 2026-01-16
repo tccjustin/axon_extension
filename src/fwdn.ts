@@ -22,7 +22,8 @@ function getLocalPowerShellExe(): string {
 // FWDN 설정 인터페이스
 export interface FwdnConfig {
 	fwdnExePath: string;
-	bootFirmwarePath: string;
+	bootFirmwarePath: string;      // FWDN 실행 시 펌웨어 파일 경로
+	configFilePath: string;         // 설정 파일 저장 경로 (prebuilt 상위)
 }
 
 // 파티션 정보 인터페이스
@@ -107,12 +108,14 @@ async function updateSettingsJson(
 }
 
 /**
- * Boot Firmware 경로 가져오기
+ * Boot Firmware 경로 가져오기 (개선된 버전)
  * settings.json에 저장된 경로가 있으면 사용하고, 없으면 찾아서 저장
  * 
- * @returns Unix 경로 형식 문자열 (/home/..., /mnt/..., 등)
+ * @returns { bootFirmwarePath: string, configFilePath: string }
+ *   - bootFirmwarePath: FWDN 실행 시 펌웨어 파일 경로
+ *   - configFilePath: 설정 파일 저장 경로 (prebuilt 상위)
  */
-async function getBootFirmwarePath(): Promise<string> {
+async function getBootFirmwarePath(): Promise<{ bootFirmwarePath: string, configFilePath: string }> {
 	const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
 	if (!workspaceFolder) {
 		throw new Error('워크스페이스 폴더를 찾을 수 없습니다.');
@@ -128,33 +131,47 @@ async function getBootFirmwarePath(): Promise<string> {
 	const settingsFile = vscode.Uri.joinPath(vscodeFolder, 'settings.json');
 	
 	let savedBootFirmwarePath: string | undefined;
+	let savedConfigFilePath: string | undefined;
 	
 	try {
 		const settingsContent = await vscode.workspace.fs.readFile(settingsFile);
 		const settingsText = Buffer.from(settingsContent).toString('utf8');
 		const settings = JSON.parse(settingsText);
 		savedBootFirmwarePath = settings['axon.bootFirmware.path'];
+		savedConfigFilePath = settings['axon.bootFirmware.configPath'];
 		
-		if (savedBootFirmwarePath && savedBootFirmwarePath.trim() !== '') {
-			axonLog(`🔍 저장된 Boot Firmware 경로 확인 중: ${savedBootFirmwarePath}`);
+		if (savedBootFirmwarePath && savedConfigFilePath && 
+		    savedBootFirmwarePath.trim() !== '' && savedConfigFilePath.trim() !== '') {
+			axonLog(`🔍 저장된 경로 확인 중...`);
+			axonLog(`  Boot Firmware: ${savedBootFirmwarePath}`);
+			axonLog(`  Config File: ${savedConfigFilePath}`);
 			
-			// 저장된 경로 유효성 검증
+			// 저장된 경로 유효성 검증 (둘 다 존재하는지 확인)
 			try {
-				const savedUri = vscode.Uri.from({
+				const bootUri = vscode.Uri.from({
 					scheme: workspaceFolder.uri.scheme,
 					authority: workspaceFolder.uri.authority,
 					path: savedBootFirmwarePath
 				});
+				const configUri = vscode.Uri.from({
+					scheme: workspaceFolder.uri.scheme,
+					authority: workspaceFolder.uri.authority,
+					path: savedConfigFilePath
+				});
 				
-				const prebuiltUri = vscode.Uri.joinPath(savedUri, 'prebuilt');
-				const stat = await vscode.workspace.fs.stat(prebuiltUri);
+				const bootStat = await vscode.workspace.fs.stat(bootUri);
+				const configStat = await vscode.workspace.fs.stat(configUri);
 				
-				if (stat.type === vscode.FileType.Directory) {
-					axonLog(`✅ 저장된 Boot Firmware 경로 사용: ${savedBootFirmwarePath}`);
-					return savedBootFirmwarePath;
+				if (bootStat.type === vscode.FileType.Directory && 
+				    configStat.type === vscode.FileType.Directory) {
+					axonLog(`✅ 저장된 경로 사용`);
+					return {
+						bootFirmwarePath: savedBootFirmwarePath,
+						configFilePath: savedConfigFilePath
+					};
 				}
 			} catch {
-				axonLog(`⚠️ 저장된 경로에 prebuilt 디렉토리가 없습니다. 재탐색을 시작합니다.`);
+				axonLog(`⚠️ 저장된 경로가 유효하지 않습니다. 재탐색을 시작합니다.`);
 			}
 		}
 	} catch (error) {
@@ -162,46 +179,209 @@ async function getBootFirmwarePath(): Promise<string> {
 		axonLog(`📝 settings.json 파일을 읽을 수 없습니다. 새로 탐색합니다.`);
 	}
 	
-	// 2. root가 없으면 리눅스 shell 스크립트로 찾기
-	axonLog('🔍 prebuilt 디렉토리를 찾아 Boot Firmware 경로 탐지 중...');
-	const bootFirmwareRoot = await findProjectRootByShell({
+	// ==================================================================================
+	// Step 1: 워크스페이스에서 tcn100x_boot.json 파일 검색 (boot-firmware 루트 탐색)
+	// ==================================================================================
+	axonLog('🔍 [Step 1] tcn100x_boot.json 파일 검색 중...');
+	const prebuiltRoot = await findProjectRootByShell({
 		workspaceFolder,
-		findPattern: 'prebuilt',
+		findPattern: 'tcn100x_boot.json',
 		maxDepth: 4,
-		findType: 'd',
+		findType: 'f',
+		// 상위 폴더가 아니라, 파일이 존재하는 "현재 폴더"가 필요하므로 dirname 1회 적용
 		parentLevels: 1,
-		taskName: 'Find Boot Firmware Folder',
-		taskId: 'find-boot-firmware-folder',
-		resultFilePrefix: 'axon_boot_firmware_folder'
+		followSymlinks: true,  // 심볼릭 링크 따라가기
+		taskName: 'Find Boot Firmware Folder (tcn100x_boot.json)',
+		taskId: 'find-boot-firmware-boot-json',
+		resultFilePrefix: 'axon_boot_firmware_boot_json'
 	});
 	
-	if (bootFirmwareRoot) {
-		axonLog(`✅ Boot Firmware 경로 발견: ${bootFirmwareRoot}`);
+	if (prebuiltRoot) {
+		axonLog(`✅ [Step 1] prebuilt 발견 → Boot Firmware & Config File 경로 동일`);
+		axonLog(`  경로: ${prebuiltRoot}`);
 		
-		// 3. settings.json에 저장
+		// settings.json에 저장
 		try {
-			axonLog(`💾 settings.json에 Boot Firmware 경로 저장 시도: ${bootFirmwareRoot}`);
-			await updateSettingsJson(workspaceFolder, { 'axon.bootFirmware.path': bootFirmwareRoot });
-			axonLog(`✅ Boot Firmware 경로를 settings.json에 저장했습니다.`);
+			await updateSettingsJson(workspaceFolder, { 
+				'axon.bootFirmware.path': prebuiltRoot,
+				'axon.bootFirmware.configPath': prebuiltRoot
+			});
+			axonLog(`✅ settings.json에 경로 저장 완료`);
 		} catch (error) {
-			axonLog(`⚠️ settings.json 저장 실패: ${error}`);
-			if (error instanceof Error) {
-				axonLog(`   오류 상세: ${error.message}`);
-				axonLog(`   스택: ${error.stack}`);
-			}
-			// 저장 실패해도 경로는 반환
+			axonLog(`⚠️ settings.json 저장 실패 (무시): ${error}`);
 		}
 		
-		return bootFirmwareRoot;
+		return {
+			bootFirmwarePath: prebuiltRoot,
+			configFilePath: prebuiltRoot
+		};
 	}
 	
-	// 찾지 못한 경우
-	throw new Error(
-		`Boot Firmware 경로를 찾을 수 없습니다.\n\n` +
-		`확인 사항:\n` +
-		`- prebuilt 폴더가 워크스페이스 또는 그 하위 4단계까지 있는지 확인하세요.\n` +
-		`- 워크스페이스: ${workspacePath}`
+	// ==================================================================================
+	// Step 2: tmp/deploy/fwdn 검색 (Yocto 빌드 경로)
+	// ==================================================================================
+	axonLog(`⚠️ [Step 1] prebuilt 폴더를 찾을 수 없습니다.`);
+	axonLog(`🔍 [Step 2] tmp/deploy/fwdn 디렉토리 검색 중...`);
+	
+	// Shell 스크립트로 tmp/deploy/fwdn 찾기 (grep 사용)
+	const fwdnResultFile = `.axon_fwdn_folder_${Date.now()}.txt`;
+	const fwdnResultFileUri = vscode.Uri.joinPath(workspaceFolder.uri, fwdnResultFile);
+	
+	// find로 fwdn 폴더를 모두 찾고 grep으로 필터링
+	// -L 옵션: 심볼릭 링크 따라가기
+	const fwdnShellScript = 
+		`WORKSPACE_ROOT="$(pwd)"; ` +
+		`FOUND_PATH=$(find -L . -maxdepth 6 -type d -name fwdn 2>/dev/null | grep "/tmp/deploy/fwdn$" | head -1); ` +
+		`if [ -n "$FOUND_PATH" ]; then ` +
+		`  cd "$FOUND_PATH" && ` +
+		`  FWDN_ROOT="$(pwd)"; ` +
+		`  cd "$WORKSPACE_ROOT" && ` +
+		`  echo "$FWDN_ROOT" > "${fwdnResultFile}"; ` +
+		`fi`;
+	
+	const fwdnTask = new vscode.Task(
+		{ type: 'shell', task: 'find-fwdn-folder' },
+		vscode.TaskScope.Workspace,
+		'Find FWDN Folder (tmp/deploy/fwdn)',
+		'Axon',
+		new vscode.ShellExecution(fwdnShellScript, { cwd: workspacePath })
 	);
+	
+	fwdnTask.presentationOptions = {
+		reveal: vscode.TaskRevealKind.Silent,
+		focus: false,
+		panel: vscode.TaskPanelKind.Shared,
+		showReuseMessage: false,
+		clear: false,
+		close: true
+	};
+	
+	// Task 실행
+	await new Promise<void>((resolve, reject) => {
+		const disposable = vscode.tasks.onDidEndTaskProcess(e => {
+			if (e.execution.task.name === 'Find FWDN Folder (tmp/deploy/fwdn)') {
+				disposable.dispose();
+				resolve();
+			}
+		});
+		vscode.tasks.executeTask(fwdnTask).then(undefined, reject);
+	});
+	
+	// 결과 파일 읽기
+	let fwdnPath: string | null = null;
+	try {
+		const resultContent = await vscode.workspace.fs.readFile(fwdnResultFileUri);
+		fwdnPath = Buffer.from(resultContent).toString('utf8').trim();
+		axonLog(`📄 tmp/deploy/fwdn 경로 읽기 성공: ${fwdnPath}`);
+		await vscode.workspace.fs.delete(fwdnResultFileUri);
+		axonLog(`🗑️ 임시 파일 삭제 완료: ${fwdnResultFile}`);
+	} catch (error) {
+		axonLog(`⚠️ 임시 파일 읽기 실패: ${error}`);
+	}
+	
+	if (!fwdnPath) {
+		// Step 2에서도 못 찾으면 에러
+		throw new Error(
+			`Boot Firmware 경로를 찾을 수 없습니다.\n\n` +
+			`확인 사항:\n` +
+			`1. prebuilt 폴더가 워크스페이스 또는 그 하위 4단계까지 있는지 확인\n` +
+			`2. tmp/deploy/fwdn 폴더가 있는지 확인 (Yocto 빌드 후 생성)\n` +
+			`- 워크스페이스: ${workspacePath}`
+		);
+	}
+	
+	axonLog(`✅ [Step 2] tmp/deploy/fwdn 발견`);
+	axonLog(`  Boot Firmware Path: ${fwdnPath}`);
+	
+	// ==================================================================================
+	// Step 2-1: Boot Firmware Path 하위에서 prebuilt 검색
+	// ==================================================================================
+	axonLog(`🔍 [Step 2-1] Boot Firmware Path 하위에서 prebuilt 검색 중...`);
+	axonLog(`  검색 경로: ${fwdnPath}`);
+	
+	// Shell 스크립트로 prebuilt 찾기 (절대 경로 사용)
+	const prebuiltResultFile = `.axon_config_file_prebuilt_${Date.now()}.txt`;
+	const prebuiltResultFileUri = vscode.Uri.joinPath(workspaceFolder.uri, prebuiltResultFile);
+	
+	// fwdnPath 하위에서 prebuilt를 찾고, 그 상위 폴더 경로를 저장
+	// -L 옵션: 심볼릭 링크를 따라가서 검색 (boot-firmware가 링크일 수 있음)
+	const prebuiltShellScript = 
+		`cd "${workspacePath}" && ` +
+		`FOUND_PATH=$(find -L "${fwdnPath}" -maxdepth 4 -type d -name prebuilt 2>/dev/null | head -1); ` +
+		`if [ -n "$FOUND_PATH" ]; then ` +
+		`  CONFIG_ROOT=$(dirname "$FOUND_PATH"); ` +
+		`  echo "$CONFIG_ROOT" > "${prebuiltResultFile}"; ` +
+		`fi`;
+	
+	const prebuiltTask = new vscode.Task(
+		{ type: 'shell', task: 'find-config-file-prebuilt' },
+		vscode.TaskScope.Workspace,
+		'Find Config File Path (prebuilt in fwdn)',
+		'Axon',
+		new vscode.ShellExecution(prebuiltShellScript, { cwd: workspacePath })
+	);
+	
+	prebuiltTask.presentationOptions = {
+		reveal: vscode.TaskRevealKind.Silent,
+		focus: false,
+		panel: vscode.TaskPanelKind.Shared,
+		showReuseMessage: false,
+		clear: false,
+		close: true
+	};
+	
+	// Task 실행
+	await new Promise<void>((resolve, reject) => {
+		const disposable = vscode.tasks.onDidEndTaskProcess(e => {
+			if (e.execution.task.name === 'Find Config File Path (prebuilt in fwdn)') {
+				disposable.dispose();
+				resolve();
+			}
+		});
+		vscode.tasks.executeTask(prebuiltTask).then(undefined, reject);
+	});
+	
+	// 결과 파일 읽기
+	let configFileRoot: string | null = null;
+	try {
+		const resultContent = await vscode.workspace.fs.readFile(prebuiltResultFileUri);
+		configFileRoot = Buffer.from(resultContent).toString('utf8').trim();
+		axonLog(`📄 Config File 경로 읽기 성공: ${configFileRoot}`);
+		await vscode.workspace.fs.delete(prebuiltResultFileUri);
+		axonLog(`🗑️ 임시 파일 삭제 완료: ${prebuiltResultFile}`);
+	} catch (error) {
+		axonLog(`⚠️ 임시 파일 읽기 실패: ${error}`);
+	}
+	
+	if (!configFileRoot) {
+		// Boot Firmware Path 하위에서 prebuilt를 찾지 못하면 에러
+		throw new Error(
+			`Config File 경로를 찾을 수 없습니다.\n\n` +
+			`Boot Firmware Path는 발견했으나 prebuilt 폴더를 찾을 수 없습니다.\n` +
+			`Boot Firmware Path: ${fwdnPath}\n` +
+			`확인 사항:\n` +
+			`- ${fwdnPath} 하위에 prebuilt 폴더가 있는지 확인하세요.`
+		);
+	}
+	
+	axonLog(`✅ [Step 2-1] prebuilt 발견`);
+	axonLog(`  Config File Path: ${configFileRoot}`);
+	
+	// settings.json에 저장
+	try {
+		await updateSettingsJson(workspaceFolder, { 
+			'axon.bootFirmware.path': fwdnPath,
+			'axon.bootFirmware.configPath': configFileRoot
+		});
+		axonLog(`✅ settings.json에 경로 저장 완료`);
+	} catch (error) {
+		axonLog(`⚠️ settings.json 저장 실패 (무시): ${error}`);
+	}
+	
+	return {
+		bootFirmwarePath: fwdnPath,
+		configFilePath: configFileRoot
+	};
 }
 
 // FWDN 설정 가져오기
@@ -209,7 +389,7 @@ export async function getFwdnConfig(extensionPath: string): Promise<FwdnConfig> 
 	const config = vscode.workspace.getConfiguration('axon');
 
 	// Boot Firmware 경로 가져오기 (settings.json 확인 후 없으면 찾기)
-	const bootFirmwareRoot = await getBootFirmwarePath();
+	const { bootFirmwarePath: bootFirmwareRoot, configFilePath: configFileRoot } = await getBootFirmwarePath();
 
 	// FWDN은 로컬 Windows에서 실행되므로 Windows 경로 필요
 	// Unix 경로를 Samba 경로 또는 WSL 경로로 변환
@@ -218,10 +398,13 @@ export async function getFwdnConfig(extensionPath: string): Promise<FwdnConfig> 
 	
 	axonLog(`🌐 [FWDN] 원격 환경 감지: ${remoteName} → 타입: ${remoteType}`);
 	
-	// 환경에 맞는 경로 변환
+	// 환경에 맞는 경로 변환 (두 경로 모두)
 	const bootFirmwarePath = convertRemotePathToSamba(bootFirmwareRoot, remoteType);
-	axonLog(`🔄 [FWDN] 원격 경로 변환 완료: ${bootFirmwareRoot} → ${bootFirmwarePath}`);
-	axonLog(`✅ Boot Firmware 경로 (FWDN용): ${bootFirmwarePath}`);
+	const configFilePath = convertRemotePathToSamba(configFileRoot, remoteType);
+	
+	axonLog(`🔄 [FWDN] 원격 경로 변환 완료:`);
+	axonLog(`  Boot Firmware: ${bootFirmwareRoot} → ${bootFirmwarePath}`);
+	axonLog(`  Config File: ${configFileRoot} → ${configFilePath}`);
 
 	// FWDN 실행 파일 경로 결정
 	// 1. 사용자 설정 경로 확인
@@ -242,7 +425,8 @@ export async function getFwdnConfig(extensionPath: string): Promise<FwdnConfig> 
 
 	return {
 		fwdnExePath: fwdnExePath,
-		bootFirmwarePath: bootFirmwarePath
+		bootFirmwarePath: bootFirmwarePath,
+		configFilePath: configFilePath
 	};
 }
 
@@ -253,6 +437,9 @@ export function validateConfig(config: FwdnConfig): string | null {
 	}
 	if (!config.bootFirmwarePath) {
 		return 'Boot Firmware 경로가 설정되지 않았습니다. 설정을 먼저 구성해주세요.';
+	}
+	if (!config.configFilePath) {
+		return 'Config File 경로가 설정되지 않았습니다. 설정을 먼저 구성해주세요.';
 	}
 	return null;
 }
@@ -427,6 +614,7 @@ export async function executeFwdnCommand(extensionPath: string): Promise<void> {
 			`& "${psExe}" -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}" ` +
 			`-Mode "all" ` +
 			`-BootFirmwarePath "${config.bootFirmwarePath}" ` +
+			`-ConfigFilePath "${config.configFilePath}" ` +
 			`-FwdnExe "${config.fwdnExePath}"`;
 		axonLog(`📋 실행 명령(PowerShell-ps1): ${psCommand}`);
 
@@ -543,6 +731,7 @@ export async function executeFwdnLowFormat(extensionPath: string): Promise<void>
 			`& "${psExe}" -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}" ` +
 			`-Mode "low-format" ` +
 			`-BootFirmwarePath "${config.bootFirmwarePath}" ` +
+			`-ConfigFilePath "${config.configFilePath}" ` +
 			`-FwdnExe "${config.fwdnExePath}"`;
 		axonLog(`📋 실행 명령(PowerShell-ps1): ${psCommand}`);
 
@@ -708,6 +897,7 @@ async function executeFwdnDownloadPartition(
 		const psCommand =
 			`& "${psExe}" -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}" ` +
 			`-BootFirmwarePath "${config.bootFirmwarePath}" ` +
+			`-ConfigFilePath "${config.configFilePath}" ` +
 			`-FwdnExe "${config.fwdnExePath}" ` +
 			`-FilePath "${windowsFilePath}" ` +
 			`-PartitionName "${partition.name}" ` +
@@ -1160,6 +1350,7 @@ async function executeFwdnReadDump(
 		const psCommand =
 			`& "${psExe}" -NoProfile -ExecutionPolicy Bypass -File "${ps1Path}" ` +
 			`-BootFirmwarePath "${config.bootFirmwarePath}" ` +
+			`-ConfigFilePath "${config.configFilePath}" ` +
 			`-FwdnExe "${config.fwdnExePath}" ` +
 			`-OutputFile "${outputPath}" ` +
 			`-StorageType "${storageType}" ` +

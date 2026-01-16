@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "name": "Yocto Build Commands",
+  "description": "Build > Yocto 메뉴를 JSON으로 정의 (env/source + 실행 커맨드 그룹). machine/version은 projectRoot의 config.json에서 로드된다는 전제를 둠.",
+  "env": {
+    "projectRoot": "${config:axon.yocto.projectRoot}",
+    "setup": "buildtools/environment-setup-x86_64-pokysdk-linux",
+    "apBuildScript": "${config:axon.yocto.apBuildScript}",
+    "apMachine": "${configJson:machine}",
+    "apVersion": "${configJson:version}",
+    "mcuMachine": "${configJson:mcu_machine}",
+    "mcuVersion": "${configJson:mcu_version}",
+    "mcuBuildScript": "poky/meta-telechips/meta-dev/meta-mcu-dev/mcu-build.sh"
+  },
+  "groups": {
+    "build AP": [
+      "cd \"${env:projectRoot}\"",
+      "source \"${env:projectRoot}/${env:setup}\"",
+      "source \"${env:projectRoot}/${env:apBuildScript}\" ${env:apMachine} ${env:apVersion}",
+      "bitbake ${config:axon.yocto.apImageName}",
+      "bitbake -f -c make_fai ${config:axon.yocto.apImageName}"
+    ],
+    "build MCU": [
+      "cd \"${env:projectRoot}\"",
+      "source \"${env:projectRoot}/${env:setup}\"",
+      "source \"${env:projectRoot}/${env:mcuBuildScript}\" ${env:mcuMachine} ${env:mcuVersion}",
+      "bitbake m7-0 m7-1 m7-2 m7-np -f -c compile"
+    ],
+    "build Kernel": [
+      "cd \"${env:projectRoot}\"",
+      "source \"${env:projectRoot}/${env:setup}\"",
+      "source \"${env:projectRoot}/${env:apBuildScript}\" ${env:apMachine} ${env:apVersion}",
+      "bitbake linux-telechips -f -c compile",
+      "bitbake linux-telechips -c deploy"
+    ],
+    "clean AP (bitbake -c clean)": [
+      "cd \"${env:projectRoot}\"",
+      "source \"${env:projectRoot}/${env:setup}\"",
+      "source \"${env:projectRoot}/${env:apBuildScript}\" ${env:apMachine} ${env:apVersion}",
+      "echo \"Cleaning AP image: ${config:axon.yocto.apImageName}\"",
+      "bitbake -c clean ${config:axon.yocto.apImageName}"
+    ],
+    "clean MCU(bitbake -c clean)": [
+      "cd \"${env:projectRoot}\"",
+      "source \"${env:projectRoot}/${env:setup}\"",
+      "source \"${env:projectRoot}/${env:mcuBuildScript}\" ${env:mcuMachine} ${env:mcuVersion}",
+      "echo \"Cleaning MCU recipes: m7-0 m7-1 m7-2 m7-np\"",
+      "bitbake -c clean m7-0 m7-1 m7-2 m7-np"
+    ],
+    "clean All(bitbake -c clean)": [
+      "cd \"${env:projectRoot}\"",
+      "source \"${env:projectRoot}/${env:setup}\"",
+      "source \"${env:projectRoot}/${env:apBuildScript}\" ${env:apMachine} ${env:apVersion}",
+      "echo \"Cleaning AP image: ${config:axon.yocto.apImageName}\"",
+      "bitbake -c clean ${config:axon.yocto.apImageName}",
+      "source \"${env:projectRoot}/${env:mcuBuildScript}\" ${env:mcuMachine} ${env:mcuVersion}",
+      "echo \"Cleaning MCU recipes: m7-0 m7-1 m7-2 m7-np\"",
+      "bitbake -c clean m7-0 m7-1 m7-2 m7-np"
+    ]
+  }
+}
+

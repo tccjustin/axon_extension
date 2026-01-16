@@ -1,11 +1,12 @@
 const vscode = acquireVsCodeApi();
 let selectedPath = '';
 let projectName = '';
+let folderCreated = false;
 
 // DOM이 준비되면 엘리먼트 참조 설정
 let projectPathInput, createBtn;
 let autolinuxGitUrlInput, loadBtn;
-let browseBtn;
+let createFolderBtn;
 let isLoaded = false;
 
 // Configuration 관련 변수
@@ -42,7 +43,7 @@ function initializeUI() {
     loadBtn = document.getElementById('loadBtn');
     
     // 추가 요소
-    browseBtn = document.getElementById('browseBtn');
+    createFolderBtn = document.getElementById('createFolderBtn');
     
     // Build Tools 요소
     buildToolsSection = document.getElementById('buildToolsSection');
@@ -72,6 +73,7 @@ function validate() {
     
     const projectPathValid = projectPathInput.value.trim() !== '';
     const autolinuxGitUrlValid = autolinuxGitUrlInput.value.trim() !== ''; // hidden input이지만 여전히 필요
+    const folderValid = folderCreated === true;
     
     // Configuration 필드 검증 (Load 후에만)
     let configValid = true;
@@ -85,15 +87,22 @@ function validate() {
     
     // Load 버튼 활성화 조건: 프로젝트 경로 + Git URL
     if (loadBtn) {
-        loadBtn.disabled = !(projectPathValid && autolinuxGitUrlValid);
+        loadBtn.disabled = !(projectPathValid && autolinuxGitUrlValid && folderValid);
     }
     
     // 생성 버튼 활성화 조건: Load 완료 + 모든 Configuration 선택
-    createBtn.disabled = !(projectPathValid && autolinuxGitUrlValid && isLoaded && configValid);
+    createBtn.disabled = !(projectPathValid && autolinuxGitUrlValid && isLoaded && configValid && folderValid);
 }
 
 function setupEventListeners() {
-    projectPathInput.oninput = validate;
+    projectPathInput.oninput = () => {
+        folderCreated = false;
+        if (createFolderBtn) {
+            createFolderBtn.disabled = false;
+            createFolderBtn.textContent = 'Create Folder';
+        }
+        validate();
+    };
     // autolinuxGitUrlInput은 hidden이므로 oninput 불필요
 
     // Autolinux Git 클론 버튼
@@ -116,29 +125,31 @@ function setupEventListeners() {
             return;
         }
 
-        // 프로젝트 경로에서 프로젝트 이름 자동 추출 (전역 변수에 저장)
-        selectedPath = fullPath;
-        projectName = fullPath.split('/').filter(p => p).pop() || 'autolinux-project';
+    // 프로젝트 경로에서 프로젝트 이름 자동 추출 (전역 변수에 저장)
+    selectedPath = fullPath;
+    projectName = fullPath.split('/').filter(p => p).pop() || 'autolinux-project';
 
-        // Load 버튼 비활성화
-        loadBtn.disabled = true;
-        loadBtn.textContent = '로딩 중...';
+    // Load 버튼 비활성화
+    loadBtn.disabled = true;
+    loadBtn.textContent = '로딩 중...';
 
-        // 입력 필드 비활성화 (Load 시작 시점부터)
-        projectPathInput.disabled = true;
-        browseBtn.disabled = true;
-        autolinuxGitUrlInput.disabled = true;
+    // 입력 필드 비활성화 (Load 시작 시점부터)
+    projectPathInput.disabled = true;
+    createFolderBtn.disabled = true;
+    autolinuxGitUrlInput.disabled = true;
 
-        vscode.postMessage({
-            command: 'loadAutolinux',
-            autolinuxGitUrl: autolinuxGitUrl,
-            projectPath: selectedPath + '/' + projectName,
-            projectName: projectName
-        });
+    vscode.postMessage({
+        command: 'loadAutolinux',
+        autolinuxGitUrl: autolinuxGitUrl,
+        projectPath: selectedPath,  // 중복 제거: fullPath를 그대로 사용
+        projectName: projectName
+    });
     };
 
-    browseBtn.onclick = () => {
-        vscode.postMessage({ command: 'browseFolder' });
+    createFolderBtn.onclick = () => {
+        createFolderBtn.disabled = true;
+        createFolderBtn.textContent = 'Creating...';
+        vscode.postMessage({ command: 'createFolder' });
     };
 
     document.getElementById('cancelBtn').onclick = () => {
@@ -168,7 +179,7 @@ function setupEventListeners() {
             command: 'createProject',
                 data: {
                 projectName: projectName,
-                projectPath: selectedPath + '/' + projectName,
+                projectPath: selectedPath,  // 중복 제거
                 autolinuxGitUrl: autolinuxGitUrlInput.value.trim(),
                 // Configuration 데이터
                 platform: platform.value,
@@ -199,7 +210,7 @@ function setupEventListeners() {
             vscode.postMessage({
                 command: 'loadManifestsAndMachines',
                 sdkTemplate: sdkTemplate.value,
-                projectPath: selectedPath + '/' + projectName,
+                projectPath: selectedPath,  // 중복 제거
                 projectName: projectName
             });
         }
@@ -216,7 +227,7 @@ function setupEventListeners() {
                 sdkTemplate: sdkTemplate.value,
                 manifest: manifest.value,
                 machine: machine.value,
-                projectPath: selectedPath + '/' + projectName,
+                projectPath: selectedPath,  // 중복 제거
                 projectName: projectName
             });
         }
@@ -245,14 +256,28 @@ window.addEventListener('message', e => {
             autolinuxGitUrlInput.value = msg.autolinuxGitUrl;
         }
         validate();
-    } else if (msg.command === 'setFolderPath') {
-        // 선택된 경로를 input에 설정 (사용자가 마지막 폴더명을 수정할 수 있음)
-        projectPathInput.value = msg.path;
-        
-        // 커서를 input 필드의 마지막으로 이동
-        projectPathInput.focus();
-        projectPathInput.setSelectionRange(msg.path.length, msg.path.length);
-        
+    } else if (msg.command === 'folderCreated') {
+        if (msg.success) {
+            folderCreated = true;
+            if (msg.path) {
+                projectPathInput.value = msg.path;
+                selectedPath = msg.path;
+                projectName = msg.path.split('/').filter(p => p).pop() || 'autolinux-project';
+            }
+            if (createFolderBtn) {
+                createFolderBtn.disabled = true;
+                createFolderBtn.textContent = 'Created';
+            }
+        } else {
+            folderCreated = false;
+            if (createFolderBtn) {
+                createFolderBtn.disabled = false;
+                createFolderBtn.textContent = 'Create Folder';
+            }
+            if (!msg.cancelled && msg.error) {
+                alert('폴더 생성 실패: ' + msg.error);
+            }
+        }
         validate();
     } else if (msg.command === 'autolinuxLoaded') {
         isLoaded = true;
@@ -295,7 +320,7 @@ window.addEventListener('message', e => {
         // 자동으로 Platform과 SDK 목록 로드
         vscode.postMessage({
             command: 'refreshPlatformsAndSdks',
-            projectPath: selectedPath + '/' + projectName,
+            projectPath: selectedPath,  // 중복 제거
             projectName: projectName
         });
         
@@ -311,7 +336,8 @@ window.addEventListener('message', e => {
         
         // 에러 발생 시 입력 필드 다시 활성화 (사용자가 수정할 수 있도록)
         projectPathInput.disabled = false;
-        browseBtn.disabled = false;
+        createFolderBtn.disabled = false;
+        createFolderBtn.textContent = 'Create Folder';
         autolinuxGitUrlInput.disabled = false;
         
         isLoaded = false;
